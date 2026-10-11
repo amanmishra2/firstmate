@@ -190,7 +190,9 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-harness.sh" "$dir/bin/fm-harness.sh"
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
+  cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$dir/bin/fm-supervision-engine-lib.sh"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
   cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
@@ -890,7 +892,7 @@ test_tracked_claude_entries_inert_under_grok() {
   dir="$TMP_ROOT/claude-entries-grok-inert"
   mkdir -p "$dir/bin"
   for script in fm-turnend-guard.sh fm-claude-stop-autoarm.sh fm-sessionstart-run.sh \
-    fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-subagent-pretool-check.sh; do
+    fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-subagent-pretool-check.sh fm-host-mirror.sh; do
     printf '#!/usr/bin/env bash\nprintf ran >> %q\n' "$dir/invoked" > "$dir/bin/$script"
     chmod +x "$dir/bin/$script"
   done
@@ -931,7 +933,7 @@ test_tracked_claude_entries_inert_under_grok() {
       || fail "tracked entry for $target ran under a legacy GROK_AGENT environment"
   done < <(jq -r '.hooks[][].hooks[].command' "$ROOT/.claude/settings.json")
 
-  [ "$guarded" -eq 5 ] || fail "expected 5 grok-guarded tracked entries, saw $guarded"
+  [ "$guarded" -eq 7 ] || fail "expected 7 grok-guarded tracked entries, saw $guarded"
   [ "$unguarded" -eq 1 ] || fail "expected 1 documented unguarded tracked entry, saw $unguarded"
   pass "tracked .claude/settings.json entries: $guarded inert under grok, the documented subagent exception still armed, all live under Claude"
 }
@@ -999,41 +1001,31 @@ EOF
   pass ".codex/hooks.json: Stop hook ignores nested git root guard scripts"
 }
 
-test_opencode_plugin_anchors_guard_to_worktree() {
-  local plugin parent worktree_dir wrong_dir out status
+test_opencode_plugin_anchors_guard_to_checkout_root() {
+  local plugin parent worktree_dir out status
   plugin="$ROOT/.opencode/plugins/fm-primary-turnend-guard.js"
   [ -f "$plugin" ] || fail "tracked OpenCode primary plugin is missing"
   parent="$TMP_ROOT/opencode-plugin-parent"
   git init -q "$parent"
   worktree_dir="$parent/nested/opencode-plugin-worktree"
-  wrong_dir="$TMP_ROOT/opencode-plugin-cwd/subdir"
-  mkdir -p "$worktree_dir/bin" "$wrong_dir"
-  cat > "$worktree_dir/bin/fm-turnend-guard.sh" <<'EOF'
+  mkdir -p "$worktree_dir/bin" "$parent/bin"
+  cat > "$parent/bin/fm-turnend-guard.sh" <<'EOF'
 #!/usr/bin/env bash
 cat >/dev/null
 printf 'guard-fired\n' >&2
 exit 2
 EOF
-  chmod +x "$worktree_dir/bin/fm-turnend-guard.sh"
+  chmod +x "$parent/bin/fm-turnend-guard.sh"
   # Runtime module-format warnings are host noise; this assertion owns plugin output only.
-  out=$(NODE_NO_WARNINGS=1 PLUGIN="$plugin" DIRECTORY="$wrong_dir" WORKTREE="$worktree_dir" node 2>&1 <<'EOF'
+  # The plugin is loaded for a nested directory and must resolve the checkout
+  # root itself (the V2 replacement for the V1 worktree anchor).
+  out=$(NODE_NO_WARNINGS=1 PLUGIN="$plugin" DIRECTORY="$worktree_dir" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" node 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 
-const mod = await import(pathToFileURL(process.env.PLUGIN).href);
-let promptBody = "";
-const client = {
-  session: {
-    promptAsync: async (request) => {
-      promptBody = request.body.parts[0].text;
-    },
-  },
-};
-const hooks = await mod.FmPrimaryTurnendGuard({
-  client,
-  directory: process.env.DIRECTORY,
-  worktree: process.env.WORKTREE,
-});
-await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
+const { loadV2Plugin } = await import(pathToFileURL(process.env.HOST).href);
+const host = await loadV2Plugin(process.env.PLUGIN, { directory: process.env.DIRECTORY });
+await host.emit({ type: "session.execution.succeeded", data: { sessionID: "session-test" } });
+const promptBody = host.prompts.length ? host.prompts[0].text : "";
 if (!promptBody.startsWith("\u2063FIRSTMATE_OP: v1 turn-end-guard: ")) {
   console.error(`untyped operational prompt: ${promptBody}`);
   process.exit(1);
@@ -1050,12 +1042,13 @@ if (promptBody.includes("Resume supervision according to the session-start opera
   console.error(`ordinary continuity leaked into guard follow-up: ${promptBody}`);
   process.exit(1);
 }
+await host.close();
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode plugin must run the guard from worktree even when directory is elsewhere"
-  [ -z "$out" ] || fail "OpenCode plugin worktree-root test printed output: $out"
-  pass ".opencode primary plugin: guard path is anchored to worktree, not directory"
+  expect_code 0 "$status" "OpenCode plugin must run the guard from the resolved checkout root"
+  [ -z "$out" ] || fail "OpenCode plugin checkout-root test printed output: $out"
+  pass ".opencode primary plugin: guard path resolves the checkout root from a nested directory"
 }
 
 test_pi_extension_injects_once_per_logical_agent_run() {
@@ -1211,12 +1204,18 @@ install_integrated_autoarm() {
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-path-lib.sh" "$dir/bin/fm-path-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
   cp "$ROOT/bin/fm-session-lock-lib.sh" "$dir/bin/fm-session-lock-lib.sh"
   cp "$ROOT/bin/fm-cursor-lib.sh" "$dir/bin/fm-cursor-lib.sh"
   cp "$ROOT/bin/fm-lock.sh" "$dir/bin/fm-lock.sh"
+  cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$dir/bin/fm-supervision-engine-lib.sh"
   chmod +x "$dir/bin/fm-claude-stop-autoarm.sh" "$dir/bin/fm-lock.sh"
   ln -s /bin/bash "$dir/fake-claude"
+  # These cases drive the watcher arm, so the home opts out of the supervision
+  # host a Claude home otherwise runs by default.
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host-off"
 }
 
 run_integrated_autoarm() {
@@ -2235,7 +2234,7 @@ test_grok_adapter_missing_jq_and_no_supervision_allow
 test_tracked_claude_entries_inert_under_grok
 test_codex_hook_uses_process_pwd_when_payload_cwd_is_outside_root
 test_codex_hook_ignores_nested_git_root_guard
-test_opencode_plugin_anchors_guard_to_worktree
+test_opencode_plugin_anchors_guard_to_checkout_root
 test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy

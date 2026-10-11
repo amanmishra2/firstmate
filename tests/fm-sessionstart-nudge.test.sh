@@ -172,36 +172,33 @@ test_opencode_plugin_delivers_exact_nudge_once() {
     "$ROOT/bin/fm-gate-refuse-lib.sh" "$ROOT/bin/fm-operational-input.sh" "$root/bin/"
   chmod +x "$root/bin/fm-sessionstart-nudge.sh"
   out=$(PLUGIN="$ROOT/.opencode/plugins/fm-primary-sessionstart-nudge.js" \
+    HOST="$ROOT/tests/assets/opencode-v2-host.mjs" \
     WORKTREE="$root" EXPECTED="$NUDGE_LINE" node --input-type=module 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 
-const prompts = [];
-const client = {
-  session: {
-    promptAsync: async (request) => {
-      prompts.push(request.body.parts[0].text);
-    },
-  },
-};
-const mod = await import(pathToFileURL(process.env.PLUGIN).href);
-const hooks = await mod.FmPrimarySessionstartNudge({
-  client,
-  directory: process.env.WORKTREE,
-  worktree: process.env.WORKTREE,
-});
-const event = {
+const { loadV2Plugin } = await import(pathToFileURL(process.env.HOST).href);
+const host = await loadV2Plugin(process.env.PLUGIN, { directory: process.env.WORKTREE });
+const event = { type: "session.created", data: { sessionID: "session-nudge-test" } };
+await host.emit(event);
+await host.emit(event);
+if (host.prompts.length !== 1) throw new Error(`expected one prompt, got ${host.prompts.length}`);
+if (host.prompts[0].text !== process.env.EXPECTED) throw new Error(`unexpected prompt: ${host.prompts[0].text}`);
+if (host.prompts[0].sessionID !== "session-nudge-test") {
+  throw new Error(`nudge went to the wrong session: ${host.prompts[0].sessionID}`);
+}
+// A session created at another location must never receive this location's
+// nudge: OpenCode 2's event stream is server-wide.
+await host.emit({
   type: "session.created",
-  properties: { sessionID: "session-nudge-test", info: { id: "session-nudge-test" } },
-};
-await hooks.event({ event });
-await hooks.event({ event });
-if (prompts.length !== 1) throw new Error(`expected one prompt, got ${prompts.length}`);
-if (prompts[0] !== process.env.EXPECTED) throw new Error(`unexpected prompt: ${prompts[0]}`);
+  data: { sessionID: "session-foreign", location: { directory: "/elsewhere/foreign-home" } },
+});
+if (host.prompts.length !== 1) throw new Error(`foreign session received a nudge: ${host.prompts.length} prompts`);
+await host.close();
 EOF
   ) || status=$?
   expect_code 0 "$status" "OpenCode exact nudge delivery"
   [ -z "$out" ] || fail "OpenCode exact nudge delivery printed output: $out"
-  pass "OpenCode session.created delivers the exact wrapper nudge once per session"
+  pass "OpenCode session.created delivers the exact wrapper nudge once per session and never to another location"
 }
 
 # --- run tier ----------------------------------------------------------------
@@ -1037,6 +1034,52 @@ test_run_gate_and_scope_are_silent() {
   pass "run wrapper: ordinary ineligible opens stay silent-zero and Pi preflight gets an explicit silent stand-down"
 }
 
+test_run_creates_missing_state_on_a_fresh_primary() {
+  local root="$TMP_ROOT/run-fresh-primary" base="$TMP_ROOT/run-fresh-linked-base"
+  local linked="$TMP_ROOT/run-fresh-linked" out status=0
+  make_run_primary "$root"
+  rmdir "$root/state"
+  assert_absent "$root/state" "the fixture still had a state dir before the assertion began"
+
+  out=$(run_hook "$root" --source startup </dev/null) || status=$?
+  expect_code 0 "$status" "run wrapper startup on a fresh primary with no state dir"
+  assert_present "$root/state" "a fresh primary root did not get its state dir created"
+  assert_contains "$out" "$FULL_BANNER$root" \
+    "creating the state dir did not let a fresh primary's session start run"
+  assert_contains "$out" "lock acquired: harness pid" \
+    "creating the state dir did not let a fresh primary take the fleet lock"
+  assert_not_contains "$out" "$REEMIT_BANNER" \
+    "a fresh primary's first session was misrouted to a context re-emit"
+  assert_contains "$out" "NEXT STEP" "a fresh primary did not receive the complete digest"
+
+  # An unmarked linked task worktree stays ineligible: it must not have a state
+  # dir manufactured for it, so the existing scope refusal is unchanged.
+  fm_git_worktree "$base" "$linked" fm/run-fresh-linked
+  mkdir -p "$linked/bin"
+  : > "$linked/AGENTS.md"
+  assert_absent "$linked/state" "the linked fixture already had a state dir before the assertion began"
+  expect_silent_zero "linked worktree fresh state run" run_hook "$linked" --source startup
+  assert_absent "$linked/state" "an unmarked linked task worktree got a state dir created for it"
+  pass "run wrapper: a fresh primary checkout gets its missing state dir created, a linked worktree still does not"
+}
+
+test_run_reports_a_state_dir_it_cannot_create() {
+  local root="$TMP_ROOT/run-fresh-readonly" out err_file="$TMP_ROOT/run-fresh-readonly.err" status=0
+  make_run_primary "$root"
+  rmdir "$root/state"
+  chmod 0500 "$root"
+  out=$(run_hook "$root" --source startup </dev/null 2>"$err_file") || status=$?
+  chmod 0700 "$root"
+  expect_code 0 "$status" "run wrapper on a fresh primary whose state dir cannot be created"
+  [ -z "$out" ] || fail "a failed state dir creation must still stand down without a digest, got: $out"
+  assert_absent "$root/state" "a read-only fresh primary somehow got a state dir"
+  [ "$(wc -l <"$err_file")" -eq 1 ] || fail "expected exactly one stderr line, got: $(cat "$err_file")"
+  assert_contains "$(cat "$err_file")" \
+    "startup could not create the state directory $root/state: Permission denied" \
+    "a failed state dir creation did not say what failed and why"
+  pass "run wrapper: a fresh primary that cannot create its state dir says so on stderr, then stands down"
+}
+
 test_run_reports_a_failed_session_start_as_digest_text() {
   local root="$TMP_ROOT/run-unwritable" out status=0
   make_run_primary "$root"
@@ -1067,6 +1110,8 @@ test_run_resume_delegates_to_the_nudge
 test_run_reads_source_from_the_hook_payload
 test_run_unknown_source_takes_the_helm
 test_run_gate_and_scope_are_silent
+test_run_creates_missing_state_on_a_fresh_primary
+test_run_reports_a_state_dir_it_cannot_create
 test_run_reports_a_failed_session_start_as_digest_text
 test_pi_startup_classifies_cli_continuations
 test_pi_sessionstart_generation_prerequisite
