@@ -116,3 +116,14 @@ export default {
     return () => controller.abort();
   },
 };
+
+export default {
+  id: "fm-primary-turnend-guard",
+  async setup(ctx) {
+    const hooks = await FmPrimaryTurnendGuard({
+      client: clientFromCtx(ctx),
+      directory: ctx.location?.directory,
+    });
+    return subscribeEvents(ctx, hooks, "fm-primary-turnend-guard");
+  },
+};

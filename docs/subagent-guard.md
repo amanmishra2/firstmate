@@ -234,7 +234,8 @@ The integration surface of each was inspected and each is structurally wireable 
 - Pi's tracked extension gates on `event.toolName !== "bash"` inside `pi.on("tool_call", ...)` and blocks by returning `{block: true}`.
   The same change applies. A parallel evaluation reports that Pi exposes no delegation tool at all, which would make it not applicable, but that was not verified here.
 
-None of the three is wired in this change because none of the three binaries is installed on the host where this work was done, so the exact tool-name tokens could not be confirmed and the wiring could not be validated against the real harness.
+None of the three is wired in this change: the Grok and Pi exact tool-name tokens could not be confirmed on the host where this work was done, and no wiring was validated against the real harness.
+OpenCode's gate tokens are now confirmed by the v2 port and documented in its [`opencode` harness reference](../.agents/skills/harness-adapters/references/harness/opencode.md).
 This repo's rule in the `firstmate-coding-guidelines` skill is that a harness hook must be validated in a scratch project before it is trusted, and `arm-pretool-check.md` records the concrete cost of guessing: a Grok hook whose `command` string is even slightly wrong fails to launch the hook at all.
 Wiring an unvalidated matcher would trade a known gap for an unknown breakage.
 

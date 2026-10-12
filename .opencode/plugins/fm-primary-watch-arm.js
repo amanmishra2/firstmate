@@ -614,3 +614,18 @@ export default {
     };
   },
 };
+
+// OpenCode v2 default export: the v2 loader requires `{ id, setup(ctx) }`;
+// `clientFromCtx` and `subscribeEvents` adapt v2 onto the v1 hook object
+// above. The coordinator entry the hooks install keeps serving the v2
+// turn-end guard.
+export default {
+  id: "fm-primary-watch-arm",
+  async setup(ctx) {
+    const hooks = await FmPrimaryWatchArm({
+      client: clientFromCtx(ctx),
+      directory: ctx.location?.directory,
+    });
+    return subscribeEvents(ctx, hooks, "fm-primary-watch-arm");
+  },
+};

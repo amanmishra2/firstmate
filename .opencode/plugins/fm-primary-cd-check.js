@@ -1,6 +1,7 @@
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { SHELL_TOOL_NAMES, installV2ToolHook } from "./lib/fm-opencode-v2-adapter.js";
 
 // PreToolUse seatbelt for OpenCode 2: block a stray persistent top-level `cd`
 // in the primary firstmate checkout before the agent's shell tool relocates
@@ -59,5 +60,15 @@ export default {
       const reason = result.stderr.trim() || "denied by the cd-guard PreToolUse seatbelt";
       throw new Error(reason);
     });
+  },
+};
+
+// OpenCode v2 default export: the loader requires `{ id, setup(ctx) }`, and
+// `installV2ToolHook` adapts v2 onto the shared v1 hook object above.
+export default {
+  id: "fm-primary-cd-check",
+  async setup(ctx) {
+    const hooks = await FmPrimaryCdCheck({ directory: ctx.location?.directory });
+    await installV2ToolHook(ctx, hooks);
   },
 };
