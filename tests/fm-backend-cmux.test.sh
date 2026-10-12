@@ -496,6 +496,31 @@ test_create_task_creates_and_parses_ids() {
   pass "fm_backend_cmux_create_task: creates a workspace and parses workspace_id/surface_id from list responses"
 }
 
+test_create_task_retries_until_workspace_visible() {
+  local dir fb out title
+  dir="$TMP_ROOT/create-task-lag"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-newtask2)
+  # 1: workspace list --json (pre-create duplicate check) -> no match
+  printf '{"workspaces":[]}' > "$dir/responses/1.out"
+  # 2: new-workspace (silent on success)
+  # 3: workspace list --json (post-create id resolution) -> still missing;
+  #    the app's workspace index lags a fresh new-workspace (verified live
+  #    2026-10-11: absent ~0.1s after create, present ~0.3s after)
+  printf '{"workspaces":[]}' > "$dir/responses/3.out"
+  # 4: workspace list --json (retry) -> match
+  cmux_workspace_list_response "$dir" 4 "dddddddd-3333-3333-3333-333333333333" "$title"
+  # 5: list-panes --json --id-format uuids -> default surface id
+  cmux_panes_response "$dir" 5 "eeeeeeee-4444-4444-4444-444444444444"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-newtask2 /tmp/proj' "$ROOT" )
+  [ "$out" = "dddddddd-3333-3333-3333-333333333333 eeeeeeee-4444-4444-4444-444444444444" ] \
+    || fail "create_task should resolve ids once the lagged workspace appears, got '$out'"
+  [ "$(grep -c $'\x1fworkspace\x1flist' "$dir/log")" -eq 3 ] \
+    || fail "create_task should retry the post-create workspace lookup exactly once here (log: $(cat "$dir/log"))"
+  pass "fm_backend_cmux_create_task: polls past the app's workspace-index lag instead of failing the spawn"
+}
+
 # --- target_ready / capture ---------------------------------------------------
 
 test_target_ready_fails_when_target_absent() {
@@ -1130,6 +1155,7 @@ test_ensure_running_fails_fast_on_denied_without_launching
 test_ensure_running_fails_fast_on_unauth_without_launching
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
+test_create_task_retries_until_workspace_visible
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch
