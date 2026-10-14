@@ -216,13 +216,19 @@ const timeout = setTimeout(() => {
   process.exit(1);
 }, 10000);
 const ctx = {
-  location: { directory: ownLocation },
-  session: {
-    get: async ({ sessionID }) => ({
-      id: sessionID,
-      location: { directory: foreignSessions.has(sessionID) ? foreignLocation : ownLocation },
-    }),
-  },
+  ...(process.env.FM_OC_V2_MISSING_LOCATION === "1"
+    ? {}
+    : { location: { directory: ownLocation } }),
+  ...(process.env.FM_OC_V2_NO_RESOLVER === "1"
+    ? {}
+    : {
+        session: {
+          get: async ({ sessionID }) => ({
+            id: sessionID,
+            location: { directory: foreignSessions.has(sessionID) ? foreignLocation : ownLocation },
+          }),
+        },
+      }),
   event: {
     subscribe: async function* () {
       for (const event of events) yield event;
@@ -241,8 +247,18 @@ EOF
 # aggregate/seq, and the payload under data - with no location, exactly as a
 # session.execution.* bracket event arrives.
 oc_v2_event() {  # <type> <sessionID>
+  printf '{"id":"evt-%s-%s","created":0,"type":"%s","durable":{"aggregateID":"%s","seq":1,"version":1},"data":{}}' \
+    "$1" "$2" "$1" "$2"
+}
+
+oc_v2_event_with_ids() {  # <type> <data-sessionID> <aggregateID>
   printf '{"id":"evt-%s-%s","created":0,"type":"%s","durable":{"aggregateID":"%s","seq":1,"version":1},"data":{"sessionID":"%s"}}' \
-    "$1" "$2" "$1" "$2" "$2"
+    "$1" "$2" "$1" "$3" "$2"
+}
+
+oc_v2_event_without_identity() {  # <type>
+  printf '{"id":"evt-%s-no-identity","created":0,"type":"%s","durable":{"seq":1,"version":1},"data":{}}' \
+    "$1" "$1"
 }
 
 # oc_v2_located_event: the real v2 envelope for a located session event
@@ -315,6 +331,17 @@ test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end() {
 
   out=$(classify opencode "$id" "$state")
   [ "$out" = "busy fm-spawn" ] || fail "seed after spawn must be 'busy fm-spawn', got '$out'"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_FOREIGN_SESSIONS="ses_foreign ses_foreign2" drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event_with_ids session.execution.started ses_main ses_foreign)" \
+    "$(oc_v2_event_with_ids session.execution.succeeded ses_main ses_foreign2)") \
+    || fail "v2 data-session identity drive failed: $out"
+  [ -f "$state/$id.turn-ended" ] \
+    || fail "v2 data.sessionID identity did not touch the turn-ended notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "idle opencode-plugin" ] \
+    || fail "v2 data.sessionID identity must close the busy record, got '$out'"
 
   for terminal in succeeded failed interrupted; do
     rm -f "$state/$id.turn-ended"
@@ -452,6 +479,61 @@ test_opencode_v2_plugin_scopes_to_the_workers_own_location() {
   out=$(classify opencode "$id" "$state")
   [ "$out" = "idle opencode-plugin" ] || fail "the worker's own turn end must close the record, got '$out'"
   pass "opencode v2: only the worker's own location drives busy state and the notification marker"
+}
+
+test_opencode_v2_plugin_requires_location_identity_and_resolver() {
+  local rec id=busy-oc-v2-4 out state plugin
+  rec=$(make_spawn_case oc-v2-rejections opencode "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "opencode spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_MISSING_LOCATION=1 drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_main)" \
+    "$(oc_v2_event session.execution.succeeded ses_main)") \
+    || fail "missing-location drive failed: $out"
+  [ ! -e "$state/$id.turn-ended" ] \
+    || fail "a plugin without a location must not touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy fm-spawn" ] \
+    || fail "a plugin without a location must not change the busy record, got '$out'"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_NO_RESOLVER=1 drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event_with_ids session.execution.started ses_main ses_main)" \
+    "$(oc_v2_event_with_ids session.execution.succeeded ses_main ses_main)") \
+    || fail "unlocated-without-resolver drive failed: $out"
+  [ ! -e "$state/$id.turn-ended" ] \
+    || fail "an unlocated event without a resolver must not touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy fm-spawn" ] \
+    || fail "an unlocated event without a resolver must not change the busy record, got '$out'"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event_without_identity session.execution.started)" \
+    "$(oc_v2_event_without_identity session.execution.succeeded)") \
+    || fail "missing-identity drive failed: $out"
+  [ ! -e "$state/$id.turn-ended" ] \
+    || fail "an event without a session identity must not touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy fm-spawn" ] \
+    || fail "an event without a session identity must not change the busy record, got '$out'"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_NO_RESOLVER=1 drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_located_event session.execution.started ses_main "$OC_V2_OWN_LOCATION")" \
+    "$(oc_v2_located_event session.execution.succeeded ses_main "$OC_V2_OWN_LOCATION")") \
+    || fail "located-without-resolver drive failed: $out"
+  [ -f "$state/$id.turn-ended" ] \
+    || fail "a located event with matching ownership must touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "idle opencode-plugin" ] \
+    || fail "a located event with matching ownership must close the busy record, got '$out'"
+  pass "opencode v2 drops unscoped events and accepts matching located events without a resolver"
 }
 
 run_claude_hook() {  # <settings.json> <hook-event>
@@ -1090,6 +1172,7 @@ test_opencode_plugin_semantic_lifecycle
 test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end
 test_opencode_v2_plugin_child_turn_end_keeps_the_worker_busy
 test_opencode_v2_plugin_scopes_to_the_workers_own_location
+test_opencode_v2_plugin_requires_location_identity_and_resolver
 test_claude_hooks_semantic_lifecycle
 test_claude_hooks_stale_incarnation_harmless
 test_gemini_hooks_semantic_lifecycle

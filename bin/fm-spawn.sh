@@ -4962,13 +4962,22 @@ const v2TurnEnd = new Set([
   "session.execution.failed",
   "session.execution.interrupted",
 ]);
-const v1Event = (event) => {
-  const properties = event.data ?? {};
+const usableSessionID = (value) =>
+  typeof value === "string" && value.length > 0 ? value : null;
+const v2SessionID = (event) =>
+  usableSessionID(event && event.data && event.data.sessionID) ??
+  usableSessionID(event && event.durable && event.durable.aggregateID);
+const v2Properties = (event, sessionID) => ({
+  ...((event && event.data && typeof event.data === "object") ? event.data : {}),
+  sessionID,
+});
+const v1Event = (event, sessionID) => {
+  const properties = v2Properties(event, sessionID);
   if (v2TurnEnd.has(event.type)) return { type: "session.idle", properties };
   if (event.type === "session.execution.started") {
     return {
       type: "session.status",
-      properties: { sessionID: properties.sessionID, status: { type: "busy" } },
+      properties: { ...properties, status: { type: "busy" } },
     };
   }
   return { type: event.type, properties };
@@ -4987,36 +4996,40 @@ export default {
     // ctx.session.get for the unlocated execution bracket - and ignore other
     // locations, mirroring the v1 per-location stream this plugin is written
     // against.
-    const ownDirectory = ((ctx.location && ctx.location.directory) || "").replace(/\/+$/, "");
+    const normalizeDirectory = (directory) => {
+      if (typeof directory !== "string" || directory.length === 0) return "";
+      const normalized = directory.replace(/\/+$/, "");
+      return normalized === "" ? "/" : normalized;
+    };
+    const ownDirectory = normalizeDirectory(ctx.location && ctx.location.directory);
     const sameLocation = (directory) =>
-      ownDirectory !== "" && typeof directory === "string" && directory.replace(/\/+$/, "") === ownDirectory;
+      ownDirectory !== "" && normalizeDirectory(directory) === ownDirectory;
     const sessionLocations = new Map();
     const sessionOwned = async (sessionID) => {
       const cached = sessionLocations.get(sessionID);
       if (typeof cached === "boolean") return cached;
-      if (typeof ctx.session?.get !== "function") return true; // no resolver: keep the pre-scope behavior
+      if (typeof ctx.session?.get !== "function") return undefined;
       let directory;
       try {
         const session = await ctx.session.get({ sessionID });
         directory = session && session.location && session.location.directory;
       } catch {
-        return undefined; // transient lookup failure: retry on a later event
+        return undefined;
       }
-      if (typeof directory !== "string") return undefined;
+      if (normalizeDirectory(directory) === "") return undefined;
       const owned = sameLocation(directory);
       sessionLocations.set(sessionID, owned);
       return owned;
     };
     const scopedEvent = async (event) => {
-      if (ownDirectory === "") return v1Event(event); // no plugin location: keep the pre-scope behavior
-      const directory = event.location && event.location.directory;
-      const sessionID = event.data && event.data.sessionID;
-      if (typeof directory === "string") {
-        if (sessionID) sessionLocations.set(sessionID, sameLocation(directory));
-        return sameLocation(directory) ? v1Event(event) : null;
+      if (ownDirectory === "") return null;
+      const sessionID = v2SessionID(event);
+      if (sessionID === null) return null;
+      const directory = normalizeDirectory(event && event.location && event.location.directory);
+      if (directory !== "") {
+        return directory === ownDirectory ? v1Event(event, sessionID) : null;
       }
-      if (!sessionID) return v1Event(event);
-      return (await sessionOwned(sessionID)) ? v1Event(event) : null;
+      return (await sessionOwned(sessionID)) === true ? v1Event(event, sessionID) : null;
     };
     void (async () => {
       try {
