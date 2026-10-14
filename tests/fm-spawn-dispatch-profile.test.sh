@@ -1004,28 +1004,28 @@ SH
   pass "an inconclusive opencode flag probe omits --model and still pins the model in the launch config"
 }
 
-test_opencode_v2_reports_a_model_it_cannot_pin() {
+test_opencode_v2_refuses_a_model_it_cannot_pin() {
   local rec id out status launch
   id=profile-opencode-v2-bare-z7g
   rec=$(make_spawn_case profile-opencode-v2-bare opencode "$id")
   read_case_record "$rec"
 
   # The flag surface is gone and a bare id is not a provider/model pair the
-  # config can resolve, so the model must be reported rather than silently
-  # dropped: task meta still records it while the launch runs opencode's own
-  # default model.
+  # config can resolve, so the launch cannot carry the recorded model at all.
+  # Launching anyway would silently run opencode's own default model instead of
+  # the one this task records, so the spawn refuses before any worktree,
+  # endpoint, or record exists.
   out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 \
-    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model sonnet)
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model sonnet 2>&1)
   status=$?
-  expect_code 0 "$status" "opencode 2.x spawn with a bare model id should still launch: $out"
+  expect_code 1 "$status" "opencode 2.x must refuse a model it cannot pin"
   assert_contains "$out" "not a provider/model id" \
-    "opencode 2.x must report a model it cannot pin in the launch config"
-  assert_meta_profile "$HOME_DIR/state/$id.meta" opencode sonnet default
-  launch=$(cat "$LAUNCH_LOG")
-  assert_not_contains "$launch" "--model" "an unpinnable opencode 2.x model must not reach the launch as a flag"
-  assert_contains "$launch" "OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' opencode --prompt" \
-    "an unpinnable model must leave the opencode launch config unchanged"
-  pass "opencode 2.x reports a model it cannot pin instead of dropping it silently"
+    "the unpinnable-model refusal did not name the requirement"
+  assert_contains "$out" "OPENCODE_CONFIG_CONTENT" \
+    "the unpinnable-model refusal did not name the channel the model could not ride"
+  assert_absent "$HOME_DIR/state/$id.meta" "the unpinnable-model refusal published a task record"
+  [ ! -s "$LAUNCH_LOG" ] || fail "the unpinnable-model refusal delivered a launch command"
+  pass "opencode 2.x refuses a model it cannot pin instead of launching a different one"
 }
 
 test_opencode_dead_launch_refuses_the_spawn() {
@@ -2525,7 +2525,7 @@ test_opencode_omits_variant_when_model_family_lacks_effort
 test_opencode_v2_drops_model_flag_and_pins_the_model_in_config
 test_opencode_v2_pins_a_model_without_a_mappable_effort
 test_opencode_probe_failure_omits_flag_and_pins_model
-test_opencode_v2_reports_a_model_it_cannot_pin
+test_opencode_v2_refuses_a_model_it_cannot_pin
 test_opencode_dead_launch_refuses_the_spawn
 test_opencode_tui_that_dies_after_starting_refuses_the_spawn
 test_opencode_live_tui_and_indeterminate_pane_do_not_refuse

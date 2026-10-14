@@ -101,7 +101,11 @@
 #   rides that same JSON whenever the installed TUI does not accept --model:
 #   OpenCode 2.x dropped the flag from the interactive launch, so a spawn
 #   probes its resolved executable's own help (opencode_supports_model_flag)
-#   and composes --model only on a 1.x surface, where the flag exists.
+#   and composes --model only on a 1.x surface, where the flag exists. A
+#   selection that can ride neither channel - an unproven or absent --model
+#   flag on the installed TUI, and not a provider/model pair - refuses the
+#   spawn before any worktree, endpoint, or record exists, rather than
+#   launching a different model than the task records.
 #   --backend <name> is the explicit runtime session-provider backend for this
 #   exact task only (docs/configuration.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then
@@ -2723,6 +2727,24 @@ if [ "$KIND" = secondmate ] && [ -z "$ARG3" ]; then
     fi
   fi
 fi
+# An OpenCode model the launch cannot pin refuses here, before any worktree,
+# endpoint, or record exists. When the installed TUI takes no --model flag, the
+# only remaining channel is OPENCODE_CONFIG_CONTENT's build-agent model, which
+# needs a provider/model pair: launching anyway would silently run a different
+# model than the one recorded for this task. This runs after the secondmate
+# config tokens above so every source of MODEL is covered. A raw launch command
+# is exempt, exactly as it is for the readiness gate: it is the operator's own
+# escape hatch and fm-spawn does not compose its launch at all.
+if [ "$HARNESS" = opencode ] && [ "$RAW_LAUNCH" -eq 0 ] && [ "${OPENCODE_MODEL_FLAG_SUPPORTED:-0}" != 1 ]; then
+  case "$MODEL" in
+  '' | default) ;;
+  */*) ;;
+  *)
+    echo "error: the installed opencode's --model support could not be proven and '$MODEL' is not a provider/model id that OPENCODE_CONFIG_CONTENT can pin, so this launch cannot carry the model the task records; pass a provider/model id (or omit --model to run opencode's own default model)" >&2
+    exit 1
+    ;;
+  esac
+fi
 # Ultra is an explicit native capability, never a Pi thinking-level alias.
 # Validate the fully resolved profile before worktree or endpoint provisioning.
 if [ "$EFFORT" = ultra ]; then
@@ -2955,8 +2977,9 @@ model_flag_for_harness() {  # <harness> <model> [opencode model-flag support: 1|
 # or an effort outside its family's list, keeps the model-only (or
 # permission-only) launch and omits the variant (record-and-omit, as codex and
 # grok do). A model the launch cannot pin - the flag surface is gone and the id
-# is not a provider/model pair the config can resolve - is recorded in task
-# metadata and reported with a notice rather than silently dropped.
+# is not a provider/model pair the config can resolve - refuses the spawn in the
+# launch path before any worktree, endpoint, or record exists, rather than
+# launching a different model than the task records.
 #
 # The fragment lands inside the launch's single-quoted assignment, so a literal
 # quote in the model id must close and reopen that quoting.
@@ -2975,8 +2998,11 @@ opencode_agent_config_fragment() {  # <model> <effort> <model-flag-supported: 0|
   case "$model" in
   */*) ;;
   *)
-    echo "notice: opencode's launch takes no --model flag and '$model' is not a provider/model id, so it cannot be pinned in OPENCODE_CONFIG_CONTENT and the launch runs opencode's own default model; pass a provider/model id to pin it" >&2
-    return 0
+    # The preflight refusal in the launch path owns this rule's message and the
+    # spawn refusal (a model this fragment cannot pin must never be replaced by
+    # opencode's own default silently); this is only the invariant that keeps a
+    # bare id out of the config.
+    return 1
     ;;
   esac
   model_json=$(json_escape "$model")
@@ -4728,6 +4754,12 @@ agy_spawn_fail() {  # <detail>
 # `unreadable`, `unknown` - yields no verdict, so the gate steps aside and the
 # spawn keeps the behavior it had before this gate existed. A slow prelude
 # never refuses on its own either: any non-`dead` reading resets the streak.
+# The accepted consequence, and the boundary of this gate's coverage: a backend
+# whose runtime exposes no recovery-grade agent-state classifier answers
+# `unverified` (zellij, orca, and cmux today), so a canonical OpenCode launch
+# that dies immediately there is still reported successful. Extending verified
+# liveness support to those backends, or refusing OpenCode launches on them,
+# would change the supported runtime contract and is deliberately out of scope.
 OPENCODE_READY_FAILURE_DETAIL=
 
 opencode_wait_for_ready() {

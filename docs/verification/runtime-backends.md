@@ -664,8 +664,10 @@ fm_backend_agent_state herdr <lab-session>:w1:p1        # dead        ... unread
 ```
 
 That short pre-registration window is why the gate refuses only on a SUSTAINED dead verdict (12 consecutive checks at the 0.5s default poll, twice the longest healthy window measured here) and treats every inconclusive reading as no verdict at all.
+The gate's coverage boundary is the classifier's: a backend whose runtime exposes no recovery-grade agent-state classifier answers `unverified` (zellij, orca, and cmux today), and readings the classifier cannot attribute (`unknown`, `ambiguous`, `unreadable`, `missing`) carry no verdict either, so a canonical OpenCode launch that dies immediately on those backends is still reported successful and the spawn keeps its pre-gate behavior.
+Extending verified liveness support to them, or refusing OpenCode launches on them, would change the supported runtime contract and is deliberately out of scope; `bin/fm-spawn.sh`'s gate comment owns that decision and the exact poll rules.
 
-The portable regressions are `tests/fm-spawn-dispatch-profile.test.sh`'s OpenCode launch-shape cases (one per generation, plus a model that cannot be pinned) and its dead-launch readiness cases (a pane that never had an agent, a pane that had one and lost it, and both harmless shapes: a live TUI and an unattributable pane).
+The portable regressions are `tests/fm-spawn-dispatch-profile.test.sh`'s OpenCode launch-shape cases (one per generation, plus a model that can ride neither channel and therefore refuses the spawn before any worktree, endpoint, or record exists) and its dead-launch readiness cases (a pane that never had an agent, a pane that had one and lost it, and both harmless shapes: a live TUI and an unattributable pane).
 The process fact the gate reads is the shared agent-state classifier, which the default-on drift guard above already exercises against every installed harness:
 
 ```sh
