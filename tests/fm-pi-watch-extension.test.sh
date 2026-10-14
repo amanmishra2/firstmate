@@ -5570,6 +5570,234 @@ EOF
   pass "OpenCode successors attach to a healthy cycle without stopping it"
 }
 
+# Exercise the OpenCode host launch against a real supervision host and watcher.
+# An unready host pass-through leaves a healthy detached cycle; the next
+# OpenCode host must take it over without opening another downtime episode.
+test_opencode_host_takes_over_healthy_detached_cycle() {
+  local plugin repo home fakebin launch_log host_output hold release node_script out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-host-takeover-root"
+  home="$TMP_ROOT/opencode-host-takeover-home"
+  fakebin="$TMP_ROOT/opencode-host-takeover-fakebin"
+  launch_log="$TMP_ROOT/opencode-host-takeover-launch.log"
+  host_output="$TMP_ROOT/opencode-host-takeover-output.log"
+  hold="$TMP_ROOT/opencode-host-takeover-hold"
+  release="$TMP_ROOT/opencode-host-takeover-release"
+  node_script="$TMP_ROOT/watch-cycle-fixture.mjs"
+  mkdir -p "$repo/bin" "$home/state" "$home/config" "$fakebin"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  for source in "$ROOT"/bin/*; do
+    name=${source##*/}
+    [ "$name" = fm-supervision-host.sh ] && continue
+    ln -s "$source" "$repo/bin/$name"
+  done
+  printf 'project=demo\nwindow=fm-demo\nharness=opencode\n' > "$home/state/demo.meta"
+  : > "$home/state/demo.status"
+  : > "$home/config/supervision-host"
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$fakebin/tmux"
+  ln -s /bin/bash "$fakebin/claude"
+  ln -s /bin/bash "$fakebin/opencode"
+  printf 'claude\n' > "$home/config/supervision-host"
+  printf '{"hook_event_name":"UserPromptSubmit","prompt_id":"p0","prompt":"watch the fleet for me"}' > "$home/mirror-seed.0"
+  cat > "$repo/bin/fm-supervision-host.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'argc=%s args=' "$#" >> "${FM_HOST_LAUNCH_LOG:?}"
+printf '<%s>' "$@" >> "$FM_HOST_LAUNCH_LOG"
+printf '\n' >> "$FM_HOST_LAUNCH_LOG"
+if [ "$(wc -l < "$FM_HOST_LAUNCH_LOG" | tr -d '[:space:]')" -eq 1 ]; then
+  : > "$FM_HOST_HOLD"
+  while [ ! -e "$FM_HOST_RELEASE" ]; do sleep 0.02; done
+fi
+  exec "$FM_REAL_HOST" "$@" > >(tee -a "$FM_HOST_OUTPUT_LOG") 2> >(tee -a "$FM_HOST_OUTPUT_LOG" >&2)
+SH
+  chmod +x "$repo/bin/fm-supervision-host.sh"
+  cat > "$node_script" <<'EOF'
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const client = { session: { promptAsync: async () => {} } };
+const hooks = await mod.FmPrimaryWatchArm({ client, directory: process.env.WORKTREE, worktree: process.env.WORKTREE });
+const state = `${process.env.FM_HOME}/state`;
+const pidFile = `${state}/.watch.lock/pid`;
+const hostFile = `${state}/.supervision-host`;
+const leftFile = `${state}/.supervision-host-left`;
+const launchLog = process.env.FM_HOST_LAUNCH_LOG;
+const knownPids = new Set();
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const alive = (pid) => {
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const read = (path) => (existsSync(path) ? readFileSync(path, "utf8") : "");
+const rows = (path) => read(path).trim().split("\n").filter(Boolean);
+const watcherPid = () => Number(read(pidFile).trim());
+const hostRows = () => rows(hostFile).map((row) => row.split("\t"));
+const hostPid = () => Number(hostRows().find((row) => row[0] === "host")?.[1] ?? 0);
+const armPid = () => Number(hostRows().find((row) => row[0] === "arm")?.[1] ?? 0);
+const parentPid = (pid) => spawnSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim();
+async function waitFor(predicate, message) {
+  for (let i = 0; i < 1000; i += 1) {
+    if (predicate()) return;
+    await sleep(10);
+  }
+  throw new Error(message);
+}
+
+writeFileSync(`${state}/.lock`, `${process.pid}\n`);
+let sourceHost;
+try {
+  const sourceEnv = { ...process.env, FM_SUPERVISION_HOST_PRIMARY: "claude" };
+  const mirror = spawnSync("bash", [`${process.env.WORKTREE}/bin/fm-host-mirror.sh`, "hook", "claude"], {
+    input: readFileSync(`${process.env.FM_HOME}/mirror-seed.0`),
+    encoding: "utf8",
+    env: sourceEnv,
+  });
+  if (mirror.status !== 0) throw new Error(`the source session mirror could not be seeded: ${mirror.stderr}`);
+  sourceHost = spawn("bash", [process.env.FM_REAL_HOST, "park"], {
+    cwd: process.env.WORKTREE,
+    env: sourceEnv,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  knownPids.add(sourceHost.pid);
+  let sourceOutput = "";
+  sourceHost.stdout.on("data", (chunk) => { sourceOutput += chunk.toString(); });
+  sourceHost.stderr.on("data", (chunk) => { sourceOutput += chunk.toString(); });
+  const sourceClosed = new Promise((resolve) => sourceHost.once("close", (code, signal) => resolve({ code, signal })));
+  await waitFor(
+    () => sourceOutput.includes("watcher: started pid=") || sourceHost.exitCode !== null,
+    `the source host did not start a watcher: ${sourceOutput}; host=${read(hostFile)}; log=${read(`${state}/.supervision-host.log`)}`,
+  );
+  if (!sourceOutput.includes("watcher: started pid=")) {
+    throw new Error(`the source host exited before watcher readiness: ${sourceHost.exitCode}/${sourceHost.signalCode}; output=${sourceOutput}; log=${read(`${state}/.supervision-host.log`)}`);
+  }
+  const sourceWatcher = watcherPid();
+  knownPids.add(sourceWatcher);
+  if (hostPid() !== sourceHost.pid) throw new Error("the source host did not own the initial watcher cycle");
+  writeFileSync(`${state}/demo.status`, `needs-decision [at=${Math.floor(Date.now() / 1000)}]: which export format?\n`);
+  const sourceExit = await sourceClosed;
+  if (sourceExit.code !== 0) throw new Error(`the source host exited before leaving its cycle: ${sourceExit.code}/${sourceExit.signal}: ${sourceOutput}`);
+  await waitFor(() => existsSync(leftFile), `the source host did not leave a detached cycle: ${read(`${state}/.supervision-host.log`)}`);
+  const detachedArm = Number(rows(leftFile)[0]?.split("\t")[0] ?? 0);
+  const detachedWatcher = watcherPid();
+  knownPids.add(detachedArm);
+  knownPids.add(detachedWatcher);
+  const beat = `${state}/.last-watcher-beat`;
+  const sourceLog = read(`${state}/.supervision-host.log`);
+  if (!sourceLog.includes("pass-through\tattended\tmain-only")) {
+    throw new Error(`the source close was not main-only: ${sourceLog}`);
+  }
+  if (!detachedArm || !alive(detachedArm) || !detachedWatcher || !alive(detachedWatcher)) {
+    throw new Error(`the source host did not leave a live detached cycle: arm=${detachedArm}, watcher=${detachedWatcher}, output=${sourceOutput}, log=${sourceLog}`);
+  }
+  if (!existsSync(beat) || Date.now() - statSync(beat).mtimeMs > 5000) {
+    throw new Error("the detached watcher did not have a fresh health beat before adoption");
+  }
+  const drain = spawnSync(process.env.FM_FAKE_CLAUDE, ["-c", '"$0" "$@"', `${process.env.WORKTREE}/bin/fm-wake-drain.sh`], {
+    encoding: "utf8",
+    env: process.env,
+  });
+  const drainOutput = `${drain.stdout}\n${drain.stderr}`;
+  const ack = drainOutput.match(/^WAKE_ACK_REQUIRED: after handling completes run bin\/fm-wake-drain.sh (.*)$/m)?.[1];
+  if (drain.status !== 0 || !ack) throw new Error(`the main-only wake could not be acknowledged: ${drainOutput}`);
+  if (!alive(detachedArm) || !alive(detachedWatcher) || watcherPid() !== detachedWatcher) {
+    throw new Error(`the healthy detached cycle changed after drain: arm=${detachedArm}/${alive(detachedArm)} watcher=${detachedWatcher}/${alive(detachedWatcher)} current=${watcherPid()} drain=${drainOutput} log=${read(`${state}/.supervision-host.log`)}`);
+  }
+  const ackResult = spawnSync(process.env.FM_FAKE_CLAUDE, ["-c", '"$0" "$@"', `${process.env.WORKTREE}/bin/fm-wake-drain.sh`, ...ack.trim().split(/\s+/)], {
+    encoding: "utf8",
+    env: process.env,
+  });
+  if (ackResult.status !== 0) throw new Error(`the main-only wake acknowledgement failed: ${ackResult.stdout}\n${ackResult.stderr}`);
+  if (!alive(detachedArm) || !alive(detachedWatcher) || watcherPid() !== detachedWatcher) {
+    throw new Error(`the healthy detached cycle changed after acknowledgement: arm=${detachedArm}/${alive(detachedArm)} watcher=${detachedWatcher}/${alive(detachedWatcher)} current=${watcherPid()} ack=${ackResult.stdout}\n${ackResult.stderr} log=${read(`${state}/.supervision-host.log`)}`);
+  }
+
+  const ready = globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test", client);
+  await waitFor(() => existsSync(process.env.FM_HOST_HOLD), "the OpenCode successor host was not launched");
+  const launches = rows(launchLog);
+  if (launches.length !== 1 || launches[0] !== "argc=1 args=<park>") {
+    throw new Error(`OpenCode did not launch the successor host without --restart: ${launches.join(" | ")}`);
+  }
+
+  // The OpenCode launch pauses at the executable boundary, so the detached
+  // predecessor cycle can be checked while it is still healthy.
+  if (!alive(detachedArm) || !alive(detachedWatcher) || watcherPid() !== detachedWatcher) {
+    throw new Error(`the healthy detached cycle changed before adoption: arm=${detachedArm}/${alive(detachedArm)} watcher=${detachedWatcher}/${alive(detachedWatcher)} current=${watcherPid()} launches=${launches.join(" | ")} log=${read(`${state}/.supervision-host.log`)}`);
+  }
+
+  writeFileSync(process.env.FM_HOST_RELEASE, "continue\n");
+  const status = await ready;
+  if (status !== "armed") throw new Error(`the OpenCode successor host did not arm: ${status}; output=${read(process.env.FM_HOST_OUTPUT_LOG)}`);
+  await waitFor(
+    () => hostPid() > 0 && alive(watcherPid()) && hostPid() !== sourceHost.pid,
+    "the OpenCode host did not adopt the detached cycle",
+  );
+  await waitFor(() => !alive(detachedArm), `the detached predecessor arm ${detachedArm} was not retired`);
+  const currentHost = hostPid();
+  const currentArm = armPid();
+  const currentWatcher = watcherPid();
+  const supervisionLog = read(`${state}/.supervision-host.log`);
+  if (!supervisionLog.includes(`take-over\tarm=${detachedArm}`)) {
+    throw new Error(`the next host did not take over the recorded arm ${detachedArm}: ${supervisionLog}`);
+  }
+  if (currentHost === sourceHost.pid || !currentArm || parentPid(currentWatcher) !== String(currentArm)) {
+    throw new Error(`the adopted cycle is not owned by the new host: host=${currentHost} arm=${currentArm} watcher=${currentWatcher}`);
+  }
+  if (supervisionLog.includes("rearm-resurface")) {
+    throw new Error(`takeover resurfaced a redundant downtime wake: ${supervisionLog}`);
+  }
+  if (!read(`${state}/.watcher-down`).startsWith("acked:")) {
+    throw new Error(`takeover reopened the handled downtime episode: ${read(`${state}/.watcher-down`)}`);
+  }
+} finally {
+  // Revoking the fixture lock intentionally makes the plugin's final host
+  // close read-only; its expected warning is cleanup noise, not test output.
+  console.warn = () => {};
+  writeFileSync(process.env.FM_HOST_RELEASE, "continue\n");
+  writeFileSync(`${state}/.lock`, "1\n");
+  if (sourceHost && sourceHost.exitCode === null) sourceHost.kill("SIGTERM");
+  for (let round = 0; round < 10; round += 1) {
+    const pids = new Set([...knownPids, hostPid(), armPid(), watcherPid(), Number(rows(leftFile)[0]?.split("\t")[0] ?? 0)]);
+    for (const pid of pids) {
+      if (pid > 1) {
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {
+          // Already exited.
+        }
+      }
+    }
+    await sleep(100);
+  }
+  const survivors = [...new Set([...knownPids, hostPid(), armPid(), watcherPid()])].filter((pid) => pid > 1 && alive(pid));
+  if (survivors.length) throw new Error(`fixture processes survived cleanup: ${survivors.join(",")}`);
+}
+EOF
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_HOST_LAUNCH_LOG="$launch_log" FM_HOST_OUTPUT_LOG="$host_output" FM_HOST_HOLD="$hold" \
+    FM_HOST_RELEASE="$release" FM_REAL_HOST="$ROOT/bin/fm-supervision-host.sh" FM_NODE_SCRIPT="$node_script" \
+    FM_FAKE_CLAUDE="$fakebin/claude" PATH="$fakebin:$PATH" FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 \
+    FM_ARM_CONFIRM_TIMEOUT=30 FM_SUPERVISION_HOST_POLL=1 FM_WATCH_REARM_RETRY_LIMIT=1 \
+    FM_WATCH_REARM_RETRY_BASE_MS=50 FM_WATCH_REARM_RETRY_MAX_MS=100 \
+    "$fakebin/opencode" -c '
+      exec -a opencode node "$FM_NODE_SCRIPT"
+    ' 2>&1)
+  status=$?
+  expect_code 0 "$status" "an opted-in OpenCode host must take over a healthy detached cycle without a redundant restart: $out"
+  [ -z "$out" ] || fail "OpenCode host takeover test printed output: $out"
+  pass "OpenCode host takes over a healthy detached cycle without a downtime resurface"
+}
+
 test_pi_extension_reports_external_healthy_watcher
 test_pi_tool_returns_agent_tool_result
 test_pi_redundant_tool_call_is_owned_noop
@@ -5633,3 +5861,4 @@ test_opencode_watch_arm_coordinates_with_turnend_guard
 test_opencode_healthy_arm_output_does_not_suppress_guard
 test_opencode_overlapping_deliveries_keep_one_live_cycle
 test_opencode_successor_attaches_without_stopping_a_healthy_cycle
+test_opencode_host_takes_over_healthy_detached_cycle
