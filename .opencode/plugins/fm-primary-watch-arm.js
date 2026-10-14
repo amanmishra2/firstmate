@@ -53,6 +53,7 @@ function homeStateFor(paths) {
     state = {
       paths,
       child: null,
+      deliveryTarget: null,
       armStatus: "idle",
       retryTimer: null,
       retryFailures: 0,
@@ -174,14 +175,20 @@ function supervisionNeeded(paths) {
   return result.status === 0;
 }
 
-async function sessionOwnsLock(paths) {
+function sessionLockPid(paths) {
   let lockPid = "";
   try {
     lockPid = readFileSync(`${paths.state}/.lock`, "utf8").trim();
   } catch {
-    return false;
+    return "";
   }
-  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return false;
+  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return "";
+  return lockPid;
+}
+
+async function sessionOwnsLock(paths, expectedLockPid = "") {
+  const lockPid = sessionLockPid(paths);
+  if (!lockPid || (expectedLockPid && lockPid !== expectedLockPid)) return false;
   let pid = String(process.pid);
   for (let i = 0; i < 8; i += 1) {
     if (pid === lockPid) return true;
@@ -303,6 +310,24 @@ async function sendPrompt(paths, client, sessionID, text) {
   });
 }
 
+async function registerDeliveryTarget(state, client, sessionID) {
+  if (!client || !sessionID) return;
+  if (!(await isPrimaryRoot(state.paths.root, state.paths.home))) return;
+  const lockPid = sessionLockPid(state.paths);
+  if (!lockPid || !(await sessionOwnsLock(state.paths, lockPid))) return;
+  state.deliveryTarget = { client, sessionID, lockPid };
+}
+
+async function sendWakePrompt(state, fallbackTarget, text) {
+  const owner = state.deliveryTarget;
+  const ownerIsCurrent = owner && await sessionOwnsLock(state.paths, owner.lockPid);
+  const target = ownerIsCurrent ? owner : fallbackTarget;
+  if (!ownerIsCurrent) {
+    console.warn(`watcher: OpenCode wake owner unresolved; falling back to arming session ${fallbackTarget.sessionID}`);
+  }
+  await sendPrompt(state.paths, target.client, target.sessionID, text);
+}
+
 function confirmHandlingDelivery(paths, recovery) {
   try {
     const result = spawnSync(
@@ -346,19 +371,19 @@ async function deliverActionableWake(state, client, sessionID, message, recovery
           await retireArm(state, state.child);
         }
       }
-      await sendPrompt(state.paths, client, sessionID, wakePrompt(`${message}\n\n${confirmed.detail}`));
+      await sendWakePrompt(state, { client, sessionID }, wakePrompt(`${message}\n\n${confirmed.detail}`));
       return;
     }
   }
-  await sendPrompt(state.paths, client, sessionID, wakePrompt(message));
+  await sendWakePrompt(state, { client, sessionID }, wakePrompt(message));
 }
 
 function wakePrompt(reason) {
   return `WATCHER FIRED - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is plugin-owned.\n\n${reason}`;
 }
 
-function surfaceFailure(paths, client, sessionID, reason) {
-  void sendPrompt(paths, client, sessionID, wakePrompt(reason)).catch(() => {
+function surfaceFailure(state, client, sessionID, reason) {
+  void sendWakePrompt(state, { client, sessionID }, wakePrompt(reason)).catch(() => {
     // OpenCode owns delivery errors; continuity restoration never waits on prompting.
   });
 }
@@ -421,13 +446,13 @@ async function scheduleRetry(state, sessionID, client, reason, predecessorArmPid
   if (state.child || state.retryTimer) return;
   if (!(await sessionOwnsLock(state.paths))) {
     setArmStatus(state, "failed");
-    surfaceFailure(state.paths, client, sessionID, `watcher: FAILED - OpenCode cannot restore continuity because this session no longer owns the lock\n${reason}`);
+    surfaceFailure(state, client, sessionID, `watcher: FAILED - OpenCode cannot restore continuity because this session no longer owns the lock\n${reason}`);
     return;
   }
   state.retryFailures += 1;
   if (state.retryFailures > REARM_RETRY_LIMIT) {
     setArmStatus(state, "failed");
-    surfaceFailure(state.paths, client, sessionID, `watcher: FAILED - OpenCode could not restore watcher continuity after ${REARM_RETRY_LIMIT} retries\n${reason}`);
+    surfaceFailure(state, client, sessionID, `watcher: FAILED - OpenCode could not restore watcher continuity after ${REARM_RETRY_LIMIT} retries\n${reason}`);
     return;
   }
   setArmStatus(state, "retrying");
@@ -435,7 +460,7 @@ async function scheduleRetry(state, sessionID, client, reason, predecessorArmPid
     if (state.retryTimer === timer) state.retryTimer = null;
     void ensureArm(state, sessionID, client, predecessorArmPid).then((status) => {
       if (["armed", "starting", "wake"].includes(status)) return;
-      surfaceFailure(state.paths, client, sessionID, `watcher: FAILED - OpenCode could not launch a continuity retry (${status})`);
+      surfaceFailure(state, client, sessionID, `watcher: FAILED - OpenCode could not launch a continuity retry (${status})`);
     });
   }, retryDelay(state.retryFailures));
   timer.unref();
@@ -528,7 +553,7 @@ function spawnArm(state, sessionID, client, predecessorArmPid = "") {
       }).catch((error) => {
         if (state.restorationInFlight === restoration) state.restorationInFlight = null;
         surfaceFailure(
-          paths,
+          state,
           client,
           sessionID,
           `watcher: FAILED - OpenCode could not deliver an actionable wake\n${String(error?.message ?? error)}`,
@@ -597,18 +622,23 @@ async function ensureArm(state, sessionID, client, predecessorArmPid = "", inclu
   return armAttempt(await waitForArmReady(state, armChild), armChild, includeArmChild);
 }
 
+async function ensureArmForSession(state, sessionID, client) {
+  await registerDeliveryTarget(state, client, sessionID);
+  return ensureArm(state, sessionID, client);
+}
+
 export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {
   const root = worktree ? resolvePath(worktree) : await resolveRoot(directory);
   const paths = effectivePaths(root);
   const state = homeStateFor(paths);
-  sharedCoordinator().ensureArmed = (sessionID, activeClient) => ensureArm(state, sessionID, activeClient ?? client);
+  sharedCoordinator().ensureArmed = (sessionID, activeClient) => ensureArmForSession(state, sessionID, activeClient ?? client);
 
   return {
     event: async ({ event }) => {
       if (event.type !== "session.idle") return;
       const sessionID = event.properties?.sessionID;
       if (!sessionID) return;
-      void ensureArm(state, sessionID, client);
+      void ensureArmForSession(state, sessionID, client);
     },
   };
 };

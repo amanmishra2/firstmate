@@ -5038,8 +5038,115 @@ EOF
 )
   status=$?
   expect_code 0 "$status" "OpenCode close handler must verify session-lock ownership before successor launch"
-  [ -z "$out" ] || fail "OpenCode close lock test printed output: $out"
+  case "$out" in
+    *"watcher: OpenCode wake owner unresolved; falling back to arming session session-test"*) ;;
+    *) fail "OpenCode close lock test did not log its unresolved-owner fallback: $out" ;;
+  esac
   pass "OpenCode close handler verifies session-lock ownership before successor launch"
+}
+
+test_opencode_wake_delivery_tracks_the_current_lock_owner() {
+  local plugin repo home log release out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-owner-target-root"
+  home="$TMP_ROOT/opencode-owner-target-home"
+  log="$TMP_ROOT/opencode-owner-target.log"
+  release="$TMP_ROOT/opencode-owner-target.release"
+  mkdir -p "$repo/bin" "$home/state" "$home/config" "$release"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  exit 0
+fi
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=gen-%s\n' "$$" "$$"
+while [ ! -e "${FM_RELEASE_DIR:?}/$$" ]; do sleep 0.02; done
+printf 'signal: owner target wake %s\n' "$$"
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RELEASE_DIR="$release" node 2>&1 <<'EOF'
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const url = pathToFileURL(process.env.PLUGIN).href;
+const modA = await import(url);
+const modB = await import(`${url}?owner-target`);
+const prompts = [];
+const makeClient = (tag) => ({
+  session: {
+    promptAsync: async (request) => prompts.push({ tag, id: request.path.id, text: request.body.parts[0].text }),
+  },
+});
+const clientA = makeClient("A");
+const clientB = makeClient("B");
+const hooksA = await modA.FmPrimaryWatchArm({ client: clientA, directory: process.env.WORKTREE, worktree: process.env.WORKTREE });
+await modB.FmPrimaryWatchArm({ client: clientB, directory: process.env.WORKTREE, worktree: process.env.WORKTREE });
+const lock = `${process.env.FM_HOME}/state/.lock`;
+const release = (pid) => writeFileSync(`${process.env.FM_RELEASE_DIR}/${pid}`, "release\n");
+const rows = () => (existsSync(process.env.FM_ARM_LOG) ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter(Boolean) : []);
+const pids = () => rows().map((row) => Number(row.slice("arm=".length)));
+async function waitFor(predicate, message) {
+  for (let i = 0; i < 500; i += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+}
+writeFileSync(lock, `${process.pid}\n`);
+const idle = (sessionID) => ({ event: { type: "session.idle", properties: { sessionID } } });
+const otherOwner = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+try {
+  await hooksA.event(idle("session-A"));
+  await waitFor(() => pids().length === 1, "session A did not start the shared arm");
+  writeFileSync(lock, `${otherOwner.pid}\n`);
+  const nonOwnerStatus = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-B", clientB);
+  if (nonOwnerStatus !== "read-only") throw new Error(`non-owner load returned ${nonOwnerStatus}`);
+  writeFileSync(lock, `${process.pid}\n`);
+  release(pids()[0]);
+  await waitFor(() => prompts.length === 1 && pids().length === 2, "first wake was not delivered after successor readiness");
+  if (prompts[0].tag !== "A" || prompts[0].id !== "session-A") {
+    throw new Error(`non-owner load changed delivery target to ${prompts[0].tag}/${prompts[0].id}`);
+  }
+  const ownerStatus = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-B", clientB);
+  if (ownerStatus !== "armed") throw new Error(`new owner load returned ${ownerStatus}`);
+  release(pids()[1]);
+  await waitFor(() => prompts.length === 2 && pids().length === 3, "updated owner did not receive the next wake");
+  if (prompts[1].tag !== "B" || prompts[1].id !== "session-B") {
+    throw new Error(`updated owner target was not used: ${prompts[1].tag}/${prompts[1].id}`);
+  }
+  writeFileSync(lock, `${otherOwner.pid}\n`);
+  release(pids()[2]);
+  await waitFor(() => prompts.length === 3, "wake with unresolved owner was not delivered");
+  if (prompts[2].tag !== "A" || prompts[2].id !== "session-A") {
+    throw new Error(`unresolved wake did not fall back to its arming session: ${prompts[2].tag}/${prompts[2].id}`);
+  }
+  if (!prompts[2].text.includes("no longer owns the lock")) {
+    throw new Error(`unresolved-owner wake omitted the restoration failure: ${prompts[2].text}`);
+  }
+} finally {
+  for (const pid of pids()) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      // Already exited.
+    }
+  }
+  otherOwner.kill("SIGTERM");
+}
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode wake delivery must follow the current lock owner and log fallback"
+  case "$out" in
+    *"watcher: OpenCode wake owner unresolved; falling back to arming session session-A"*) ;;
+    *) fail "OpenCode owner-target test did not log its unresolved-owner fallback: $out" ;;
+  esac
+  pass "OpenCode wake delivery follows the current owner and logs unresolved fallback"
 }
 
 test_opencode_watch_arm_coordinates_with_turnend_guard() {
@@ -5521,6 +5628,7 @@ test_opencode_late_unretired_close_resumes_supervision
 test_opencode_empty_close_retries_instead_of_disappearing
 test_opencode_established_empty_close_honors_retry_limit
 test_opencode_actionable_close_rechecks_session_lock
+test_opencode_wake_delivery_tracks_the_current_lock_owner
 test_opencode_watch_arm_coordinates_with_turnend_guard
 test_opencode_healthy_arm_output_does_not_suppress_guard
 test_opencode_overlapping_deliveries_keep_one_live_cycle
