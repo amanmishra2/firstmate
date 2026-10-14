@@ -5593,7 +5593,6 @@ test_opencode_host_takes_over_healthy_detached_cycle() {
     ln -s "$source" "$repo/bin/$name"
   done
   printf 'project=demo\nwindow=fm-demo\nharness=opencode\n' > "$home/state/demo.meta"
-  : > "$home/state/demo.status"
   : > "$home/config/supervision-host"
   cat > "$fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
