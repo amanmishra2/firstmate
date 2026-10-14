@@ -1032,7 +1032,7 @@ test_opencode_v2_refuses_a_model_it_cannot_pin() {
 }
 
 test_opencode_dead_launch_refuses_the_spawn() {
-  local rec id out status windows timeout_args
+  local rec id out status windows timeout_args sleep_args
   id=profile-opencode-dead-z7h
   rec=$(make_spawn_case profile-opencode-dead opencode "$id")
   read_case_record "$rec"
@@ -1085,6 +1085,43 @@ SH
   expect_code 1 "$status" "a dead launch with an unreachable confirmation threshold must still refuse"
   assert_contains "$out" "the opencode launch exited immediately" \
     "an unreachable dead-confirm threshold bypassed readiness"
+
+  id=profile-opencode-overflow-budget-z7n
+  rec=$(make_spawn_case profile-opencode-overflow-budget opencode "$id")
+  read_case_record "$rec"
+  windows="$CASE_DIR/windows.txt"
+  : > "$windows"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
+    FM_FAKE_PANE_CURRENT_COMMAND=zsh \
+    FM_OPENCODE_READY_POLLS=9223372036854775808 FM_OPENCODE_POLL_INTERVAL=0 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model anthropic/claude-sonnet-4-5 2>&1)
+  status=$?
+  expect_code 1 "$status" "an overflow-sized readiness budget must still refuse the dead spawn"
+  assert_contains "$out" "the opencode launch exited immediately" \
+    "an overflow-sized readiness budget bypassed readiness"
+
+  id=profile-opencode-interval-cap-z7o
+  rec=$(make_spawn_case profile-opencode-interval-cap opencode "$id")
+  read_case_record "$rec"
+  windows="$CASE_DIR/windows.txt"
+  sleep_args="$CASE_DIR/sleep-args.txt"
+  : > "$windows"
+  : > "$sleep_args"
+  fm_test_fake_sleep_log "$FAKEBIN_DIR"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
+    FM_FAKE_PANE_CURRENT_COMMAND=zsh FM_SLEEP_LOG="$sleep_args" \
+    FM_OPENCODE_READY_POLLS=2 FM_OPENCODE_POLL_INTERVAL=60.1 FM_OPENCODE_READY_DEAD_CONFIRM=2 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model anthropic/claude-sonnet-4-5 2>&1)
+  status=$?
+  expect_code 1 "$status" "$id must still refuse a dead launch"
+  assert_contains "$out" "the opencode launch exited immediately" \
+    "an overlong poll interval changed the dead-launch refusal"
+  grep -Fqx '0.5' "$sleep_args" || fail "an overlong opencode poll interval did not fall back to its default"
+  if grep -Fqx '60.1' "$sleep_args"; then
+    fail "an overlong opencode poll interval reached sleep"
+  fi
   pass "an immediately-dead opencode launch refuses the spawn loudly"
 }
 

@@ -2181,19 +2181,32 @@ pi_supports_approve() {
 # (opencode_agent_config_fragment below) on both generations.
 opencode_positive_integer_or_default() {
   local value=${1-} fallback=$2
-  case "$value" in
-  '' | *[!0-9]*) printf '%s\n' "$fallback" ;;
-  *[1-9]*)
+  if [[ "$value" =~ ^[0-9]{1,7}$ ]]; then
     while [ "${value#0}" != "$value" ]; do value=${value#0}; done
-    printf '%s\n' "$value"
-    ;;
-  *) printf '%s\n' "$fallback" ;;
-  esac
+    if [ -n "$value" ]; then
+      printf '%s\n' "$value"
+    else
+      printf '%s\n' "$fallback"
+    fi
+  else
+    printf '%s\n' "$fallback"
+  fi
 }
 
 opencode_nonnegative_number_or_default() {
-  local value=${1-} fallback=$2
+  local value=${1-} fallback=$2 integer_part fractional_part
   if [[ "$value" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)$ ]]; then
+    integer_part=${value%%.*}
+    while [ "${integer_part#0}" != "$integer_part" ]; do integer_part=${integer_part#0}; done
+    [ -n "$integer_part" ] || integer_part=0
+    [ "${#integer_part}" -le 2 ] || { printf '%s\n' "$fallback"; return; }
+    [ "$integer_part" -le 60 ] || { printf '%s\n' "$fallback"; return; }
+    fractional_part=
+    case "$value" in *.*) fractional_part=${value#*.} ;; esac
+    if [ "$integer_part" -eq 60 ] && [[ "$fractional_part" == *[!0]* ]]; then
+      printf '%s\n' "$fallback"
+      return
+    fi
     printf '%s\n' "$value"
   else
     printf '%s\n' "$fallback"
