@@ -5783,6 +5783,7 @@ try {
   if (survivors.length) throw new Error(`fixture processes survived cleanup: ${survivors.join(",")}`);
 }
 EOF
+  # shellcheck disable=SC2016 # The fake OpenCode command must remain literal.
   out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" \
     FM_CONFIG_OVERRIDE="$home/config" FM_HOST_LAUNCH_LOG="$launch_log" FM_HOST_OUTPUT_LOG="$host_output" FM_HOST_HOLD="$hold" \
     FM_HOST_RELEASE="$release" FM_REAL_HOST="$ROOT/bin/fm-supervision-host.sh" FM_NODE_SCRIPT="$node_script" \
