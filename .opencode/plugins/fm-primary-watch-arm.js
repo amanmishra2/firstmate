@@ -6,7 +6,7 @@ import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 // Supervision host: a home opted in with config/supervision-host
 // (docs/configuration.md "Supervision host" owns the gate, which
 // bin/fm-supervision-engine-lib.sh enabled answers; config/supervision-host-off opts out) spawns
-// bin/fm-supervision-host.sh park --restart in the arm's place, which takes
+// bin/fm-supervision-host.sh park in the arm's place, which takes
 // away-posture wakes itself and closes only when main is needed; its header
 // owns the output read here. A "supervision-host:" line is actionable like a
 // wake line, and the delivered message carries every such line in order while
@@ -310,14 +310,6 @@ async function sendPrompt(paths, client, sessionID, text) {
   });
 }
 
-async function registerDeliveryTarget(state, client, sessionID) {
-  if (!client || !sessionID) return;
-  if (!(await isPrimaryRoot(state.paths.root, state.paths.home))) return;
-  const lockPid = sessionLockPid(state.paths);
-  if (!lockPid || !(await sessionOwnsLock(state.paths, lockPid))) return;
-  state.deliveryTarget = { client, sessionID, lockPid };
-}
-
 async function sendWakePrompt(state, fallbackTarget, text) {
   const owner = state.deliveryTarget;
   const ownerIsCurrent = owner && await sessionOwnsLock(state.paths, owner.lockPid);
@@ -582,10 +574,7 @@ function spawnArm(state, sessionID, client, predecessorArmPid = "") {
   return armChild;
 }
 
-async function beginArm(state, sessionID, client, predecessorArmPid) {
-  if (!sessionID) return { status: "skipped", armChild: null };
-  if (!(await isPrimaryRoot(state.paths.root, state.paths.home))) return { status: "not-primary", armChild: null };
-  if (!(await sessionOwnsLock(state.paths))) return { status: "read-only", armChild: null };
+function beginArm(state, sessionID, client, predecessorArmPid) {
   if (state.child) return { status: "existing", armChild: state.child };
   if (state.retryTimer) return { status: "retrying", armChild: null };
   if (!shouldArm(state.paths)) return { status: "not-needed", armChild: null };
@@ -596,10 +585,20 @@ function armAttempt(status, armChild, includeArmChild) {
   return includeArmChild ? { status, armChild } : status;
 }
 
-async function ensureArm(state, sessionID, client, predecessorArmPid = "", includeArmChild = false) {
+async function ensureArm(state, sessionID, client, predecessorArmPid = "", includeArmChild = false, updateDeliveryTarget = false) {
+  if (!sessionID) return armAttempt("skipped", null, includeArmChild);
+  if (!(await isPrimaryRoot(state.paths.root, state.paths.home))) {
+    return armAttempt("not-primary", null, includeArmChild);
+  }
+  const lockPid = sessionLockPid(state.paths);
+  if (!lockPid || !(await sessionOwnsLock(state.paths, lockPid))) {
+    return armAttempt("read-only", null, includeArmChild);
+  }
+  if (updateDeliveryTarget && client) state.deliveryTarget = { client, sessionID, lockPid };
+
   let launchResult = null;
   if (!state.launchInFlight) {
-    const launch = beginArm(state, sessionID, client, predecessorArmPid);
+    const launch = Promise.resolve().then(() => beginArm(state, sessionID, client, predecessorArmPid));
     state.launchInFlight = launch;
     try {
       launchResult = await launch;
@@ -617,8 +616,7 @@ async function ensureArm(state, sessionID, client, predecessorArmPid = "", inclu
 }
 
 async function ensureArmForSession(state, sessionID, client) {
-  await registerDeliveryTarget(state, client, sessionID);
-  return ensureArm(state, sessionID, client);
+  return ensureArm(state, sessionID, client, "", false, true);
 }
 
 export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {
