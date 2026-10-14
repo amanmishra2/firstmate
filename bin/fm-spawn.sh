@@ -4913,9 +4913,8 @@ EOF
 // Scoping latches the first session that reports activity (the worker's main
 // session - a subagent child session can only start while the main session is
 // already busy) and ignores other sessions' status until the latched session
-// settles, so a child's idle can never clear the worker's busy state. Every
-// turn end touches the turn-ended marker, which stays the watcher's wake
-// NOTIFICATION, never current-state truth.
+// settles, so a child's idle can never clear the worker's busy state.
+// When notifyTurnEnd is true, every turn end touches the turn-ended marker, which stays the watcher's wake NOTIFICATION, never current-state truth.
 import { execFile } from "node:child_process";
 const notifyTurnEnd = $busy_notify_turnend;
 const busyEvent = (state, event) =>
