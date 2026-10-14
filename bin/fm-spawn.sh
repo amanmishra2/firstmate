@@ -4898,13 +4898,19 @@ EOF
     cat >"$WT/.opencode/plugins/fm-busy-state.js" <<EOF
 // Firstmate semantic busy-state events + turn-end notification; written by
 // fm-spawn under the contract owned by bin/fm-busy-lib.sh.
-// Semantic state comes from OpenCode's session.status events: busy and retry
-// are active, idle is inactive. Scoping latches the first session that
-// reports activity (the worker's main session - a subagent child session can
-// only start while the main session is already busy) and ignores other
-// sessions' status until the latched session settles, so a child's idle can
-// never clear the worker's busy state. The session.idle touch stays the
-// watcher's wake NOTIFICATION, never current-state truth.
+// One file serves both OpenCode plugin generations: the v1 named export and a
+// v2 default export ({ id, setup(ctx) }). OpenCode 2.x skips a plugin without
+// the default export, which left this wiring dark on v2.
+// Semantic state comes from the session lifecycle: on v1 session.status, where
+// busy and retry are active and idle is inactive; on v2 the session.execution
+// bracket, where started is active and the terminal succeeded, failed, or
+// interrupted event is the idle equivalent (v2 publishes no session.idle).
+// Scoping latches the first session that reports activity (the worker's main
+// session - a subagent child session can only start while the main session is
+// already busy) and ignores other sessions' status until the latched session
+// settles, so a child's idle can never clear the worker's busy state. Every
+// turn end touches the turn-ended marker, which stays the watcher's wake
+// NOTIFICATION, never current-state truth.
 import { execFile } from "node:child_process";
 const notifyTurnEnd = $busy_notify_turnend;
 const busyEvent = (state, event) =>
@@ -4914,7 +4920,11 @@ const busyEvent = (state, event) =>
       "--gen", "$BUSY_GEN", "--source", "opencode-plugin", "--event", event,
     ], () => resolve());
   });
-export const FmBusyState = async () => {
+const touchTurnEnd = () =>
+  new Promise((resolve) => {
+    execFile("touch", ["$TURNEND"], () => resolve());
+  });
+const fmBusyHooks = () => {
   let activeSession = null;
   return {
     event: async ({ event }) => {
@@ -4937,14 +4947,53 @@ export const FmBusyState = async () => {
           activeSession = null;
           await busyEvent("idle", "session-idle");
         }
-        if (notifyTurnEnd) {
-          await new Promise((resolve) => {
-            execFile("touch", ["$TURNEND"], () => resolve());
-          });
-        }
+        if (notifyTurnEnd) await touchTurnEnd();
       }
     },
   };
+};
+export const FmBusyState = async () => fmBusyHooks();
+// v2 events carry their payload under data rather than properties, and a turn
+// ends with a terminal session.execution.* event instead of session.idle.
+const v2TurnEnd = new Set([
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+]);
+const v1Event = (event) => {
+  const properties = event.data ?? {};
+  if (v2TurnEnd.has(event.type)) return { type: "session.idle", properties };
+  if (event.type === "session.execution.started") {
+    return {
+      type: "session.status",
+      properties: { sessionID: properties.sessionID, status: { type: "busy" } },
+    };
+  }
+  return { type: event.type, properties };
+};
+export default {
+  id: "fm-busy-state",
+  async setup(ctx) {
+    const hooks = fmBusyHooks();
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          try {
+            await hooks.event({ event: v1Event(event) });
+          } catch {}
+        }
+        if (!controller.signal.aborted) {
+          console.error("[fm-busy-state] OpenCode v2 event subscription ended unexpectedly");
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("[fm-busy-state] OpenCode v2 event subscription failed: " + error);
+        }
+      }
+    })();
+    return () => controller.abort();
+  },
 };
 EOF
     exclude_path '.opencode/plugins/fm-busy-state.js'
