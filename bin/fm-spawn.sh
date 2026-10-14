@@ -2179,8 +2179,30 @@ pi_supports_approve() {
 # refuses before it starts. That is the safe direction, because the model is
 # never lost with the flag: it rides the launch's OPENCODE_CONFIG_CONTENT JSON
 # (opencode_agent_config_fragment below) on both generations.
+opencode_positive_integer_or_default() {
+  local value=${1-} fallback=$2
+  case "$value" in
+  '' | *[!0-9]*) printf '%s\n' "$fallback" ;;
+  *[1-9]*)
+    while [ "${value#0}" != "$value" ]; do value=${value#0}; done
+    printf '%s\n' "$value"
+    ;;
+  *) printf '%s\n' "$fallback" ;;
+  esac
+}
+
+opencode_nonnegative_number_or_default() {
+  local value=${1-} fallback=$2
+  if [[ "$value" =~ ^([0-9]+([.][0-9]*)?|[.][0-9]+)$ ]]; then
+    printf '%s\n' "$value"
+  else
+    printf '%s\n' "$fallback"
+  fi
+}
+
 opencode_supports_model_flag() {  # <executable>
-  local executable=$1 help runner bound=${FM_OPENCODE_PROBE_TIMEOUT:-10}
+  local executable=$1 help runner bound
+  bound=$(opencode_positive_integer_or_default "${FM_OPENCODE_PROBE_TIMEOUT:-}" 10)
   runner=
   [ -n "$executable" ] && [ -x "$executable" ] || return 1
   if command -v timeout >/dev/null 2>&1; then runner=timeout
@@ -4764,10 +4786,15 @@ OPENCODE_READY_FAILURE_DETAIL=
 
 opencode_wait_for_ready() {
   local state i=0 saw_alive=0 dead_streak=0
-  local polls=${FM_OPENCODE_READY_POLLS:-16}
-  local interval=${FM_OPENCODE_POLL_INTERVAL:-0.5}
-  local confirm=${FM_OPENCODE_READY_DEAD_CONFIRM:-12}
-  local settle=${FM_OPENCODE_SETTLE_POLLS:-3}
+  local polls interval confirm settle
+  polls=$(opencode_positive_integer_or_default "${FM_OPENCODE_READY_POLLS:-}" 16)
+  interval=$(opencode_nonnegative_number_or_default "${FM_OPENCODE_POLL_INTERVAL:-}" 0.5)
+  confirm=$(opencode_positive_integer_or_default "${FM_OPENCODE_READY_DEAD_CONFIRM:-}" 12)
+  settle=$(opencode_positive_integer_or_default "${FM_OPENCODE_SETTLE_POLLS:-}" 3)
+  if [ "$confirm" -gt "$polls" ]; then
+    polls=16
+    confirm=12
+  fi
   while [ "$i" -lt "$polls" ]; do
     state=$(fm_backend_agent_state "$BACKEND" "$T") || state=unknown
     case "$state" in

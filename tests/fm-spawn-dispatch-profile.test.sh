@@ -1032,7 +1032,7 @@ test_opencode_v2_refuses_a_model_it_cannot_pin() {
 }
 
 test_opencode_dead_launch_refuses_the_spawn() {
-  local rec id out status windows
+  local rec id out status windows timeout_args
   id=profile-opencode-dead-z7h
   rec=$(make_spawn_case profile-opencode-dead opencode "$id")
   read_case_record "$rec"
@@ -1042,10 +1042,21 @@ test_opencode_dead_launch_refuses_the_spawn() {
   # window inventory lists the window the spawn itself created, and its
   # foreground command is a shell.
   windows="$CASE_DIR/windows.txt"
+  timeout_args="$FAKEBIN_DIR/timeout-args.txt"
   : > "$windows"
-  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
+  cat > "$FAKEBIN_DIR/timeout" <<'SH'
+#!/usr/bin/env bash
+if [ "${2##*/}" = opencode ] && [ "${3:-}" = --help ]; then
+  printf '%s\n' "$1" >> "${PATH%%:*}/timeout-args.txt"
+fi
+shift
+exec "$@"
+SH
+  chmod +x "$FAKEBIN_DIR/timeout"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 \
+    FM_OPENCODE_PROBE_TIMEOUT=0 FM_FAKE_WINDOW_STATE="$windows" \
     FM_FAKE_PANE_CURRENT_COMMAND=zsh \
-    FM_OPENCODE_READY_POLLS=6 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_READY_DEAD_CONFIRM=2 \
+    FM_OPENCODE_READY_POLLS=0 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_READY_DEAD_CONFIRM=2 \
     run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
     --model anthropic/claude-sonnet-4-5 2>&1)
   status=$?
@@ -1056,8 +1067,24 @@ test_opencode_dead_launch_refuses_the_spawn() {
     "a dead opencode launch must not report a successful spawn"
   assert_grep ": the opencode launch exited immediately" "$HOME_DIR/state/$id.status" \
     "the dead-launch refusal was not recorded in the task status"
+  [ "$(cat "$timeout_args")" = 10 ] || fail "an invalid opencode probe timeout reached the help runner"
   [ "$(fm_busy_classify tmux fake:w opencode "$id" "$HOME_DIR/state")" = "unknown missing" ] \
     || fail "a dead opencode launch left its task classified busy"
+
+  id=profile-opencode-short-budget-z7m
+  rec=$(make_spawn_case profile-opencode-short-budget opencode "$id")
+  read_case_record "$rec"
+  windows="$CASE_DIR/windows.txt"
+  : > "$windows"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
+    FM_FAKE_PANE_CURRENT_COMMAND=zsh \
+    FM_OPENCODE_READY_POLLS=1 FM_OPENCODE_POLL_INTERVAL=0 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model anthropic/claude-sonnet-4-5 2>&1)
+  status=$?
+  expect_code 1 "$status" "a dead launch with an unreachable confirmation threshold must still refuse"
+  assert_contains "$out" "the opencode launch exited immediately" \
+    "an unreachable dead-confirm threshold bypassed readiness"
   pass "an immediately-dead opencode launch refuses the spawn loudly"
 }
 
@@ -1075,7 +1102,7 @@ test_opencode_tui_that_dies_after_starting_refuses_the_spawn() {
   : > "$windows"
   out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
     FM_FAKE_PANE_CURRENT_COMMANDS=opencode,zsh FM_FAKE_PANE_COMMAND_COUNTER="$counter" \
-    FM_OPENCODE_READY_POLLS=6 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_SETTLE_POLLS=2 \
+    FM_OPENCODE_READY_POLLS=6 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_SETTLE_POLLS=0 \
     run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
     --model anthropic/claude-sonnet-4-5 2>&1)
   status=$?
@@ -1092,22 +1119,34 @@ test_opencode_tui_that_dies_after_starting_refuses_the_spawn() {
 }
 
 test_opencode_live_tui_and_indeterminate_pane_do_not_refuse() {
-  local rec id out status windows
+  local rec id out status windows counter sleep_args
   id=profile-opencode-live-z7j
   rec=$(make_spawn_case profile-opencode-live opencode "$id")
   read_case_record "$rec"
 
   windows="$CASE_DIR/windows.txt"
+  counter="$CASE_DIR/command-count"
+  sleep_args="$FAKEBIN_DIR/sleep-args.txt"
   : > "$windows"
+  cat > "$FAKEBIN_DIR/sleep" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "${PATH%%:*}/sleep-args.txt"
+exit 0
+SH
+  chmod +x "$FAKEBIN_DIR/sleep"
   out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
-    FM_FAKE_PANE_CURRENT_COMMAND=opencode \
-    FM_OPENCODE_READY_POLLS=6 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_READY_DEAD_CONFIRM=2 \
+    FM_FAKE_PANE_CURRENT_COMMANDS=zsh,opencode FM_FAKE_PANE_COMMAND_COUNTER="$counter" \
+    FM_OPENCODE_READY_POLLS=6 FM_OPENCODE_POLL_INTERVAL=-1 FM_OPENCODE_READY_DEAD_CONFIRM=0 \
     run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
     --model openai/gpt-5.6-sol --effort xhigh 2>&1)
   status=$?
   expect_code 0 "$status" "a live opencode TUI must not be refused: $out"
   assert_contains "$out" "spawned $id harness=opencode" \
     "a live opencode TUI did not report a successful spawn"
+  grep -Fqx '0.5' "$sleep_args" || fail "an invalid opencode poll interval did not fall back to its default"
+  if grep -Fqx -- '-1' "$sleep_args"; then
+    fail "an invalid opencode poll interval reached sleep"
+  fi
 
   # A pane the classifier cannot attribute is no verdict at all, so the spawn
   # keeps the behavior it had before the readiness gate existed.
