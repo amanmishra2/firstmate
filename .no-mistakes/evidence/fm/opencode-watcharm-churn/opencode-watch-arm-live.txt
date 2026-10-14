@@ -1,0 +1,81 @@
+OpenCode watch-arm live validation
+Date: 2026-10-14
+Runtime: OpenCode 1.18.29, private tmux socket fm-lab, disposable local model endpoint
+
+=== ordinary arm: captured TUI excerpt ===
+Burst alpha: reply exactly LAB-OK.
+LAB-OK
+Burst beta: reply exactly LAB-OK.
+LAB-OK
+FIRSTMATE_OP: v1 watcher: WATCHER FIRED - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is plugin-owned.
+signal: [lab]/state/live-alpha.status [lab]/state/live-beta.status [lab]/state/live-gamma.status
+LAB-OK
+
+=== ordinary arm: observed cycle state ===
+Before the status burst, state/.watch.lock/pid was 97585 and remained 97585 across the two extra OpenCode turns.
+Three status files produced one TUI wake prompt and six durable queue records (two signal batches for each file).
+The observed exit ledger recorded watcher 97585 ending with reason=actionable-signal and successor=started:21377; the current state/.watch.lock/pid was 21377.
+
+=== opted-in host: captured live TUI pane ===
+
+  ┃
+  ┃  Start the opted-in supervision host fixture. Reply exactly LAB-OK.
+  ┃
+
+     LAB-OK
+
+     ▣  Build · Deterministic lab model · 841ms
+
+  ┃
+  ┃  ⁣ FIRSTMATE_OP: v1 watcher: WATCHER FIRED - drain queued wakes with bin/fm-wake-drain.sh and handle the reported
+  ┃  wake. Watcher continuity is plugin-owned.
+  ┃
+  ┃  signal: [lab]/state/host-alpha.status /var/folders/rz/
+  ┃  r_7y_j8903x7clhnpvydlpd00000gn/T//fm-lab.h1rUsN/state/host-beta.status /var/folders/rz/
+  ┃  r_7y_j8903x7clhnpvydlpd00000gn/T//fm-lab.h1rUsN/state/host-gamma.status
+  ┃
+
+     LAB-OK
+
+     ▣  Build · Deterministic lab model · 65ms
+
+
+
+
+
+
+
+
+
+
+
+  ┃
+  ┃
+  ┃
+  ┃  Build · Deterministic lab model Disposable local model
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+   /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y0FCZWNTSRTT22TCYW16RZ/.tmp-live-      tab agentsctrl+p
+   opencode-primary                                                                                     commands
+
+
+=== opted-in host log ===
+1792012391	start	gen=host-54112-1792012391	primary=opencode
+1792012407	pass-through	attended	no supervision engine	signal: [lab]/state/host-alpha.status [lab]/state/host-beta.status [lab]/state/host-gamma.status
+1792012407	start	gen=host-62257-1792012407	primary=opencode
+
+=== host and watcher records ===
+host	62257	Wed Oct 14 14:13:27 2026     bash /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y0FCZWNTSRTT22TCYW16RZ/.tmp-live-opencode-primary/bin/fm-supervision-host.sh park
+arm	62395	Wed Oct 14 14:13:27 2026     bash /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y0FCZWNTSRTT22TCYW16RZ/.tmp-live-opencode-primary/bin/fm-watch-arm.sh
+62441
+
+arm_pid=54238	watcher_pid=54287	origin=started	started_at=1792012391	ended_at=1792012406	exit_code=0	signal=none	reason=actionable-signal	beacon_age=3	lock_before=pid:54287|identity:Wed Oct 14 14:13:11 2026     bash /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y0FCZWNTSRTT22TCYW16RZ/.tmp-live-opencode-primary/bin/fm-watch.sh	lock_after=pid:none|identity:none	successor=none
+
+=== current runtime processes ===
+62257 53018 S+   bash /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y0FCZWNTSRTT22TCYW16RZ/.tmp-live-opencode-primary/bin/fm-supervision-host.sh park
+62395 62257 S+   bash /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y0FCZWNTSRTT22TCYW16RZ/.tmp-live-opencode-primary/bin/fm-watch-arm.sh
+62441 62395 S+   bash /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y0FCZWNTSRTT22TCYW16RZ/.tmp-live-opencode-primary/bin/fm-watch.sh
+
+=== retired first host cycle processes (no rows means retired) ===
+
+=== host engine capability ===
+claude executable is not on PATH

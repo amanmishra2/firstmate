@@ -1,0 +1,4 @@
+ok - OpenCode overlapping deliveries keep one live cycle and retire predecessors
+ok - OpenCode successors attach to a healthy cycle without stopping it
+ok - OpenCode wake delivery follows the current owner and logs unresolved fallback
+ok - OpenCode host takes over a healthy detached cycle without a downtime resurface
