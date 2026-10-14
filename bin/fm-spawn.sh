@@ -4907,8 +4907,9 @@ EOF
 // bracket, where started is active and the terminal succeeded, failed, or
 // non-shutdown interrupted event is the idle equivalent (v2 publishes no
 // session.idle).
-// The v2 event stream is server-wide, so every event is first resolved to its
-// session's own location and anything outside this worktree is ignored.
+// The v2 event stream is server-wide, so supported execution events are first
+// resolved to their session's own location and anything outside this worktree
+// is ignored.
 // Scoping latches the first session that reports activity (the worker's main
 // session - a subagent child session can only start while the main session is
 // already busy) and ignores other sessions' status until the latched session
@@ -4981,13 +4982,10 @@ const v2Properties = (event, sessionID) => ({
 const v1Event = (event, sessionID) => {
   const properties = v2Properties(event, sessionID);
   if (isV2TurnEnd(event)) return { type: "session.idle", properties };
-  if (event.type === "session.execution.started") {
-    return {
-      type: "session.status",
-      properties: { ...properties, status: { type: "busy" } },
-    };
-  }
-  return { type: event.type, properties };
+  return {
+    type: "session.status",
+    properties: { ...properties, status: { type: "busy" } },
+  };
 };
 export default {
   id: "fm-busy-state",
@@ -5001,11 +4999,11 @@ export default {
     // locations publish into the same subscription, and the
     // session.execution.* bracket carries no location, so without a scope a
     // foreign session could latch this worktree's busy state or touch its
-    // notification marker. Resolve every event to its session's own location
-    // - directly from a located event's envelope, or once per session through
-    // ctx.session.get for the unlocated execution bracket - and ignore other
-    // locations, mirroring the v1 per-location stream this plugin is written
-    // against.
+    // notification marker. Resolve supported execution events to their
+    // session's own location - directly from a located event's envelope, or
+    // through ctx.session.get for each unlocated execution event - and ignore
+    // other locations, mirroring the v1 per-location stream this plugin is
+    // written against.
     const normalizeDirectory = (directory) => {
       if (typeof directory !== "string" || directory.length === 0) return "";
       const normalized = directory.replace(/\/+$/, "");
@@ -5016,27 +5014,34 @@ export default {
       ownDirectory !== "" && normalizeDirectory(directory) === ownDirectory;
     const sessionLocations = new Map();
     const sessionOwned = async (sessionID) => {
-      const cached = sessionLocations.get(sessionID);
-      if (typeof cached === "boolean") return cached;
-      if (typeof ctx.session?.get !== "function") return undefined;
+      if (typeof ctx.session?.get !== "function") {
+        sessionLocations.delete(sessionID);
+        return undefined;
+      }
       let directory;
       try {
         const session = await ctx.session.get({ sessionID });
         directory = session && session.location && session.location.directory;
       } catch {
+        sessionLocations.delete(sessionID);
         return undefined;
       }
-      if (normalizeDirectory(directory) === "") return undefined;
-      const owned = sameLocation(directory);
-      sessionLocations.set(sessionID, owned);
-      return owned;
+      directory = normalizeDirectory(directory);
+      if (directory === "") {
+        sessionLocations.delete(sessionID);
+        return undefined;
+      }
+      sessionLocations.set(sessionID, directory);
+      return sameLocation(directory);
     };
     const scopedEvent = async (event) => {
+      if (!(event && (event.type === "session.execution.started" || isV2TurnEnd(event)))) return null;
       if (ownDirectory === "") return null;
       const sessionID = v2SessionID(event);
       if (sessionID === null) return null;
       const directory = normalizeDirectory(event && event.location && event.location.directory);
       if (directory !== "") {
+        sessionLocations.set(sessionID, directory);
         return directory === ownDirectory ? v1Event(event, sessionID) : null;
       }
       return (await sessionOwned(sessionID)) === true ? v1Event(event, sessionID) : null;

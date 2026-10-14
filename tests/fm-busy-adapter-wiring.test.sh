@@ -202,6 +202,7 @@ drive_oc_v2_plugin() {
     FM_OC_V2_LOCATION="$OC_V2_OWN_LOCATION" \
     FM_OC_V2_FOREIGN_LOCATION="$OC_V2_FOREIGN_LOCATION" \
     FM_OC_V2_FOREIGN_SESSIONS="${FM_OC_V2_FOREIGN_SESSIONS:-}" \
+    FM_OC_V2_REPORT_RESOLVER_CALLS="${FM_OC_V2_REPORT_RESOLVER_CALLS:-}" \
     node --input-type=module - "$@" 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.env.PLUGIN_PATH).href);
@@ -211,7 +212,9 @@ if (typeof mod.default?.setup !== "function" || !mod.default?.id) {
 const ownLocation = process.env.FM_OC_V2_LOCATION;
 const foreignLocation = process.env.FM_OC_V2_FOREIGN_LOCATION;
 const foreignSessions = new Set((process.env.FM_OC_V2_FOREIGN_SESSIONS ?? "").split(/\s+/).filter(Boolean));
+const sessionLocations = new Map([...foreignSessions].map((sessionID) => [sessionID, foreignLocation]));
 const events = process.argv.slice(2).map((line) => JSON.parse(line));
+let resolverCalls = 0;
 let consumed;
 const finished = new Promise((resolve) => { consumed = resolve; });
 const timeout = setTimeout(() => {
@@ -226,15 +229,25 @@ const ctx = {
     ? {}
     : {
         session: {
-          get: async ({ sessionID }) => ({
-            id: sessionID,
-            location: { directory: foreignSessions.has(sessionID) ? foreignLocation : ownLocation },
-          }),
+          get: async ({ sessionID }) => {
+            resolverCalls += 1;
+            return {
+              id: sessionID,
+              location: { directory: sessionLocations.get(sessionID) ?? ownLocation },
+            };
+          },
         },
       }),
   event: {
     subscribe: async function* () {
-      for (const event of events) yield event;
+      for (const event of events) {
+        yield event;
+        const sessionID = event.data?.sessionID ?? event.durable?.aggregateID;
+        const directory = event.location?.directory;
+        if (typeof sessionID === "string" && typeof directory === "string") {
+          sessionLocations.set(sessionID, directory);
+        }
+      }
       consumed();
       await new Promise(() => {});
     },
@@ -243,6 +256,9 @@ const ctx = {
 await mod.default.setup(ctx);
 await finished;
 clearTimeout(timeout);
+if (process.env.FM_OC_V2_REPORT_RESOLVER_CALLS === "1") {
+  console.log(`resolver-calls=${resolverCalls}`);
+}
 EOF
 }
 
@@ -453,6 +469,18 @@ test_opencode_v2_plugin_scopes_to_the_workers_own_location() {
   state="$HOME_DIR/state"
   plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
 
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_REPORT_RESOLVER_CALLS=1 drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.tool.called ses_main)") \
+    || fail "unsupported-event drive failed: $out"
+  assert_contains "$out" "resolver-calls=0" \
+    "an unsupported unlocated event must not call ctx.session.get: $out"
+  [ ! -e "$state/$id.turn-ended" ] \
+    || fail "an unsupported unlocated event must not touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy fm-spawn" ] \
+    || fail "an unsupported unlocated event must not change the busy record, got '$out'"
+
   # A foreign location's execution bracket is dropped: no latch, no busy
   # write, no marker touch, and the spawn seed stands.
   rm -f "$state/$id.turn-ended"
@@ -509,6 +537,45 @@ test_opencode_v2_plugin_scopes_to_the_workers_own_location() {
   out=$(classify opencode "$id" "$state")
   [ "$out" = "idle opencode-plugin" ] || fail "the worker's own turn end must close the record, got '$out'"
   pass "opencode v2: only the worker's own location drives busy state and the notification marker"
+}
+
+test_opencode_v2_plugin_refreshes_locationless_session_location() {
+  local rec id=busy-oc-v2-5 out state plugin
+  rec=$(make_spawn_case oc-v2-movement opencode "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "opencode spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_REPORT_RESOLVER_CALLS=1 drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_move)" \
+    "$(oc_v2_located_event session.execution.started ses_move "$OC_V2_FOREIGN_LOCATION")" \
+    "$(oc_v2_event session.execution.succeeded ses_move)") \
+    || fail "own-to-foreign movement drive failed: $out"
+  assert_contains "$out" "resolver-calls=2" \
+    "own-to-foreign movement must re-resolve the locationless terminal: $out"
+  [ ! -e "$state/$id.turn-ended" ] \
+    || fail "a moved-away session's locationless terminal must not touch the marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy opencode-plugin" ] \
+    || fail "a moved-away session's locationless terminal must stay busy, got '$out'"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_FOREIGN_SESSIONS=ses_move FM_OC_V2_REPORT_RESOLVER_CALLS=1 drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_move)" \
+    "$(oc_v2_located_event session.execution.started ses_move "$OC_V2_OWN_LOCATION")" \
+    "$(oc_v2_event session.execution.succeeded ses_move)") \
+    || fail "foreign-to-own movement drive failed: $out"
+  assert_contains "$out" "resolver-calls=2" \
+    "foreign-to-own movement must re-resolve the locationless terminal: $out"
+  [ -f "$state/$id.turn-ended" ] \
+    || fail "a moved-in session's locationless terminal must touch the marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "idle opencode-plugin" ] \
+    || fail "a moved-in session's locationless terminal must close busy, got '$out'"
+  pass "opencode v2 refreshes locationless ownership after located session movement"
 }
 
 test_opencode_v2_plugin_requires_location_identity_and_resolver() {
@@ -1202,6 +1269,7 @@ test_opencode_plugin_semantic_lifecycle
 test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end
 test_opencode_v2_plugin_child_turn_end_keeps_the_worker_busy
 test_opencode_v2_plugin_scopes_to_the_workers_own_location
+test_opencode_v2_plugin_refreshes_locationless_session_location
 test_opencode_v2_plugin_requires_location_identity_and_resolver
 test_claude_hooks_semantic_lifecycle
 test_claude_hooks_stale_incarnation_harmless
