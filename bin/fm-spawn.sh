@@ -5041,20 +5041,28 @@ export default {
       return (await sessionOwned(sessionID)) === true ? v1Event(event, sessionID) : null;
     };
     void (async () => {
-      try {
-        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-          try {
-            const scoped = await scopedEvent(event);
-            if (scoped) await hooks.event({ event: scoped });
-          } catch {}
-        }
-        if (!controller.signal.aborted) {
+      const resubscribeDelays = [100, 200, 400];
+      let resubscriptions = 0;
+      while (!controller.signal.aborted) {
+        try {
+          for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+            try {
+              const scoped = await scopedEvent(event);
+              if (scoped) await hooks.event({ event: scoped });
+            } catch {}
+          }
+          if (controller.signal.aborted) return;
           console.error("[fm-busy-state] OpenCode v2 event subscription ended unexpectedly");
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
+        } catch (error) {
+          if (controller.signal.aborted) return;
           console.error("[fm-busy-state] OpenCode v2 event subscription failed: " + error);
         }
+        if (controller.signal.aborted) return;
+        const delay = resubscribeDelays[resubscriptions];
+        if (delay === undefined) return;
+        resubscriptions += 1;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (controller.signal.aborted) return;
       }
     })();
     return () => controller.abort();

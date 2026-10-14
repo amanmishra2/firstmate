@@ -189,10 +189,11 @@ oc_idle() {  # <sessionID>
 # ctx.session.get resolver like the live runtime, so the plugin's location
 # scoping is exercised; FM_OC_V2_FOREIGN_SESSIONS (space-separated) names
 # sessions the resolver places in the foreign location instead.
-# Completion is deterministic: the consumer pulls the next
-# event only after the hook for the previous one settled, so the stub resolves
-# its gate when the loop asks for an event past the last one. A plugin that
-# never consumes the stream fails the drive instead of hanging the suite.
+# Completion is deterministic: the consumer pulls the next event only after
+# the hook for the previous one settled, so the stub resolves its gate when
+# the loop asks for an event past the last one. A plugin that never consumes
+# the stream fails the drive instead of hanging the suite. The stream mode
+# env var drives transient EOF, rejection, exhaustion, and abort cases.
 OC_V2_OWN_LOCATION=/own/worktree
 OC_V2_FOREIGN_LOCATION=/other/worktree
 drive_oc_v2_plugin() {
@@ -203,6 +204,7 @@ drive_oc_v2_plugin() {
     FM_OC_V2_FOREIGN_LOCATION="$OC_V2_FOREIGN_LOCATION" \
     FM_OC_V2_FOREIGN_SESSIONS="${FM_OC_V2_FOREIGN_SESSIONS:-}" \
     FM_OC_V2_REPORT_RESOLVER_CALLS="${FM_OC_V2_REPORT_RESOLVER_CALLS:-}" \
+    FM_OC_V2_STREAM_MODE="${FM_OC_V2_STREAM_MODE:-}" \
     node --input-type=module - "$@" 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.env.PLUGIN_PATH).href);
@@ -214,7 +216,9 @@ const foreignLocation = process.env.FM_OC_V2_FOREIGN_LOCATION;
 const foreignSessions = new Set((process.env.FM_OC_V2_FOREIGN_SESSIONS ?? "").split(/\s+/).filter(Boolean));
 const sessionLocations = new Map([...foreignSessions].map((sessionID) => [sessionID, foreignLocation]));
 const events = process.argv.slice(2).map((line) => JSON.parse(line));
+const streamMode = process.env.FM_OC_V2_STREAM_MODE ?? "hold";
 let resolverCalls = 0;
+let subscriptionCount = 0;
 let consumed;
 const finished = new Promise((resolve) => { consumed = resolve; });
 const timeout = setTimeout(() => {
@@ -239,26 +243,50 @@ const ctx = {
         },
       }),
   event: {
-    subscribe: async function* () {
-      for (const event of events) {
-        yield event;
-        const sessionID = event.data?.sessionID ?? event.durable?.aggregateID;
-        const directory = event.location?.directory;
-        if (typeof sessionID === "string" && typeof directory === "string") {
-          sessionLocations.set(sessionID, directory);
+    subscribe: ({ signal } = {}) => {
+      subscriptionCount += 1;
+      const subscription = subscriptionCount;
+      return (async function* () {
+        if (signal?.aborted) return;
+        if (streamMode === "reject-once" && subscription === 1) {
+          throw new Error("transient rejection");
         }
-      }
-      consumed();
-      await new Promise(() => {});
+        const transientEof = (streamMode === "eof-once" || streamMode === "abort-backoff") && subscription === 1;
+        if (transientEof || streamMode === "eof-exhaustion") {
+          if (streamMode === "eof-exhaustion" && subscription === 4) setTimeout(consumed, 0);
+          return;
+        }
+        for (const event of events) {
+          yield event;
+          const sessionID = event.data?.sessionID ?? event.durable?.aggregateID;
+          const directory = event.location?.directory;
+          if (typeof sessionID === "string" && typeof directory === "string") {
+            sessionLocations.set(sessionID, directory);
+          }
+        }
+        consumed();
+        await new Promise(() => {});
+      })();
     },
   },
 };
-await mod.default.setup(ctx);
-await finished;
+const dispose = await mod.default.setup(ctx);
+if (streamMode === "abort-backoff") {
+  await new Promise((resolve) => {
+    setTimeout(() => {
+      dispose();
+      setTimeout(resolve, 250);
+    }, 50);
+  });
+} else {
+  await finished;
+  dispose();
+}
 clearTimeout(timeout);
 if (process.env.FM_OC_V2_REPORT_RESOLVER_CALLS === "1") {
   console.log(`resolver-calls=${resolverCalls}`);
 }
+console.log(`subscribe-count=${subscriptionCount}`);
 EOF
 }
 
@@ -409,6 +437,97 @@ test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end() {
   [ "$out" = "idle opencode-plugin" ] \
     || fail "v2 non-shutdown interruption must close the busy record, got '$out'"
   pass "opencode v2: a finished turn touches the notification marker and records idle busy state"
+}
+
+test_opencode_v2_plugin_resubscribes_after_transient_eof() {
+  local rec id=busy-oc-v2-reconnect-eof out state plugin log
+  rec=$(make_spawn_case oc-v2-reconnect-eof opencode "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "opencode spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+  log="OpenCode v2 event subscription ended unexpectedly"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_STREAM_MODE=eof-once drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_main)" \
+    "$(oc_v2_event session.execution.succeeded ses_main)") \
+    || fail "v2 transient EOF drive failed: $out"
+  assert_contains "$out" "$log" "v2 transient EOF lost its diagnostic: $out"
+  [ "$(printf '%s\n' "$out" | grep -Fc -- "$log")" -eq 1 ] \
+    || fail "v2 transient EOF should log once, got: $out"
+  assert_contains "$out" "subscribe-count=2" \
+    "v2 transient EOF did not re-arm exactly once: $out"
+  [ -f "$state/$id.turn-ended" ] \
+    || fail "a post-reconnect terminal event did not touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "idle opencode-plugin" ] \
+    || fail "a post-reconnect terminal event must close the busy record, got '$out'"
+  pass "opencode v2 re-arms after a transient EOF and keeps terminal event handling"
+}
+
+test_opencode_v2_plugin_resubscribes_after_transient_rejection() {
+  local rec id=busy-oc-v2-reconnect-reject out state plugin log
+  rec=$(make_spawn_case oc-v2-reconnect-reject opencode "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "opencode spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+  log="OpenCode v2 event subscription failed: Error: transient rejection"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_STREAM_MODE=reject-once drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_main)" \
+    "$(oc_v2_event session.execution.succeeded ses_main)") \
+    || fail "v2 transient rejection drive failed: $out"
+  assert_contains "$out" "$log" "v2 transient rejection lost its diagnostic: $out"
+  [ "$(printf '%s\n' "$out" | grep -Fc -- "$log")" -eq 1 ] \
+    || fail "v2 transient rejection should log once, got: $out"
+  assert_contains "$out" "subscribe-count=2" \
+    "v2 transient rejection did not re-arm exactly once: $out"
+  [ -f "$state/$id.turn-ended" ] \
+    || fail "a post-reconnect terminal event did not touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "idle opencode-plugin" ] \
+    || fail "a post-reconnect terminal event must close the busy record, got '$out'"
+  pass "opencode v2 re-arms after a transient rejection and keeps terminal event handling"
+}
+
+test_opencode_v2_plugin_stops_after_bounded_eof_retries() {
+  local rec id=busy-oc-v2-reconnect-exhausted out state plugin log
+  rec=$(make_spawn_case oc-v2-reconnect-exhausted opencode "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "opencode spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+  log="OpenCode v2 event subscription ended unexpectedly"
+
+  out=$(FM_OC_V2_STREAM_MODE=eof-exhaustion drive_oc_v2_plugin "$plugin") \
+    || fail "v2 repeated EOF drive failed: $out"
+  [ "$(printf '%s\n' "$out" | grep -Fc -- "$log")" -eq 4 ] \
+    || fail "v2 repeated EOF should preserve four diagnostics, got: $out"
+  assert_contains "$out" "subscribe-count=4" \
+    "v2 repeated EOF exceeded the three-resubscription budget: $out"
+  pass "opencode v2 stops after three bounded resubscriptions"
+}
+
+test_opencode_v2_plugin_abort_during_backoff_does_not_resubscribe() {
+  local rec id=busy-oc-v2-reconnect-abort out state plugin
+  rec=$(make_spawn_case oc-v2-reconnect-abort opencode "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "opencode spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+
+  out=$(FM_OC_V2_STREAM_MODE=abort-backoff drive_oc_v2_plugin "$plugin") \
+    || fail "v2 abort-backoff drive failed: $out"
+  assert_contains "$out" "subscribe-count=1" \
+    "an abort during backoff allowed a later v2 subscription: $out"
+  pass "opencode v2 disposal during backoff suppresses a new subscription"
 }
 
 test_opencode_v2_plugin_child_turn_end_keeps_the_worker_busy() {
@@ -1267,6 +1386,10 @@ test_pi_extension_stale_incarnation_rejected
 test_kimi_and_grok_install_no_unverified_wiring
 test_opencode_plugin_semantic_lifecycle
 test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end
+test_opencode_v2_plugin_resubscribes_after_transient_eof
+test_opencode_v2_plugin_resubscribes_after_transient_rejection
+test_opencode_v2_plugin_stops_after_bounded_eof_retries
+test_opencode_v2_plugin_abort_during_backoff_does_not_resubscribe
 test_opencode_v2_plugin_child_turn_end_keeps_the_worker_busy
 test_opencode_v2_plugin_scopes_to_the_workers_own_location
 test_opencode_v2_plugin_refreshes_locationless_session_location
