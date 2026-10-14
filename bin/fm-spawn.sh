@@ -4810,6 +4810,9 @@ opencode_wait_for_ready() {
 opencode_spawn_fail() {  # <detail>
   printf '%s\n' "$(status_stamp_line "failed: $1")" >>"$STATE/$ID.status"
   echo "error: $1; inspect window $T" >&2
+  if ! "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE_REAL" "$ID" --gen "$BUSY_GEN"; then
+    echo "warning: could not retire busy generation after failed opencode spawn of $ID" >&2
+  fi
 }
 
 if [ "$RELAUNCH" -eq 1 ] && [ "$BACKEND" = orca ]; then
