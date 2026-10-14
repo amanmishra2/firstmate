@@ -164,7 +164,10 @@ drive_oc_plugin() {
   PLUGIN_PATH="$plugin" node --input-type=module - "$@" 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.env.PLUGIN_PATH).href);
-const hooks = await mod.FmBusyState({});
+if (typeof mod.default?.server !== "function" || !mod.default?.id) {
+  throw new Error("plugin has no v1 default export with an id and a server function");
+}
+const hooks = await mod.default.server({}, {});
 for (const arg of process.argv.slice(2)) {
   await hooks.event({ event: JSON.parse(arg) });
 }
@@ -259,6 +262,11 @@ oc_v2_event_with_ids() {  # <type> <data-sessionID> <aggregateID>
 oc_v2_event_without_identity() {  # <type>
   printf '{"id":"evt-%s-no-identity","created":0,"type":"%s","durable":{"seq":1,"version":1},"data":{}}' \
     "$1" "$1"
+}
+
+oc_v2_event_with_reason() {  # <type> <sessionID> <reason>
+  printf '{"id":"evt-%s-%s","created":0,"type":"%s","durable":{"aggregateID":"%s","seq":1,"version":1},"data":{"reason":"%s"}}' \
+    "$1" "$2" "$1" "$2" "$3"
 }
 
 # oc_v2_located_event: the real v2 envelope for a located session event
@@ -362,6 +370,28 @@ test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end() {
     [ "$out" = "busy opencode-plugin" ] \
       || fail "v2 session.execution.started must reopen busy, got '$out'"
   done
+
+  rm -f "$state/$id.turn-ended"
+  out=$(drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_main)" \
+    "$(oc_v2_event_with_reason session.execution.interrupted ses_main shutdown)") \
+    || fail "v2 shutdown interruption drive failed: $out"
+  [ ! -e "$state/$id.turn-ended" ] \
+    || fail "v2 shutdown interruption must not touch the turn-ended notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy opencode-plugin" ] \
+    || fail "v2 shutdown interruption must keep the busy record active, got '$out'"
+
+  rm -f "$state/$id.turn-ended"
+  out=$(drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_main)" \
+    "$(oc_v2_event_with_reason session.execution.interrupted ses_main cancelled)") \
+    || fail "v2 non-shutdown interruption drive failed: $out"
+  [ -f "$state/$id.turn-ended" ] \
+    || fail "v2 non-shutdown interruption must touch the turn-ended notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "idle opencode-plugin" ] \
+    || fail "v2 non-shutdown interruption must close the busy record, got '$out'"
   pass "opencode v2: a finished turn touches the notification marker and records idle busy state"
 }
 

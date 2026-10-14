@@ -4898,13 +4898,15 @@ EOF
     cat >"$WT/.opencode/plugins/fm-busy-state.js" <<EOF
 // Firstmate semantic busy-state events + turn-end notification; written by
 // fm-spawn under the contract owned by bin/fm-busy-lib.sh.
-// One file serves both OpenCode plugin generations: the v1 named export and a
-// v2 default export ({ id, setup(ctx) }). OpenCode 2.x skips a plugin without
-// the default export, which left this wiring dark on v2.
+// One file serves both OpenCode plugin generations: the v1 default server and
+// the v2 default export ({ id, setup(ctx) }). The named export remains for
+// compatibility. OpenCode 2.x skips a plugin without the default export,
+// which left this wiring dark on v2.
 // Semantic state comes from the session lifecycle: on v1 session.status, where
 // busy and retry are active and idle is inactive; on v2 the session.execution
 // bracket, where started is active and the terminal succeeded, failed, or
-// interrupted event is the idle equivalent (v2 publishes no session.idle).
+// non-shutdown interrupted event is the idle equivalent (v2 publishes no
+// session.idle).
 // The v2 event stream is server-wide, so every event is first resolved to its
 // session's own location and anything outside this worktree is ignored.
 // Scoping latches the first session that reports activity (the worker's main
@@ -4955,13 +4957,18 @@ const fmBusyHooks = () => {
   };
 };
 export const FmBusyState = async () => fmBusyHooks();
-// v2 events carry their payload under data rather than properties, and a turn
-// ends with a terminal session.execution.* event instead of session.idle.
+// v2 events carry their payload under data rather than properties, and an
+// ordinary turn ends with a terminal session.execution.* event instead of
+// session.idle.
 const v2TurnEnd = new Set([
   "session.execution.succeeded",
   "session.execution.failed",
   "session.execution.interrupted",
 ]);
+const isV2TurnEnd = (event) =>
+  v2TurnEnd.has(event.type) &&
+  !(event.type === "session.execution.interrupted" &&
+    event.data && event.data.reason === "shutdown");
 const usableSessionID = (value) =>
   typeof value === "string" && value.length > 0 ? value : null;
 const v2SessionID = (event) =>
@@ -4973,7 +4980,7 @@ const v2Properties = (event, sessionID) => ({
 });
 const v1Event = (event, sessionID) => {
   const properties = v2Properties(event, sessionID);
-  if (v2TurnEnd.has(event.type)) return { type: "session.idle", properties };
+  if (isV2TurnEnd(event)) return { type: "session.idle", properties };
   if (event.type === "session.execution.started") {
     return {
       type: "session.status",
@@ -4984,6 +4991,9 @@ const v1Event = (event, sessionID) => {
 };
 export default {
   id: "fm-busy-state",
+  async server() {
+    return fmBusyHooks();
+  },
   async setup(ctx) {
     const hooks = fmBusyHooks();
     const controller = new AbortController();
