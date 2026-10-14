@@ -4905,6 +4905,8 @@ EOF
 // busy and retry are active and idle is inactive; on v2 the session.execution
 // bracket, where started is active and the terminal succeeded, failed, or
 // interrupted event is the idle equivalent (v2 publishes no session.idle).
+// The v2 event stream is server-wide, so every event is first resolved to its
+// session's own location and anything outside this worktree is ignored.
 // Scoping latches the first session that reports activity (the worker's main
 // session - a subagent child session can only start while the main session is
 // already busy) and ignores other sessions' status until the latched session
@@ -4976,11 +4978,52 @@ export default {
   async setup(ctx) {
     const hooks = fmBusyHooks();
     const controller = new AbortController();
+    // The v2 plugin event stream is server-wide: sessions from other
+    // locations publish into the same subscription, and the
+    // session.execution.* bracket carries no location, so without a scope a
+    // foreign session could latch this worktree's busy state or touch its
+    // notification marker. Resolve every event to its session's own location
+    // - directly from a located event's envelope, or once per session through
+    // ctx.session.get for the unlocated execution bracket - and ignore other
+    // locations, mirroring the v1 per-location stream this plugin is written
+    // against.
+    const ownDirectory = ((ctx.location && ctx.location.directory) || "").replace(/\/+$/, "");
+    const sameLocation = (directory) =>
+      ownDirectory !== "" && typeof directory === "string" && directory.replace(/\/+$/, "") === ownDirectory;
+    const sessionLocations = new Map();
+    const sessionOwned = async (sessionID) => {
+      const cached = sessionLocations.get(sessionID);
+      if (typeof cached === "boolean") return cached;
+      if (typeof ctx.session?.get !== "function") return true; // no resolver: keep the pre-scope behavior
+      let directory;
+      try {
+        const session = await ctx.session.get({ sessionID });
+        directory = session && session.location && session.location.directory;
+      } catch {
+        return undefined; // transient lookup failure: retry on a later event
+      }
+      if (typeof directory !== "string") return undefined;
+      const owned = sameLocation(directory);
+      sessionLocations.set(sessionID, owned);
+      return owned;
+    };
+    const scopedEvent = async (event) => {
+      if (ownDirectory === "") return v1Event(event); // no plugin location: keep the pre-scope behavior
+      const directory = event.location && event.location.directory;
+      const sessionID = event.data && event.data.sessionID;
+      if (typeof directory === "string") {
+        if (sessionID) sessionLocations.set(sessionID, sameLocation(directory));
+        return sameLocation(directory) ? v1Event(event) : null;
+      }
+      if (!sessionID) return v1Event(event);
+      return (await sessionOwned(sessionID)) ? v1Event(event) : null;
+    };
     void (async () => {
       try {
         for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
           try {
-            await hooks.event({ event: v1Event(event) });
+            const scoped = await scopedEvent(event);
+            if (scoped) await hooks.event({ event: scoped });
           } catch {}
         }
         if (!controller.signal.aborted) {

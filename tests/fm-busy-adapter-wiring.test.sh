@@ -182,19 +182,32 @@ oc_idle() {  # <sessionID>
 # drive_oc_v2_plugin <plugin-path> <v2-events...>: load the generated OpenCode
 # plugin's v2 default export in a plain Node host and feed it one v2 event
 # envelope per argument, in order, through the same ctx.event.subscribe entry
-# OpenCode v2 calls. Completion is deterministic: the consumer pulls the next
+# OpenCode v2 calls. The stub ctx carries a plugin location and a
+# ctx.session.get resolver like the live runtime, so the plugin's location
+# scoping is exercised; FM_OC_V2_FOREIGN_SESSIONS (space-separated) names
+# sessions the resolver places in the foreign location instead.
+# Completion is deterministic: the consumer pulls the next
 # event only after the hook for the previous one settled, so the stub resolves
 # its gate when the loop asks for an event past the last one. A plugin that
 # never consumes the stream fails the drive instead of hanging the suite.
+OC_V2_OWN_LOCATION=/own/worktree
+OC_V2_FOREIGN_LOCATION=/other/worktree
 drive_oc_v2_plugin() {
   local plugin=$1
   shift
-  PLUGIN_PATH="$plugin" node --input-type=module - "$@" 2>&1 <<'EOF'
+  PLUGIN_PATH="$plugin" \
+    FM_OC_V2_LOCATION="$OC_V2_OWN_LOCATION" \
+    FM_OC_V2_FOREIGN_LOCATION="$OC_V2_FOREIGN_LOCATION" \
+    FM_OC_V2_FOREIGN_SESSIONS="${FM_OC_V2_FOREIGN_SESSIONS:-}" \
+    node --input-type=module - "$@" 2>&1 <<'EOF'
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.env.PLUGIN_PATH).href);
 if (typeof mod.default?.setup !== "function" || !mod.default?.id) {
   throw new Error("plugin has no v2 default export with an id and a setup function");
 }
+const ownLocation = process.env.FM_OC_V2_LOCATION;
+const foreignLocation = process.env.FM_OC_V2_FOREIGN_LOCATION;
+const foreignSessions = new Set((process.env.FM_OC_V2_FOREIGN_SESSIONS ?? "").split(/\s+/).filter(Boolean));
 const events = process.argv.slice(2).map((line) => JSON.parse(line));
 let consumed;
 const finished = new Promise((resolve) => { consumed = resolve; });
@@ -203,6 +216,13 @@ const timeout = setTimeout(() => {
   process.exit(1);
 }, 10000);
 const ctx = {
+  location: { directory: ownLocation },
+  session: {
+    get: async ({ sessionID }) => ({
+      id: sessionID,
+      location: { directory: foreignSessions.has(sessionID) ? foreignLocation : ownLocation },
+    }),
+  },
   event: {
     subscribe: async function* () {
       for (const event of events) yield event;
@@ -217,9 +237,19 @@ clearTimeout(timeout);
 EOF
 }
 
+# oc_v2_event: the real v2 session-event envelope: id, created, type, durable
+# aggregate/seq, and the payload under data - with no location, exactly as a
+# session.execution.* bracket event arrives.
 oc_v2_event() {  # <type> <sessionID>
-  printf '{"id":"evt-%s-%s","created":0,"type":"%s","data":{"sessionID":"%s"}}' \
-    "$1" "$2" "$1" "$2"
+  printf '{"id":"evt-%s-%s","created":0,"type":"%s","durable":{"aggregateID":"%s","seq":1,"version":1},"data":{"sessionID":"%s"}}' \
+    "$1" "$2" "$1" "$2" "$2"
+}
+
+# oc_v2_located_event: the real v2 envelope for a located session event
+# (tool, step, text, status): the location rides the envelope.
+oc_v2_located_event() {  # <type> <sessionID> <directory>
+  printf '{"id":"evt-%s-%s","created":0,"type":"%s","location":{"directory":"%s"},"data":{"sessionID":"%s"}}' \
+    "$1" "$2" "$1" "$3" "$2"
 }
 
 test_opencode_plugin_semantic_lifecycle() {
@@ -350,6 +380,78 @@ test_opencode_v2_plugin_child_turn_end_keeps_the_worker_busy() {
   [ "$out" = "idle opencode-plugin" ] \
     || fail "the latched session's own turn end must close the record, got '$out'"
   pass "opencode v2: child turn ends never clear the worker's latched busy state"
+}
+
+# The v2 plugin event stream is server-wide on OpenCode 2.0.28 (verified
+# live): sessions from other locations publish into the same subscription,
+# and the session.execution.* bracket carries no location. Only the worker's
+# own location may drive the busy record and the notification marker, and
+# tool/step/text activity must never touch the marker - only a finished turn.
+test_opencode_v2_plugin_scopes_to_the_workers_own_location() {
+  local rec id=busy-oc-v2-3 out state plugin
+  rec=$(make_spawn_case oc-v2-scope opencode "$id")
+  read_case_record "$rec"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id" "$PROJ_DIR")
+  expect_code 0 $? "opencode spawn should succeed: $out"
+  state="$HOME_DIR/state"
+  plugin="$WT_DIR/.opencode/plugins/fm-busy-state.js"
+
+  # A foreign location's execution bracket is dropped: no latch, no busy
+  # write, no marker touch, and the spawn seed stands.
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_FOREIGN_SESSIONS=ses_foreign drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_foreign)" \
+    "$(oc_v2_event session.execution.succeeded ses_foreign)") \
+    || fail "foreign execution drive failed: $out"
+  [ ! -e "$state/$id.turn-ended" ] || fail "a foreign session's turn end must not touch the worker's marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy fm-spawn" ] || fail "a foreign session must not change the busy record, got '$out'"
+
+  # A located foreign event is filtered by its own envelope location.
+  rm -f "$state/$id.turn-ended"
+  out=$(FM_OC_V2_FOREIGN_SESSIONS=ses_foreign drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_located_event session.idle ses_foreign "$OC_V2_FOREIGN_LOCATION")") \
+    || fail "foreign located drive failed: $out"
+  [ ! -e "$state/$id.turn-ended" ] || fail "a located foreign session event must not touch the worker's marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy fm-spawn" ] || fail "a located foreign session event must not change the busy record, got '$out'"
+
+  # A foreign session that starts first must not steal the latch, and its
+  # turn end must not close the worker's own latched busy state.
+  out=$(FM_OC_V2_FOREIGN_SESSIONS=ses_foreign drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_foreign)" \
+    "$(oc_v2_event session.execution.started ses_main)" \
+    "$(oc_v2_event session.execution.succeeded ses_foreign)") \
+    || fail "foreign-first lifecycle drive failed: $out"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy opencode-plugin" ] \
+    || fail "the worker's own execution must stay latched busy through a foreign turn end, got '$out'"
+  [ ! -e "$state/$id.turn-ended" ] || fail "a foreign turn end must not touch the worker's marker"
+
+  # Tool, step, and text activity never touches the marker; only a genuine
+  # finished turn does.
+  rm -f "$state/$id.turn-ended"
+  out=$(drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_main)" \
+    "$(oc_v2_located_event session.tool.called ses_main "$OC_V2_OWN_LOCATION")" \
+    "$(oc_v2_located_event session.tool.success ses_main "$OC_V2_OWN_LOCATION")" \
+    "$(oc_v2_located_event session.step.started ses_main "$OC_V2_OWN_LOCATION")" \
+    "$(oc_v2_located_event session.text.delta ses_main "$OC_V2_OWN_LOCATION")") \
+    || fail "mid-turn activity drive failed: $out"
+  [ ! -e "$state/$id.turn-ended" ] \
+    || fail "tool, step, and text activity must not touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "busy opencode-plugin" ] || fail "mid-turn activity must keep the worker busy, got '$out'"
+
+  # The worker's own finished turn still closes the record and notifies.
+  out=$(drive_oc_v2_plugin "$plugin" \
+    "$(oc_v2_event session.execution.started ses_main)" \
+    "$(oc_v2_event session.execution.succeeded ses_main)") \
+    || fail "own finished-turn drive failed: $out"
+  [ -f "$state/$id.turn-ended" ] || fail "the worker's own turn end must touch the notification marker"
+  out=$(classify opencode "$id" "$state")
+  [ "$out" = "idle opencode-plugin" ] || fail "the worker's own turn end must close the record, got '$out'"
+  pass "opencode v2: only the worker's own location drives busy state and the notification marker"
 }
 
 run_claude_hook() {  # <settings.json> <hook-event>
@@ -987,6 +1089,7 @@ test_kimi_and_grok_install_no_unverified_wiring
 test_opencode_plugin_semantic_lifecycle
 test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end
 test_opencode_v2_plugin_child_turn_end_keeps_the_worker_busy
+test_opencode_v2_plugin_scopes_to_the_workers_own_location
 test_claude_hooks_semantic_lifecycle
 test_claude_hooks_stale_incarnation_harmless
 test_gemini_hooks_semantic_lifecycle
