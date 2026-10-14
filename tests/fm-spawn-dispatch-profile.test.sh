@@ -34,6 +34,27 @@ SH
   chmod +x "$fakebin/$tool"
 }
 
+# Mirror real OpenCode help advertising: 1.x lists `-m, --model` on the TUI's
+# own help (1.18.32), while 2.x carries no --model at all (2.0.28). The probe
+# in fm-spawn decides whether a launch may compose --model from exactly this
+# text, so a suite can pin either generation with FM_FAKE_OPENCODE_MODEL_FLAG.
+make_spawn_opencode_probe() {
+  local fakebin=$1
+  cat > "$fakebin/opencode" <<'SH'
+#!/usr/bin/env bash
+set -u
+if [ "${1:-}" = --help ]; then
+  if [ "${FM_FAKE_OPENCODE_MODEL_FLAG:-1}" = 1 ]; then
+    printf '%s\n' '1.18.32' 'Options:' '  -m, --model        model to use in the format of provider/model  [string]' '  --prompt           prompt to use  [string]'
+  else
+    printf '%s\n' 'opencode v2.0.28' 'FLAGS' '  --auto              Auto-approve permissions that are not explicitly denied' '  --prompt string     Prompt to use'
+  fi
+fi
+exit 0
+SH
+  chmod +x "$fakebin/opencode"
+}
+
 make_spawn_fakebin() {
   local dir=$1 fakebin
   fakebin=$(fm_test_make_spawn_fakebin "$dir")
@@ -53,6 +74,7 @@ SH
   chmod +x "$fakebin/timeout" "$fakebin/cursor-agent"
   make_spawn_pi_probe "$fakebin" pi
   make_spawn_pi_probe "$fakebin" pi-signed
+  make_spawn_opencode_probe "$fakebin"
   printf '%s\n' "$fakebin"
 }
 
@@ -832,7 +854,8 @@ test_opencode_threads_model_and_effort_variant() {
   rec=$(make_spawn_case profile-opencode opencode "$id")
   read_case_record "$rec"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model anthropic/claude-sonnet-4-5 --effort high)
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=1 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model anthropic/claude-sonnet-4-5 --effort high)
   status=$?
   expect_code 0 "$status" "opencode spawn with model and effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" opencode anthropic/claude-sonnet-4-5 high
@@ -840,7 +863,8 @@ test_opencode_threads_model_and_effort_variant() {
   # opencode 1.18.32's config schema carries per-model reasoning effort as
   # agent.<name>.variant, so the effort rides the OPENCODE_CONFIG_CONTENT JSON
   # the launch already writes, keyed to the resolved model on the default
-  # build agent, never as a launch flag.
+  # build agent, never as a launch flag. On the 1.x surface the model itself
+  # still rides --model, which FM_FAKE_OPENCODE_MODEL_FLAG=1 pins here.
   assert_contains "$launch" \
     "OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"},\"agent\":{\"build\":{\"model\":\"anthropic/claude-sonnet-4-5\",\"variant\":\"high\"}}}' opencode --model 'anthropic/claude-sonnet-4-5' --prompt" \
     "opencode launch did not write the effort as the build agent's variant in its config"
@@ -856,7 +880,8 @@ test_opencode_without_effort_keeps_launch_config_unchanged() {
   rec=$(make_spawn_case profile-opencode-noeffort opencode "$id")
   read_case_record "$rec"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model anthropic/claude-sonnet-4-5)
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=1 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model anthropic/claude-sonnet-4-5)
   status=$?
   expect_code 0 "$status" "opencode spawn without effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" opencode anthropic/claude-sonnet-4-5 default
@@ -874,7 +899,8 @@ test_opencode_emits_variant_for_openai_family_effort() {
   rec=$(make_spawn_case profile-opencode-openai opencode "$id")
   read_case_record "$rec"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model openai/gpt-5.6-sol --effort xhigh)
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=1 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model openai/gpt-5.6-sol --effort xhigh)
   status=$?
   expect_code 0 "$status" "opencode spawn with an openai model and effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" opencode openai/gpt-5.6-sol xhigh
@@ -891,7 +917,8 @@ test_opencode_omits_variant_when_model_family_lacks_effort() {
   rec=$(make_spawn_case profile-opencode-omit opencode "$id")
   read_case_record "$rec"
 
-  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model anthropic/claude-sonnet-4-5 --effort medium)
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=1 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model anthropic/claude-sonnet-4-5 --effort medium)
   status=$?
   expect_code 0 "$status" "opencode spawn with an unsupported family effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" opencode anthropic/claude-sonnet-4-5 medium
@@ -902,6 +929,198 @@ test_opencode_omits_variant_when_model_family_lacks_effort() {
   assert_not_contains "$launch" '"variant"' "opencode must omit the variant when the model family lacks the effort"
   pass "opencode omits the variant for an effort outside the model family's list"
 }
+
+test_opencode_v2_drops_model_flag_and_pins_the_model_in_config() {
+  local rec id out status launch
+  id=profile-opencode-v2-z7e
+  rec=$(make_spawn_case profile-opencode-v2 opencode "$id")
+  read_case_record "$rec"
+
+  # OpenCode 2.x removed --model from the interactive launch, so the model has
+  # to reach the worker through OPENCODE_CONFIG_CONTENT instead. A launch that
+  # still passed the flag exits within a second on the real 2.x TUI.
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model anthropic/claude-sonnet-4-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "opencode 2.x spawn with model and effort should succeed: $out"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" opencode anthropic/claude-sonnet-4-5 high
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "--model" \
+    "an opencode 2.x launch must not pass the flag its TUI rejects"
+  assert_contains "$launch" \
+    "OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"},\"agent\":{\"build\":{\"model\":\"anthropic/claude-sonnet-4-5\",\"variant\":\"high\"}}}' opencode --prompt" \
+    "an opencode 2.x launch did not pin the model and its effort variant in the launch config"
+  pass "opencode 2.x drops --model and pins the model plus variant in its launch config"
+}
+
+test_opencode_v2_pins_a_model_without_a_mappable_effort() {
+  local rec id out status launch
+  id=profile-opencode-v2-noeffort-z7f
+  rec=$(make_spawn_case profile-opencode-v2-noeffort opencode "$id")
+  read_case_record "$rec"
+
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model openai/gpt-5.6-sol)
+  status=$?
+  expect_code 0 "$status" "opencode 2.x spawn without effort should succeed: $out"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" opencode openai/gpt-5.6-sol default
+  launch=$(cat "$LAUNCH_LOG")
+  assert_contains "$launch" \
+    "OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"},\"agent\":{\"build\":{\"model\":\"openai/gpt-5.6-sol\"}}}' opencode --prompt" \
+    "an opencode 2.x launch lost the model when no effort mapped"
+  assert_not_contains "$launch" '"variant"' \
+    "an opencode 2.x launch must not write a variant with no mappable effort"
+  pass "opencode 2.x pins the model in its launch config with no variant"
+}
+
+test_opencode_probe_failure_omits_flag_and_pins_model() {
+  local rec id out status launch
+  id=profile-opencode-probe-fail-z7l
+  rec=$(make_spawn_case profile-opencode-probe-fail opencode "$id")
+  read_case_record "$rec"
+
+  # A probe that cannot produce a verdict - here a timeout runner that fails,
+  # which is also what a machine without timeout/gtimeout produces - must not
+  # compose the flag the 2.x TUI rejects. The 1.x-shaped fake opencode help
+  # would have proven support had the probe run, and the model still reaches
+  # the worker through the launch config.
+  cat > "$FAKEBIN_DIR/timeout" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+  chmod +x "$FAKEBIN_DIR/timeout"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=1 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model anthropic/claude-sonnet-4-5 --effort high)
+  status=$?
+  expect_code 0 "$status" "opencode spawn should survive an inconclusive flag probe: $out"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" opencode anthropic/claude-sonnet-4-5 high
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "--model" \
+    "an inconclusive opencode probe must not compose --model"
+  assert_contains "$launch" \
+    "OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"},\"agent\":{\"build\":{\"model\":\"anthropic/claude-sonnet-4-5\",\"variant\":\"high\"}}}' opencode --prompt" \
+    "an inconclusive opencode probe dropped the model instead of pinning it in the launch config"
+  pass "an inconclusive opencode flag probe omits --model and still pins the model in the launch config"
+}
+
+test_opencode_v2_reports_a_model_it_cannot_pin() {
+  local rec id out status launch
+  id=profile-opencode-v2-bare-z7g
+  rec=$(make_spawn_case profile-opencode-v2-bare opencode "$id")
+  read_case_record "$rec"
+
+  # The flag surface is gone and a bare id is not a provider/model pair the
+  # config can resolve, so the model must be reported rather than silently
+  # dropped: task meta still records it while the launch runs opencode's own
+  # default model.
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model sonnet)
+  status=$?
+  expect_code 0 "$status" "opencode 2.x spawn with a bare model id should still launch: $out"
+  assert_contains "$out" "not a provider/model id" \
+    "opencode 2.x must report a model it cannot pin in the launch config"
+  assert_meta_profile "$HOME_DIR/state/$id.meta" opencode sonnet default
+  launch=$(cat "$LAUNCH_LOG")
+  assert_not_contains "$launch" "--model" "an unpinnable opencode 2.x model must not reach the launch as a flag"
+  assert_contains "$launch" "OPENCODE_CONFIG_CONTENT='{\"permission\":{\"*\":\"allow\"}}' opencode --prompt" \
+    "an unpinnable model must leave the opencode launch config unchanged"
+  pass "opencode 2.x reports a model it cannot pin instead of dropping it silently"
+}
+
+test_opencode_dead_launch_refuses_the_spawn() {
+  local rec id out status windows
+  id=profile-opencode-dead-z7h
+  rec=$(make_spawn_case profile-opencode-dead opencode "$id")
+  read_case_record "$rec"
+
+  # The 2026-10-13 shape: the TUI rejected its own launch arguments and exited,
+  # so the pane is back at a shell prompt with no agent process in it. The
+  # window inventory lists the window the spawn itself created, and its
+  # foreground command is a shell.
+  windows="$CASE_DIR/windows.txt"
+  : > "$windows"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
+    FM_FAKE_PANE_CURRENT_COMMAND=zsh \
+    FM_OPENCODE_READY_POLLS=6 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_READY_DEAD_CONFIRM=2 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model anthropic/claude-sonnet-4-5 2>&1)
+  status=$?
+  expect_code 1 "$status" "an immediately-dead opencode launch must refuse the spawn"
+  assert_contains "$out" "the opencode launch exited immediately" \
+    "the dead-launch refusal did not name what happened"
+  assert_not_contains "$out" "spawned $id" \
+    "a dead opencode launch must not report a successful spawn"
+  assert_grep ": the opencode launch exited immediately" "$HOME_DIR/state/$id.status" \
+    "the dead-launch refusal was not recorded in the task status"
+  pass "an immediately-dead opencode launch refuses the spawn loudly"
+}
+
+test_opencode_tui_that_dies_after_starting_refuses_the_spawn() {
+  local rec id out status windows counter
+  id=profile-opencode-blip-z7i
+  rec=$(make_spawn_case profile-opencode-blip opencode "$id")
+  read_case_record "$rec"
+
+  # A real rejected-flag launch lives just long enough to be seen running once
+  # before it exits, so the gate must refuse a pane that reports an agent and
+  # then loses it, not only one that never had one.
+  windows="$CASE_DIR/windows.txt"
+  counter="$CASE_DIR/command-count"
+  : > "$windows"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
+    FM_FAKE_PANE_CURRENT_COMMANDS=opencode,zsh FM_FAKE_PANE_COMMAND_COUNTER="$counter" \
+    FM_OPENCODE_READY_POLLS=6 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_SETTLE_POLLS=2 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model anthropic/claude-sonnet-4-5 2>&1)
+  status=$?
+  expect_code 1 "$status" "an opencode TUI that exits right after starting must refuse the spawn"
+  assert_contains "$out" "the opencode TUI exited right after it started" \
+    "the started-then-died refusal did not name what happened"
+  assert_not_contains "$out" "spawned $id" \
+    "an opencode launch that died after starting must not report a successful spawn"
+  assert_grep ": the opencode TUI exited right after it started" "$HOME_DIR/state/$id.status" \
+    "the started-then-died refusal was not recorded in the task status"
+  pass "an opencode TUI that dies right after starting refuses the spawn loudly"
+}
+
+test_opencode_live_tui_and_indeterminate_pane_do_not_refuse() {
+  local rec id out status windows
+  id=profile-opencode-live-z7j
+  rec=$(make_spawn_case profile-opencode-live opencode "$id")
+  read_case_record "$rec"
+
+  windows="$CASE_DIR/windows.txt"
+  : > "$windows"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
+    FM_FAKE_PANE_CURRENT_COMMAND=opencode \
+    FM_OPENCODE_READY_POLLS=6 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_READY_DEAD_CONFIRM=2 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model openai/gpt-5.6-sol --effort xhigh 2>&1)
+  status=$?
+  expect_code 0 "$status" "a live opencode TUI must not be refused: $out"
+  assert_contains "$out" "spawned $id harness=opencode" \
+    "a live opencode TUI did not report a successful spawn"
+
+  # A pane the classifier cannot attribute is no verdict at all, so the spawn
+  # keeps the behavior it had before the readiness gate existed.
+  id=profile-opencode-ambiguous-z7k
+  rec=$(make_spawn_case profile-opencode-ambiguous opencode "$id")
+  read_case_record "$rec"
+  windows="$CASE_DIR/windows.txt"
+  : > "$windows"
+  out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 FM_FAKE_WINDOW_STATE="$windows" \
+    FM_FAKE_PANE_CURRENT_COMMAND=node \
+    FM_OPENCODE_READY_POLLS=3 FM_OPENCODE_POLL_INTERVAL=0 FM_OPENCODE_READY_DEAD_CONFIRM=2 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --model openai/gpt-5.6-sol 2>&1)
+  status=$?
+  expect_code 0 "$status" "an unattributable opencode pane must not be refused: $out"
+  assert_contains "$out" "spawned $id harness=opencode" \
+    "an unattributable pane did not step aside for the spawn"
+  pass "a live opencode TUI spawns and an unattributable pane is not refused"
+}
+
 
 test_native_effort_validator_keeps_axes_separate() {
   local harness
@@ -2303,6 +2522,13 @@ test_opencode_threads_model_and_effort_variant
 test_opencode_without_effort_keeps_launch_config_unchanged
 test_opencode_emits_variant_for_openai_family_effort
 test_opencode_omits_variant_when_model_family_lacks_effort
+test_opencode_v2_drops_model_flag_and_pins_the_model_in_config
+test_opencode_v2_pins_a_model_without_a_mappable_effort
+test_opencode_probe_failure_omits_flag_and_pins_model
+test_opencode_v2_reports_a_model_it_cannot_pin
+test_opencode_dead_launch_refuses_the_spawn
+test_opencode_tui_that_dies_after_starting_refuses_the_spawn
+test_opencode_live_tui_and_indeterminate_pane_do_not_refuse
 test_native_effort_validator_keeps_axes_separate
 test_native_pi_ultra_is_explicit_and_model_scoped
 test_batch_preserves_native_ultra
