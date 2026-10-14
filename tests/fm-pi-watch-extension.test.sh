@@ -5174,8 +5174,8 @@ if (!existsSync(process.env.FM_ARM_LOG)) {
   console.error("watch arm did not run");
   process.exit(1);
 }
-if (!readFileSync(process.env.FM_ARM_LOG, "utf8").includes("args=--restart")) {
-  console.error("watch arm was not asked to restart into an owned child");
+if (!readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").includes("args=")) {
+  console.error("watch arm was not asked to attach-or-start the owned child");
   process.exit(1);
 }
 if (!existsSync(process.env.FM_GUARD_LOG)) {
@@ -5192,6 +5192,275 @@ EOF
   expect_code 0 "$status" "OpenCode watch plugin must not treat external healthy output as an owned arm"
   [ -z "$out" ] || fail "OpenCode external-healthy test printed output: $out"
   pass "OpenCode healthy arm output does not suppress the turn-end guard"
+}
+
+# A wake burst is the live churn case: session.idle storms deliver wakes in
+# overlapping batches, and the host can hold more than one load of this plugin
+# in one process. Both deliveries and both loads must resolve to one arm child,
+# every successor must be launched attach-or-start (never --restart), delivery
+# must move through exactly one live cycle at a time, and each predecessor arm
+# must exit before its successor is established.
+test_opencode_overlapping_deliveries_keep_one_live_cycle() {
+  local plugin repo home log release stop out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-burst-root"
+  home="$TMP_ROOT/opencode-burst-home"
+  log="$TMP_ROOT/opencode-burst.log"
+  release="$TMP_ROOT/opencode-burst.release"
+  stop="$TMP_ROOT/opencode-burst.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config" "$release"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  printf 'handling-delivered gen=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+printf 'arm=%s args=%s\n' "$$" "$*" >> "${FM_ARM_LOG:?}"
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=gen-%s\n' "$$" "$$"
+printf 'ready=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+trap 'printf "exit=%s\n" "$$" >> "${FM_ARM_LOG:?}"; exit 0' TERM INT
+while [ ! -e "${FM_RELEASE_DIR:?}/$$" ]; do sleep 0.02; done
+printf 'exit=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+trap - TERM INT
+printf 'signal: burst wake %s\n' "$$"
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RELEASE_DIR="$release" FM_STOP_FILE="$stop" FM_WATCH_REARM_RETRY_LIMIT=1 FM_WATCH_REARM_RETRY_BASE_MS=50 FM_WATCH_REARM_RETRY_MAX_MS=100 node 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const url = pathToFileURL(process.env.PLUGIN).href;
+// Two independent loads in one host process: a host reload or per-session
+// loads are what let paired successors appear in production.
+const modA = await import(url);
+const modB = await import(`${url}?load-burst`);
+const prompts = [];
+const makeClient = (tag) => ({
+  session: {
+    promptAsync: async (request) => {
+      prompts.push({ tag, text: request.body.parts[0].text });
+    },
+  },
+});
+const hooksA = await modA.FmPrimaryWatchArm({ client: makeClient("A"), directory: process.env.WORKTREE, worktree: process.env.WORKTREE });
+const hooksB = await modB.FmPrimaryWatchArm({ client: makeClient("B"), directory: process.env.WORKTREE, worktree: process.env.WORKTREE });
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const idle = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
+const rows = () => (existsSync(process.env.FM_ARM_LOG) ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter(Boolean) : []);
+const armRows = () => rows().filter((row) => row.startsWith("arm="));
+const pids = () => armRows().map((row) => Number(row.match(/^arm=(\d+)/)?.[1]));
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+async function waitFor(predicate, message) {
+  for (let i = 0; i < 500; i += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+}
+try {
+  // One overlapping delivery burst across both subscriptions and the
+  // coordinator entry the turn-end guard uses.
+  await Promise.all([
+    hooksA.event(idle),
+    hooksB.event(idle),
+    globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test"),
+    globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test"),
+    hooksA.event(idle),
+    hooksB.event(idle),
+  ]);
+  await waitFor(() => armRows().length >= 1, "the burst did not start an arm");
+  await waitFor(() => rows().some((row) => row === `ready=${pids()[0]}`), "the first arm never reported ready");
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  if (armRows().length !== 1) throw new Error(`overlapping deliveries spawned ${armRows().length} arms: ${rows().join(" | ")}`);
+  if (armRows().some((row) => !/^arm=\d+ args=$/.test(row))) throw new Error(`a successor was launched as a restart: ${rows().join(" | ")}`);
+  // Deliver the first wake: one successor must be established before its
+  // prompt, and the predecessor must be gone.
+  writeFileSync(`${process.env.FM_RELEASE_DIR}/${pids()[0]}`, "release\n");
+  await waitFor(() => armRows().length >= 2 && prompts.length >= 1, "the first delivery did not establish exactly one successor");
+  await waitFor(() => rows().some((row) => row === `ready=${pids()[1]}`), "the successor never reported ready");
+  if (alive(pids()[0])) throw new Error(`the predecessor arm ${pids()[0]} survived its successor`);
+  // The turn-end storm that follows the wake must reuse the live cycle.
+  await Promise.all([hooksA.event(idle), hooksB.event(idle), hooksA.event(idle), hooksB.event(idle)]);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  if (armRows().length !== 2) throw new Error(`the turn-end storm spawned extra successors: ${rows().join(" | ")}`);
+  // The second delivery moves to one successor the same way.
+  writeFileSync(`${process.env.FM_RELEASE_DIR}/${pids()[1]}`, "release\n");
+  await waitFor(() => armRows().length >= 3 && prompts.length >= 2, "the second delivery did not establish exactly one successor");
+  await waitFor(() => rows().some((row) => row === `ready=${pids()[2]}`), "the second successor never reported ready");
+  if (alive(pids()[1])) throw new Error(`the predecessor arm ${pids()[1]} survived its successor`);
+  if (armRows().length !== 3) throw new Error(`the burst produced colliding successors: ${rows().join(" | ")}`);
+  if (prompts.filter((entry) => entry.text.includes("burst wake")).length !== 2) {
+    throw new Error(`expected one prompt per delivered wake: ${prompts.map((entry) => entry.text).join(" || ")}`);
+  }
+  if (prompts.some((entry) => entry.text.includes("could not restore watcher continuity"))) {
+    throw new Error(`continuity restoration failed under the burst: ${prompts.map((entry) => entry.text).join(" || ")}`);
+  }
+  if (rows().filter((row) => row.startsWith("handling-delivered gen=gen-")).length < 2) {
+    throw new Error(`successor handling delivery was not confirmed: ${rows().join(" | ")}`);
+  }
+} finally {
+  for (let round = 0; round < 4; round += 1) {
+    const armPids = rows().filter((row) => row.startsWith("arm=")).map((row) => Number(row.match(/^arm=(\d+)/)?.[1]));
+    for (const pid of armPids) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        // Already exited.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  const survivors = rows()
+    .filter((row) => row.startsWith("arm="))
+    .map((row) => Number(row.match(/^arm=(\d+)/)?.[1]))
+    .filter((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  if (survivors.length) {
+    console.error(`arm processes survived the burst cleanup: ${survivors.join(",")}`);
+    process.exit(1);
+  }
+}
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "an overlapping wake burst must keep one live cycle with attach-or-start successors: $out"
+  [ -z "$out" ] || fail "OpenCode burst test printed output: $out"
+  pass "OpenCode overlapping deliveries keep one live cycle and retire predecessors"
+}
+
+# A successor must never stop a healthy identity-matched cycle it did not
+# start: launched attach-or-start, it attaches to the live cycle (or waits for
+# one) and overlapping deliveries reuse that one attached arm.
+test_opencode_successor_attaches_without_stopping_a_healthy_cycle() {
+  local plugin repo home log cycle stop out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-attach-root"
+  home="$TMP_ROOT/opencode-attach-home"
+  log="$TMP_ROOT/opencode-attach.log"
+  cycle="$TMP_ROOT/opencode-attach.cycle"
+  stop="$TMP_ROOT/opencode-attach.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  exit 0
+fi
+printf 'arm=%s args=%s\n' "$$" "$*" >> "${FM_ARM_LOG:?}"
+holder=$(cat "${FM_CYCLE_FILE:?}" 2>/dev/null || true)
+if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+  case " $* " in
+    *" --restart "*)
+      printf 'stopped-cycle=%s\n' "$holder" >> "${FM_ARM_LOG:?}"
+      kill -TERM "$holder" 2>/dev/null || true
+      ;;
+  esac
+  printf 'watcher: attached pid=%s (beacon 0s)\n' "$holder"
+  printf 'ready=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+  trap 'printf "exit=%s\n" "$$" >> "${FM_ARM_LOG:?}"; exit 0' TERM INT
+  while kill -0 "$holder" 2>/dev/null; do sleep 0.02; done
+  printf 'exit=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+printf 'ready=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+trap 'printf "exit=%s\n" "$$" >> "${FM_ARM_LOG:?}"; exit 0' TERM INT
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+printf 'exit=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_CYCLE_FILE="$cycle" FM_STOP_FILE="$stop" FM_WATCH_REARM_RETRY_LIMIT=1 FM_WATCH_REARM_RETRY_BASE_MS=50 FM_WATCH_REARM_RETRY_MAX_MS=100 node 2>&1 <<'EOF'
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const client = { session: { promptAsync: async () => {} } };
+const hooks = await mod.FmPrimaryWatchArm({ client, directory: process.env.WORKTREE, worktree: process.env.WORKTREE });
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const idle = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
+// A healthy cycle this plugin did not start: the state an orphaned successor or
+// a peer cycle presents to a fresh delivery.
+const holder = spawn("sleep", ["60"], { stdio: "ignore" });
+writeFileSync(process.env.FM_CYCLE_FILE, `${holder.pid}\n`);
+const rows = () => (existsSync(process.env.FM_ARM_LOG) ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter(Boolean) : []);
+try {
+  const status = await globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test", client);
+  if (status !== "armed") throw new Error(`expected the successor to attach to the live cycle, got ${status}`);
+  // Overlapping deliveries reuse the attached arm instead of spawning another.
+  await Promise.all([hooks.event(idle), hooks.event(idle), globalThis.__firstmateOpenCodeWatchArm.ensureArmed("session-test")]);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const armRows = rows().filter((row) => row.startsWith("arm="));
+  if (armRows.length !== 1) throw new Error(`overlapping deliveries spawned ${armRows.length} arms: ${rows().join(" | ")}`);
+  if (!/^arm=\d+ args=$/.test(armRows[0])) throw new Error(`the successor was launched as a restart: ${armRows[0]}`);
+  if (rows().some((row) => row.startsWith("stopped-cycle="))) throw new Error(`the successor stopped the healthy cycle: ${rows().join(" | ")}`);
+  if (readFileSync(process.env.FM_CYCLE_FILE, "utf8").trim() !== String(holder.pid)) {
+    throw new Error("the healthy cycle claim was replaced");
+  }
+  try {
+    process.kill(holder.pid, 0);
+  } catch {
+    throw new Error("the healthy cycle was stopped by a successor");
+  }
+} finally {
+  try {
+    process.kill(holder.pid, "SIGTERM");
+  } catch {
+    // Already exited.
+  }
+  for (let round = 0; round < 4; round += 1) {
+    const armPids = rows().filter((row) => row.startsWith("arm=")).map((row) => Number(row.match(/^arm=(\d+)/)?.[1]));
+    for (const pid of armPids) {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {
+        // Already exited.
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  const survivors = rows()
+    .filter((row) => row.startsWith("arm="))
+    .map((row) => Number(row.match(/^arm=(\d+)/)?.[1]))
+    .filter((pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  if (survivors.length) {
+    console.error(`attached arms outlived their cycle: ${survivors.join(",")}`);
+    process.exit(1);
+  }
+}
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "an OpenCode successor must attach to a healthy cycle without stopping it: $out"
+  [ -z "$out" ] || fail "OpenCode attach test printed output: $out"
+  pass "OpenCode successors attach to a healthy cycle without stopping it"
 }
 
 test_pi_extension_reports_external_healthy_watcher
@@ -5254,3 +5523,5 @@ test_opencode_established_empty_close_honors_retry_limit
 test_opencode_actionable_close_rechecks_session_lock
 test_opencode_watch_arm_coordinates_with_turnend_guard
 test_opencode_healthy_arm_output_does_not_suppress_guard
+test_opencode_overlapping_deliveries_keep_one_live_cycle
+test_opencode_successor_attaches_without_stopping_a_healthy_cycle

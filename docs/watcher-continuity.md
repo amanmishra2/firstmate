@@ -140,6 +140,9 @@ After an actionable Pi, omp, or OpenCode child close, the adapter:
 A complete Pi reason line can be observed while the predecessor is still finishing durable cleanup.
 That line is retained for replacement handoff, but the adapter never treats that already-ready predecessor as its own successor.
 
+OpenCode's successor is launched as a plain arm, never with `--restart`: it attaches to a verified healthy identity-matched cycle and only starts its own watcher when none is live, so a redundant delivery can never stop the cycle another overlapping delivery just established.
+OpenCode also keeps one arming state per home across every load of the plugin in the host process, so overlapping deliveries and reloaded subscribers deduplicate to exactly one successor.
+
 If the handoff confirmation fails, the adapter retries it once: Pi against that same token, omp and OpenCode against the current generation and successor.
 A failed confirmation is a restoration failure: the adapter classifies the error and surfaces exactly one typed message.
 Pi retires the current successor only when the failed token names its exact watcher pid and generation and that pid is no longer alive, while omp and OpenCode retire the current successor whenever the restoration's watcher pid is no longer alive.
@@ -436,6 +439,8 @@ The same suite covers ordinary same-process session replacement for `/new`, `/re
 - A mid-restore marker advance that delivers the wake with no rejection appendix, offers it to an accepting supervision branch like a confirmed delivery, and records the attempt and the confirm result in the bounded extension log when opted in.
 - A failed confirmation for a stale successor that spares a newer arm started by a repair.
 - A repair, a scheduled retry, and a deferred close over a dead-but-unclosed arm child that each start a fresh arm instead of stalling.
+- Overlapping burst deliveries through two plugin loads deduplicate to one attach-or-start successor, never stop a live cycle, and leave no predecessor arm alive.
+- A successor launched against a live identity-matched cycle attaches to it without stopping it or replacing its claim.
 
 The guard and session-start suites prove that active generation evidence tolerates a fresh-beacon handoff.
 They also prove that a legacy or handoff-phase watcher marker from an absent replacement extension still raises the outage diagnostic.
@@ -458,6 +463,7 @@ They also prove that a legacy or handoff-phase watcher marker from an absent rep
 - The already-acknowledged confirmation no-op for a matching generation, with its mismatched-generation, dead-pid, and lock-mismatch rejections preserved.
 - The manual-restart generation churn that makes a confirmation for the churned generation report a mismatch, which an arm check without a reopen leaves in place.
 - A take-over that stays quiet after a confirmed TERM, still surfaces queued work and self-exit downtime, and attaches without stopping a cycle the named arm does not own.
+- Concurrent plain re-arms that attach to the one live cycle without stopping it and resolve its delivered wake together.
 - The disposable-checkout arm refusal.
 - The home-gone and state-gone watcher exits.
 - The test reaper that stops a watcher armed for a temporary home.
