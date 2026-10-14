@@ -4922,6 +4922,49 @@ export default {
     return () => controller.abort();
   },
 };
+export const FmBusyState = async () => fmBusyHooks();
+// v2 events carry their payload under data rather than properties, and a turn
+// ends with a terminal session.execution.* event instead of session.idle.
+const v2TurnEnd = new Set([
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+]);
+const v1Event = (event) => {
+  const properties = event.data ?? {};
+  if (v2TurnEnd.has(event.type)) return { type: "session.idle", properties };
+  if (event.type === "session.execution.started") {
+    return {
+      type: "session.status",
+      properties: { sessionID: properties.sessionID, status: { type: "busy" } },
+    };
+  }
+  return { type: event.type, properties };
+};
+export default {
+  id: "fm-busy-state",
+  async setup(ctx) {
+    const hooks = fmBusyHooks();
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+          try {
+            await hooks.event({ event: v1Event(event) });
+          } catch {}
+        }
+        if (!controller.signal.aborted) {
+          console.error("[fm-busy-state] OpenCode v2 event subscription ended unexpectedly");
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("[fm-busy-state] OpenCode v2 event subscription failed: " + error);
+        }
+      }
+    })();
+    return () => controller.abort();
+  },
+};
 EOF
     exclude_path '.opencode/plugins/fm-busy-state.js'
     ;;
