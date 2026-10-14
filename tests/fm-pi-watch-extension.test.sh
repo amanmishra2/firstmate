@@ -4507,7 +4507,7 @@ writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 if (rows.some((row) => row.startsWith("plain-arm="))) throw new Error(`an opted-in home ran the plain arm: ${rows.join(" | ")}`);
 const hosts = rows.filter((row) => row.startsWith("host="));
 if (hosts.length !== 2) throw new Error(`expected the host and one successor host, got: ${rows.join(" | ")}`);
-if (!hosts.every((row) => / args=park --restart primary=opencode /.test(row))) throw new Error(`the host must run as 'park --restart' with the opencode pin: ${hosts.join(" | ")}`);
+if (!hosts.every((row) => / args=park primary=opencode /.test(row))) throw new Error(`the host must run as 'park' with the opencode pin: ${hosts.join(" | ")}`);
 if (!/predecessor=[0-9]+$/.test(hosts[1])) throw new Error(`the successor host did not receive the closed host as its predecessor: ${hosts[1]}`);
 if (!rows.some((row) => row === "confirmed generation=fixture-generation watcher=" + hosts[1].replace(/^host=([0-9]+).*/, "$1"))) {
   throw new Error(`the handling handoff was not confirmed against the successor host's cycle: ${rows.join(" | ")}`);

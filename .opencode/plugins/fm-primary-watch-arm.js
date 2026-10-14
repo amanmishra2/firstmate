@@ -479,13 +479,7 @@ function spawnArm(state, sessionID, client, predecessorArmPid = "") {
     FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
   if (hostMode) env.FM_SUPERVISION_HOST_PRIMARY = "opencode";
-  // The successor runs as a plain arm, never as a restart: a plain arm attaches
-  // to a verified healthy watcher and only starts its own cycle when none is
-  // live, so a redundant successor can never stop the cycle that a concurrent
-  // delivery just established. --restart belongs to recovery paths that intend
-  // to replace a named cycle, not to every wake delivery (bin/fm-watch-arm.sh's
-  // header owns both modes).
-  const command = hostMode ? '"$FM_ROOT_OVERRIDE/bin/fm-supervision-host.sh" park --restart' : '"$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh"';
+  const command = hostMode ? '"$FM_ROOT_OVERRIDE/bin/fm-supervision-host.sh" park' : '"$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh"';
   const armChild = spawn("bash", ["-lc", `config_dir="\${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec ${command}`], {
     cwd: paths.root,
     env,

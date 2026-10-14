@@ -140,8 +140,10 @@ After an actionable Pi, omp, or OpenCode child close, the adapter:
 A complete Pi reason line can be observed while the predecessor is still finishing durable cleanup.
 That line is retained for replacement handoff, but the adapter never treats that already-ready predecessor as its own successor.
 
-OpenCode's successor is launched as a plain arm, never with `--restart`: it attaches to a verified healthy identity-matched cycle and only starts its own watcher when none is live, so a redundant delivery can never stop the cycle another overlapping delivery just established.
-OpenCode also keeps one arming state per home across every load of the plugin in the host process, so overlapping deliveries and reloaded subscribers deduplicate to exactly one successor.
+Outside host mode, OpenCode launches its successor as a plain `fm-watch-arm.sh`, which attaches to a verified healthy identity-matched cycle and starts a watcher only when none is live.
+In opted-in host mode, it launches `fm-supervision-host.sh park` without `--restart`; the next host takes over a recorded cycle, preserving any verified healthy watcher.
+OpenCode keeps one arming state per home across every plugin load in the host process, so overlapping deliveries and reloaded subscribers deduplicate to exactly one successor.
+The deduplicated wake targets the registered session-lock owner, whose ownership is rechecked at delivery; non-owning loads do not replace the target, and an unresolved owner falls back to the arming session with a log line.
 
 If the handoff confirmation fails, the adapter retries it once: Pi against that same token, omp and OpenCode against the current generation and successor.
 A failed confirmation is a restoration failure: the adapter classifies the error and surfaces exactly one typed message.
