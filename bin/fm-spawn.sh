@@ -5012,10 +5012,8 @@ export default {
     const ownDirectory = normalizeDirectory(ctx.location && ctx.location.directory);
     const sameLocation = (directory) =>
       ownDirectory !== "" && normalizeDirectory(directory) === ownDirectory;
-    const sessionLocations = new Map();
     const sessionOwned = async (sessionID) => {
       if (typeof ctx.session?.get !== "function") {
-        sessionLocations.delete(sessionID);
         return undefined;
       }
       let directory;
@@ -5023,15 +5021,12 @@ export default {
         const session = await ctx.session.get({ sessionID });
         directory = session && session.location && session.location.directory;
       } catch {
-        sessionLocations.delete(sessionID);
         return undefined;
       }
       directory = normalizeDirectory(directory);
       if (directory === "") {
-        sessionLocations.delete(sessionID);
         return undefined;
       }
-      sessionLocations.set(sessionID, directory);
       return sameLocation(directory);
     };
     const scopedEvent = async (event) => {
@@ -5041,7 +5036,6 @@ export default {
       if (sessionID === null) return null;
       const directory = normalizeDirectory(event && event.location && event.location.directory);
       if (directory !== "") {
-        sessionLocations.set(sessionID, directory);
         return directory === ownDirectory ? v1Event(event, sessionID) : null;
       }
       return (await sessionOwned(sessionID)) === true ? v1Event(event, sessionID) : null;
