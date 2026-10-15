@@ -1,0 +1,52 @@
+LIVE REVIEW-LOOP EXERCISE 1: recurrent finding with remaining defect
+Pipeline worktree HEAD:
+5b20ab0e26bd8fc1975a4618ab9d0e05c5980305
+Current source:
+# Keep the configured watch source close to the registration adapter.
+DEFAULT_STREAM = "watch"
+
+
+def arm(source, registry):
+    source = source.strip()
+    registry.register(source)
+OpenCode pane transcript:
+   AU-17 watch name normalizatio +                                                                                      
+     Decision: Fix — the finding remains unfixed; another fix round is warranted.                                       
+                                                                                                                        
+     Rationale: The accepted intent requires watch source names to be trimmed and lowercased before registration. The   
+     first fix round (5b20ab0, diff vs 335433c: registry.register(source) → source = source.strip() + registry.         
+     register(source)) delivered only the trim half. No lowercasing exists anywhere in the repository — watch-arm.py    
+     is the only tracked file and the only normalization performed is source.strip() — so case-variant aliases (e.g.    
+     Watch vs watch) still register as separate watches, which is exactly the failure the accepted intent prohibits.    
+     registry is an injected parameter with no code in this repository, and the intent explicitly places normalization  
+     before registration, so the fix belongs in arm. The original line reference (line 4) is stale; it now points at    
+     the def line. This is a concrete defect violating an original acceptance criterion, so it is unambiguous toward    
+     the accepted design and decided here without escalation; the fix adds no new guarantee, subsystem, or surface      
+     beyond the accepted contract.                                                                                      
+                                                                                                                        
+     Recommended fix-round instruction (anchored in exact current code text, no line numbers):                          
+                                                                                                                        
+     │ In watch-arm.py, inside def arm(source, registry):, change the statement                                         
+                                                                                                                        
+     │     source = source.strip()                                                                                      
+                                                                                                                        
+     │ to                                                                                                               
+                                                                                                                        
+     │     source = source.strip().lower()                                                                              
+                                                                                                                        
+     │ so that registry.register(source) receives the watch source name trimmed and lowercased. Keep the existing       
+     │ store-back-to-source form rather than inlining the expression into the registry.register(source) call; make no   
+     │ other changes.                                                                                                   
+                                                                                                                        
+     Constraint compliance: No files were edited and no no-mistakes command was run; only read-only git inspection (    
+     rev-parse, status, ls-files, log, diff, show) was used.                                                            
+                                                                                                                        
+     Build · DeepSeek V4.1 Flash · 36.8s · 101.9 tok/s                                                                  
+                                                                                                                        
+  ┃                                                                                                                     
+  ┃                                                                                                                     
+  ┃                                                                                                                     
+  ┃  Build · DeepSeek V4.1 Flash OpenCode Go · max                                                                      
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  
+  ~/.no-mistakes/worktrees/90251462ea6c/01M4YFMT4PHVERJSMGE7CRXKQ7                 30.5K (3%) · $0.01  ctrl+p commands  
+                                                                                                                        

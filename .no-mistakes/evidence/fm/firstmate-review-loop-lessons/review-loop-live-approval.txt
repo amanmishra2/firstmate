@@ -1,0 +1,53 @@
+LIVE REVIEW-LOOP EXERCISE 2: same finding after fix is present
+Pipeline worktree HEAD:
+5dc04584b0ac6c3735a76f25c11be68f9aecbae3
+Current source:
+# The adapter accepts source names supplied by independent watch clients.
+# Canonical keys keep aliases from creating independent registrations.
+DEFAULT_STREAM = "watch"
+
+
+def arm(source, registry):
+    source = source.strip().lower()
+    registry.register(source)
+OpenCode pane transcript:
+   AU-17 watch name normalizatio   AU-17 repeat gate decision an +                                                      
+       5b20ab0 (added trim) → 5dc0458 (added lowercase).                                                                
+     - At this head, arm() executes source = source.strip().lower() immediately before registry.register(source) —      
+       trimming and lowercasing both happen before registration, and it's the only registration path in the copy.       
+     - The re-presented report carries the original text and its pre-fix line reference ("watch-arm.py line 4"). At     
+       this head line 4 is blank; the call site is lines 6–8. Line numbers drift as the head moves, so the decision is  
+       anchored to the quoted code text, not the line number — and the quoted requirement is fully satisfied.           
+                                                                                                                        
+     What to send                                                                                                       
+                                                                                                                        
+     One decision to the worker, naming: decision key nm-<run>-<step> (copied verbatim from the run's open-decision     
+     listing), the gate step, action approve the step, affected finding AU-17, and the worker's exact gate-response     
+     command per the active gate's help. Deliver it with --resolve-key <key> so the open decision record closes at      
+     answer time; forbid --yes; require the worker to process every synchronous return until completion or a genuinely  
+     new escalation, then resume supervision.                                                                           
+                                                                                                                        
+     Suggested decision content:                                                                                        
+                                                                                                                        
+     │ AU-17: approved — fix verified present at the current head, no further fix round. Evidence: source = source.     
+     │ strip().lower() runs before registry.register(source) in arm(); the finding's "line 4" reference is stale (pre-  
+     │ fix revision). Apply the gate's approval for this step, never --yes, and process every synchronous return until  
+     │ completion or a genuinely new escalation.                                                                        
+                                                                                                                        
+     Why firstmate decides this without you                                                                             
+                                                                                                                        
+     It's a straight check that accepted behavior is already present: no contract expansion, no product ambiguity,      
+     nothing destructive or security-sensitive. The prior rounds stayed minimal (one-line normalizations, no machinery  
+     added), so the same-theme-escalation trigger doesn't apply either — the fix closed the defect; the gate simply     
+     re-presented the original text. If the gate item ever references behavior beyond this quoted text, that would be   
+     re-scoped on its own merits, but as reported it matches the accepted intent exactly.                               
+                                                                                                                        
+     Build · DeepSeek V4.1 Flash · 1m 26s · 155.1 tok/s                                                                 
+                                                                                                                        
+  ┃                                                                                                                     
+  ┃                                                                                                                     
+  ┃                                                                                                                     
+  ┃  Build · DeepSeek V4.1 Flash OpenCode Go · max                                                                      
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀  
+  ~/.no-mistakes/worktrees/90251462ea6c/01M4YFMT4PHVERJSMGE7CRXKQ7                 45.4K (5%) · $0.01  ctrl+p commands  
+                                                                                                                        
