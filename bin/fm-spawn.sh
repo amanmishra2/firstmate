@@ -2773,7 +2773,7 @@ fi
 if [ "$HARNESS" = opencode ] && [ "$RAW_LAUNCH" -eq 0 ] && [ "${OPENCODE_MODEL_FLAG_SUPPORTED:-0}" != 1 ]; then
   case "$MODEL" in
   '' | default) ;;
-  */*) ;;
+  ?*/*?) ;;
   *)
     echo "error: the installed opencode's --model support could not be proven and '$MODEL' is not a provider/model id that OPENCODE_CONFIG_CONTENT can pin, so this launch cannot carry the model the task records; pass a provider/model id (or omit --model to run opencode's own default model)" >&2
     exit 1
@@ -3031,7 +3031,7 @@ opencode_agent_config_fragment() {  # <model> <effort> <model-flag-supported: 0|
     return 0
   fi
   case "$model" in
-  */*) ;;
+  ?*/*?) ;;
   *)
     # The preflight refusal in the launch path owns this rule's message and the
     # spawn refusal (a model this fragment cannot pin must never be replaced by

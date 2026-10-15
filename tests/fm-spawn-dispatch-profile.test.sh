@@ -1008,7 +1008,7 @@ SH
 }
 
 test_opencode_v2_refuses_a_model_it_cannot_pin() {
-  local rec id out status launch
+  local rec id out status launch model
   id=profile-opencode-v2-bare-z7g
   rec=$(make_spawn_case profile-opencode-v2-bare opencode "$id")
   read_case_record "$rec"
@@ -1028,6 +1028,20 @@ test_opencode_v2_refuses_a_model_it_cannot_pin() {
     "the unpinnable-model refusal did not name the channel the model could not ride"
   assert_absent "$HOME_DIR/state/$id.meta" "the unpinnable-model refusal published a task record"
   [ ! -s "$LAUNCH_LOG" ] || fail "the unpinnable-model refusal delivered a launch command"
+
+  for model in / anthropic/ /sonnet; do
+    out=$(FM_FAKE_OPENCODE_MODEL_FLAG=0 \
+      run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model "$model" 2>&1)
+    status=$?
+    expect_code 1 "$status" "opencode 2.x must refuse '$model' with an empty model component"
+    assert_contains "$out" "not a provider/model id" \
+      "the empty-component refusal for '$model' did not name the requirement"
+    assert_contains "$out" "OPENCODE_CONFIG_CONTENT" \
+      "the empty-component refusal for '$model' did not name the required pinning channel"
+    assert_absent "$HOME_DIR/state/$id.meta" \
+      "the empty-component refusal for '$model' published a task record"
+    [ ! -s "$LAUNCH_LOG" ] || fail "the empty-component refusal for '$model' delivered a launch command"
+  done
   pass "opencode 2.x refuses a model it cannot pin instead of launching a different one"
 }
 
