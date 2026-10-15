@@ -1,0 +1,15 @@
+estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate
+role=primary
+effective_budget_tokens=7500
+file=data/captain.md bytes=0 estimated_tokens=0 status=absent
+file=data/captain-shared.md bytes=0 estimated_tokens=0 status=absent
+file=data/learnings.md bytes=213 estimated_tokens=71 status=present
+total_estimated_tokens=71
+budget_status=within-budget
+
+--- persisted data/learnings.md ---
+<!-- memory tiers: see the stow skill -->
+- Before every ops-qa gate rerun, invalidate its result cache - code changes can turn a cached green result stale and let a regression pass unnoticed. <!--a:2026-10-14-->
+learning_bullets=1
+rejected_project_fact_in_memory=no
+weaker_candidate_in_memory=no

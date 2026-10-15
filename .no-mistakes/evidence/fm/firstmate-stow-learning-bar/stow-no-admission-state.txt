@@ -1,0 +1,10 @@
+estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate
+role=primary
+effective_budget_tokens=7500
+file=data/captain.md bytes=0 estimated_tokens=0 status=absent
+file=data/captain-shared.md bytes=0 estimated_tokens=0 status=absent
+file=data/learnings.md bytes=0 estimated_tokens=0 status=absent
+total_estimated_tokens=0
+budget_status=within-budget
+learnings_file=absent
+archive_file=absent

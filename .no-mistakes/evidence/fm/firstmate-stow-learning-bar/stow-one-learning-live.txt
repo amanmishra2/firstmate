@@ -1,0 +1,107 @@
+OpenCode live /stow session with two eligible candidates (disposable lab)
+
+
+> build · longcat-2.5-preview-free
+→ Skill "stow"
+> build · longcat-2.5-preview-free
+✗ Read .fm-lab.4Y2sp8/data/captain.md failed
+Error: File not found: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8/data/ca
+ptain.md
+✗ Read .fm-lab.4Y2sp8/data/captain-shared.md failed
+Error: File not found: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8/data/ca
+ptain-shared.md
+✗ Read .fm-lab.4Y2sp8/data/learnings.md failed
+Error: File not found: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8/data/le
+arnings.md
+$ FM_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8 /Users/aman/.no-mist
+akes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/bin/fm-startup-memory-budget.sh report
+estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate
+role=primary
+effective_budget_tokens=7500
+file=data/captain.md bytes=0 estimated_tokens=0 status=absent
+file=data/captain-shared.md bytes=0 estimated_tokens=0 status=absent
+file=data/learnings.md bytes=0 estimated_tokens=0 status=absent
+total_estimated_tokens=0
+budget_status=within-budget
+> build · longcat-2.5-preview-free
+$ ls -la /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8/config/stow-pass-hori
+zon 2>&1; ls -la /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8/data/memory-a
+rchive.md 2>&1; ls -la /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8/data/ 2
+>&1
+ls: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8/config/stow-pass-horizon:
+No such file or directory
+ls: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8/data/memory-archive.md: No
+ such file or directory
+total 0
+drwxr-xr-x@  3 aman  staff   96 Oct 14 22:16 .
+drwx------@ 16 aman  staff  512 Oct 14 22:16 ..
+-rw-r--r--@  1 aman  staff    0 Oct 14 22:16 secondmates.md
+> build · longcat-2.5-preview-free
+Now I have the full picture. Let me apply the durable-learning bar to both candidates and write the admitted learning.
+
+**Bar evaluation:**
+
+- **Candidate A** (`--include-signed-receipts`): If this record disappeared, a future session building the final deliver
+y packet with default options would omit the flag, silently drop signed confirmations, and lose release sign-off. The mi
+stake is concrete, the trigger is nameable, and the consequence is a rejected handoff. **Passes.**
+- **Candidate B** (`ops-qa` case-sensitivity): If this record disappeared, a future session copying the key from a title
+-cased display label would create a duplicate open item. The mistake is concrete and the trigger is nameable, but the co
+nsequence is a redundant reminder that is easy to catch. **Passes, but weaker.**
+
+Both pass the bar. Candidate A is the strongest — its absence would repeat the more consequential mistake (lost release
+sign-off vs. a redundant reminder). I admit A and drop B without queuing or reporting it.
+
+Candidate A is a fleet-local operational fact with no stronger owner (no declared memory tiers, no existing memory files
+). It belongs in `data/learnings.md` under the `aging` default tier.
+← Write .fm-lab.4Y2sp8/data/learnings.md
+Created file successfully: .fm-lab.4Y2sp8/data/learnings.md
+> build · longcat-2.5-preview-free
+$ FM_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.4Y2sp8 /Users/aman/.no-mist
+akes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/bin/fm-startup-memory-budget.sh report
+estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate
+role=primary
+effective_budget_tokens=7500
+file=data/captain.md bytes=0 estimated_tokens=0 status=absent
+file=data/captain-shared.md bytes=0 estimated_tokens=0 status=absent
+file=data/learnings.md bytes=210 estimated_tokens=70 status=present
+total_estimated_tokens=70
+budget_status=within-budget
+> build · longcat-2.5-preview-free
+Captain, the stow pass is complete. Here is the completion receipt:
+
+**Startup-memory budget**
+- Effective budget: 7,500 tokens
+- Total before: 0 tokens (all files absent)
+- Total after: 70 tokens (within budget)
+
+**Per-file actions**
+- `data/captain.md` — unchanged (absent, no content to curate)
+- `data/captain-shared.md` — unchanged (absent, no content to curate)
+- `data/learnings.md` — added (new file, one admitted learning)
+
+**Durable-learning bar outcome**
+- Admitted one learning: the packet builder must receive `--include-signed-receipts` when building the final delivery pa
+cket; omitting it silently drops signed confirmations and the handoff is rejected.
+- One additional candidate (case-sensitive note key) also passed the bar but was weaker — its absence would produce a re
+dundant reminder rather than a rejected handoff. Dropped without queuing or reporting per the pass-wide cap.
+
+**Other findings**
+- No declared memory tiers, no pending-capture entries, no archived entries, no offloads, no exceptions.
+- No open records filed or corrected this pass.
+
+**Reset-safe:** yes — all durable findings are captured, no tier-owned finding is waiting on an unreachable declared tie
+r, every open record this session held is filed, and the post-pass result is within budget with no exception.
+
+Pane is dead (status 0, Wed Oct 14 22:18:45 2026)
+
+Persisted data/learnings.md
+<!-- memory tiers: see the stow skill -->
+
+- Build the release delivery packet with `--include-signed-receipts`; omitting it silently drops signed confirmations and the handoff is rejected. <!--a:2026-10-14-->
+
+Other data files
+total 8
+drwxr-xr-x@  4 aman  staff  128 Oct 14 22:18 .
+drwx------@ 16 aman  staff  512 Oct 14 22:16 ..
+-rw-r--r--@  1 aman  staff  210 Oct 14 22:18 learnings.md
+-rw-r--r--@  1 aman  staff    0 Oct 14 22:16 secondmates.md

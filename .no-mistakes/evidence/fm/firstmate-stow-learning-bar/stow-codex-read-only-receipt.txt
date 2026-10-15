@@ -1,0 +1,28 @@
+effective_budget_tokens=7500
+file=data/captain.md bytes=0 estimated_tokens=0 status=absent
+file=data/captain-shared.md bytes=0 estimated_tokens=0 status=absent
+file=data/learnings.md bytes=0 estimated_tokens=0 status=absent
+total_estimated_tokens=0
+budget_status=within-budget
+
+codex
+Captain, here is the stow receipt.
+
+- **Budget:** 7,500 estimated tokens. Before: 0. After: 0. Both reports were within budget.
+- **Memory files:** `data/captain.md` — unchanged (absent); `data/captain-shared.md` — unchanged (absent); `data/learnings.md` — unchanged (
+absent).
+- **Durable-learning bar:** Admitted: none this pass
+- **Findings filed outside memory:** None. No declared memory tiers were present in the available preference files.
+- **Archives, offloads, and budget decisions:** None.
+- **Open records:** The startup digest showed no active task records. The wake queue was left untouched because the session lacked verified
+lock ownership.
+- **Secondmates:** None were listed in the startup digest.
+
+**Exception:** The startup lock was refused with `error: cannot locate harness process in ancestry`. The digest required read-only operation
+, so I did not write memory or run the cascade. No repository files were modified.
+
+**Reset status:** Not reset-safe; the required stow pass could not be completed under the read-only lock refusal.
+tokens used
+58,368
+
+Pane is dead (status 0, Wed Oct 14 22:56:22 2026)

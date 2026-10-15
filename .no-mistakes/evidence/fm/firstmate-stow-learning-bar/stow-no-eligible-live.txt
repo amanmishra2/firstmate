@@ -1,0 +1,93 @@
+OpenCode live /stow session (disposable lab)
+
+
+> build · longcat-2.5-preview-free
+→ Skill "stow"
+> build · longcat-2.5-preview-free
+I'll run the full `stow` pass against the designated lab home. Let me start with the required startup-memory budget repo
+rt and reading all current memory files.
+✗ Read .fm-lab.SWE8P1/data/captain-shared.md failed
+Error: File not found: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.SWE8P1/data/ca
+ptain-shared.md
+✗ Read .fm-lab.SWE8P1/data/captain.md failed
+Error: File not found: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.SWE8P1/data/ca
+ptain.md
+✗ Read .fm-lab.SWE8P1/data/learnings.md failed
+Error: File not found: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.SWE8P1/data/le
+arnings.md
+$ FM_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.SWE8P1 bin/fm-startup-memor
+y-budget.sh report
+estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate
+role=primary
+effective_budget_tokens=7500
+file=data/captain.md bytes=0 estimated_tokens=0 status=absent
+file=data/captain-shared.md bytes=0 estimated_tokens=0 status=absent
+file=data/learnings.md bytes=0 estimated_tokens=0 status=absent
+total_estimated_tokens=0
+budget_status=within-budget
+> build · longcat-2.5-preview-free
+Good. The budget report shows all three memory files are absent (0 bytes, 0 estimated tokens), effective budget is 7,500
+ tokens, and the home is within budget. Let me check what exists in the lab home's data directory and whether any memory
+-archive or pass-horizon config exists.
+→ Read .fm-lab.SWE8P1/data
+$ FM_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.SWE8P1 test -f config/stow-
+pass-horizon && echo "HORIZON_FLAG_PRESENT" || echo "HORIZON_FLAG_ABSENT"
+HORIZON_FLAG_ABSENT
+> build · longcat-2.5-preview-free
+All three memory files are absent, no pass-horizon flag, and the data directory contains only `secondmates.md`. Let me c
+heck the secondmates registry and run the final budget report to complete the pass.
+→ Read .fm-lab.SWE8P1/data/secondmates.md
+$ FM_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56/.fm-lab.SWE8P1 bin/fm-startup-memor
+y-budget.sh report
+estimator=ceil(UTF-8 bytes / 3) conservative-local-estimate
+role=primary
+effective_budget_tokens=7500
+file=data/captain.md bytes=0 estimated_tokens=0 status=absent
+file=data/captain-shared.md bytes=0 estimated_tokens=0 status=absent
+file=data/learnings.md bytes=0 estimated_tokens=0 status=absent
+total_estimated_tokens=0
+budget_status=within-budget
+> build · longcat-2.5-preview-free
+The pass is complete. The secondmates registry is empty, so no cascade is needed. Here is the completion receipt.
+
+---
+
+**Stow pass complete — disposable lab home `.fm-lab.SWE8P1`.**
+
+**Budget:** Effective startup-memory budget is **7,500 tokens**. Total estimated tokens before and after: **0 → 0**. Wel
+l within budget.
+
+**Memory file actions:**
+
+| File | Action |
+|------|--------|
+| `data/captain.md` | **unchanged** (absent — treated as absent, not manufactured) |
+| `data/captain-shared.md` | **unchanged** (absent — treated as absent, not manufactured) |
+| `data/learnings.md` | **unchanged** (absent — treated as absent, not manufactured) |
+
+**Durable-learning bar outcome: admitted none this pass.**
+
+Both candidates from the session failed the counterfactual test:
+
+- **Teal launch button observation** — No error was made, no later task depends on it, and no concrete mistake or trigge
+r would be named if the note disappeared. Fails the bar.
+- **`flower.svg` splash fact** — Purely descriptive, no engineer would repeat a mistake without it, and it carries no ri
+sk beyond "might be useful someday." Fails the bar.
+
+When nothing passes, the skill writes nothing — no filler, no placeholder, no paraphrase.
+
+**Other:**
+- No declared memory tiers; no pending-capture markers; no archived entries; no offloads; no unresolved exceptions.
+- No open records filed or corrected; no undone next steps.
+- No registered secondmates — cascade not applicable.
+- No repository or project source files were modified.
+
+**Session is safe to reset.** Captain, nothing this session knew has been lost — there was no durable knowledge to captu
+re, and the home starts clean and within budget.
+
+Pane is dead (status 0, Wed Oct 14 22:15:11 2026)
+
+Persisted lab memory state
+captain.md: absent
+captain-shared.md: absent
+learnings.md: absent

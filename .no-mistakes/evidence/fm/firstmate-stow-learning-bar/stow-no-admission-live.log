@@ -1,0 +1,40 @@
+   New session                   +
+     - Effective budget: 7500 estimated tokens (per home).
+     - Estimated total before: 0 tokens. Estimated total after: 0 tokens.                           New session - 2026-10-15T05:35:31.
+     - Status: within budget. No excess, no captain decision required.                              208Z
+
+     Per-file actions                                                                               Context
+                                                                                                    39,022 tokens
+     - data/captain.md: unchanged (absent; no captain preferences to capture).                      15% used
+     - data/captain-shared.md: unchanged (absent; no shared preferences in this home).
+     - data/learnings.md: unchanged (absent; no genuinely new durable learning admitted).
+
+     Knowledge and open work
+
+     - No durable findings were filed outside memory, and no entries captured to a declared
+       memory tier (none are declared in this home).
+     - Durable-learning bar: Admitted: none this pass. The only noted item — that this
+       repository contains bin/fm-startup-memory-budget.sh — is rediscoverable by listing files,
+       carries no consequence, and no mistake it would prevent, so it does not clear the bar.
+     - No entries carry a pending-capture marker waiting on an unreachable declared tier.
+     - No entries were archived, pruned, or offloaded; no cold-archive writes were needed.
+     - No unresolved exceptions.
+     - Open records: none held this session beyond durable state, so none to file or correct;
+       nothing was deliberately left unresolved.
+
+     Secondmates
+
+     - Cascade enumerated 0 registered secondmates; no cascade items to report.                       ⬖ Getting started                ✕
+
+     Reset-safe: yes. Nothing this session knew has been lost. This claim speaks only to                OpenCode includes free models so
+     material this session named, not to whether the home's durable records are broadly correct.        you can start immediately.
+
+     Build · Cat Jam Free · 37.6s · 94.1 tok/s                                                          Connect from 75+ providers to
+                                                                                                        use other models, including
+  ┃                                                                                                     Claude, GPT, Gemini etc
+  ┃
+  ┃                                                                                                     Connect provider        /connect
+  ┃  Build auto · Cat Jam Free OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  /…/.no-mistak…/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56  39.0K (15%)  ctrl+p commands    /…/9025146…/01M4YPRJG82BBN0PSC710AZE56
+

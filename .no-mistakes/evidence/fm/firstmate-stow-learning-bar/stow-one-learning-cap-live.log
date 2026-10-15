@@ -1,0 +1,40 @@
+   Stow complete: 2 lessons, 1 s +
+  ┃
+  ┃  $ cd /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56 && FM_HOME=    Stow complete: 2 lessons, 1 skipped
+  ┃  "$FM_HOME" bin/fm-stow-cascade.sh; echo "EXIT=$?"
+  ┃                                                                                                 Context
+  ┃  role=primary                                                                                   38,398 tokens
+  ┃  secondmates=0                                                                                  15% used
+  ┃  exceptions=0
+  ┃  reason=no secondmate registry in this home
+  ┃  EXIT=0
+  ┃
+
+     + Thought · 6.8s
+
+     Captain, the /stow pass is complete.
+
+     - Startup-memory budget: 7,500 tokens effective; 0 tokens before the pass, 71 tokens after.
+     - data/captain.md: unchanged (absent).
+     - data/captain-shared.md: unchanged (absent).
+     - data/learnings.md: added — one operational learning filed.
+     - Durable-learning bar outcome: admitted one learning — invalidate the ops-qa result cache
+       before every gate rerun, because a code change can leave a cached green result stale and
+       let a regression pass unnoticed. Routed as a home-local operational learning (no declared
+       memory tier owns its class).
+     - No captures to a declared memory tier; no tier-owned findings left pending.
+     - Archived entries: none. Offloads proposed: none. Unresolved exceptions: none.
+     - Open records: none filed or corrected; no open work existed this session.                      ⬖ Getting started                ✕
+     - Secondmate cascade: no registered secondmates; home judged against its own budget only.
+     - Session is safe to reset: nothing this session knew has been lost beyond the deliberate          OpenCode includes free models so
+       rate cap, and memory is within budget with no exceptions.                                        you can start immediately.
+
+     Build · Cat Jam Free · 27.5s · 203.0 tok/s                                                         Connect from 75+ providers to
+                                                                                                        use other models, including
+  ┃                                                                                                     Claude, GPT, Gemini etc
+  ┃
+  ┃                                                                                                     Connect provider        /connect
+  ┃  Build auto · Cat Jam Free OpenCode
+  ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+  /…/.no-mistak…/worktrees/90251462ea6c/01M4YPRJG82BBN0PSC710AZE56  38.4K (15%)  ctrl+p commands    /…/9025146…/01M4YPRJG82BBN0PSC710AZE56
+
