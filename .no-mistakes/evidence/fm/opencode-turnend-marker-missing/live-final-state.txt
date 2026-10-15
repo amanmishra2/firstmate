@@ -1,0 +1,5 @@
+command: stat marker; cat busy-state
+-- marker --
+/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home/state/opencode-live-worker.turn-ended 0 bytes 2026-10-14T13:50:33-0700
+-- busy-state --
+v1 gen=g1792010777.35185.25777 seq=9 state=idle source=opencode-plugin event=session-status-idle ts=1792011033

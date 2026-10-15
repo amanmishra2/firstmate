@@ -1,0 +1,3 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home
+error: could not resolve origin's current default branch for pooled worktree '/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/treehouse/.treehouse/project-1699cc/1/project'; refusing to launch from a potentially stale base
+spawn_rc=1

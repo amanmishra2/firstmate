@@ -1,0 +1,5 @@
+command: env -u TMUX -u TMUX_PANE TMUX_TMPDIR=/tmp/fml.R9Fmec tmux list-sessions
+firstmate: 2 windows (created Wed Oct 14 13:46:14 2026)
+command: env -u TMUX -u TMUX_PANE TMUX_TMPDIR=/tmp/fml.R9Fmec tmux list-windows -t firstmate
+0: zsh* (1 panes) [80x24] [layout {"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"a":true,"i":0,"I":"%0"}}] @0 (active)
+1: fm-opencode-live-worker (1 panes) [80x24] [layout {"V":2,"L":{"t":"p","w":80,"h":24,"x":0,"y":0,"a":true,"i":0,"I":"%1"}}] @1

@@ -1,0 +1,2 @@
+command: env -u TMUX -u TMUX_PANE TMUX_TMPDIR=/tmp/fml.R9Fmec tmux kill-server
+kill_rc=0

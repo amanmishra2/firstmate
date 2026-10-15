@@ -1,0 +1,16 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+warning: lsof is unavailable; cannot resolve the tmux pane process group for opencode-live-worker
+A new version of treehouse is available: v3.1.2 → v3.1.3
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown opencode-live-worker complete (window firstmate:fm-opencode-live-worker, worktree /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/treehouse/.treehouse/project-b7afbd/1/project)
+Backlog: opencode-live-worker just finished (this home keeps no markdown backlog at /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home/data/backlog.md). Update /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home/data/backlog.md - move opencode-live-worker to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+fm-teardown_rc=0

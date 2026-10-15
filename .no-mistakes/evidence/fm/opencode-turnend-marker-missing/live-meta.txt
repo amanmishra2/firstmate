@@ -1,0 +1,12 @@
+window=firstmate:fm-opencode-live-worker
+endpoint_task_id=opencode-live-worker
+worktree=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/treehouse/.treehouse/project-b7afbd/1/project
+project=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/project
+harness=opencode
+kind=scout
+tasktmp=/tmp/fm-opencode-live-worker
+base_branch=main
+model=opencode/big-pickle
+effort=default
+busy_gen=g1792010777.35185.25777
+spawn_gen=s1792010777.29807.22328

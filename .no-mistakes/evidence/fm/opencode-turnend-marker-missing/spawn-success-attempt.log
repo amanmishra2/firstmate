@@ -1,0 +1,4 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home
+warn: no registry at /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home/data/projects.md; defaulting project to no-mistakes off
+spawned opencode-live-worker harness=opencode kind=scout window=firstmate:fm-opencode-live-worker worktree=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/treehouse/.treehouse/project-b7afbd/1/project
+spawn_rc=0

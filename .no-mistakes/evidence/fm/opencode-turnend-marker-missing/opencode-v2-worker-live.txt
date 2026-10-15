@@ -1,0 +1,14 @@
+OpenCode version: opencode v2.0.28
+
+Live worker pane output:
+     OPENCODE_LIVE_ACK
+     ▣  Build · Big Pickle · 5.1s
+  ┃  Reply exactly OPENCODE_LIVE_ACK again.
+     OPENCODE_LIVE_ACK
+     ▣  Build · Big Pickle · 2.2s
+  ┃  Buildu·yBig PickleeOpenCode event subscription failed: TypeError: undefined
+
+Persisted busy state:
+v1 gen=g1792010777.35185.25777 seq=9 state=idle source=opencode-plugin event=session-status-idle ts=1792011033
+
+Turn-ended marker: present

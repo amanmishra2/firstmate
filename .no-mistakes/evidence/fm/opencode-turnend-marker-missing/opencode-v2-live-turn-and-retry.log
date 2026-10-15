@@ -1,0 +1,14 @@
+OpenCode 2 live turn and resubscribe evidence
+Version: opencode v2.0.28
+Spawn: spawned opencode-v2-live-5 harness=opencode kind=ship mode=local-only yolo=off window=primary:fm-opencode-v2-live-5 work
+TUI size: 120x40
+OpenCode transcript:
+  ┃  Reply exactly WORKER_DONE. Do not edit files or invoke tools.
+     WORKER_DONE
+     Build · Cat Jam Free · 1.7s · 27.6 tok/s
+  ┃  Build · Cat Jam Free OpenCode
+Fault injection in the disposable generated plugin: first subscription ended with EOF; second subscription rejected; later subscriptions delegated to the real OpenCode event stream.
+Injected branch markers: EOF=yes, rejection=yes
+Persisted busy record: idle opencode-plugin session-idle 5
+Firstmate classification: idle opencode-plugin
+state/opencode-v2-live-5.turn-ended: present size=0 modified=2026-10-14 14:33:33

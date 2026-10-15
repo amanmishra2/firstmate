@@ -1,0 +1,2 @@
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/aman/.no-mistakes/repos/90251462ea6c.git)
+spawn_rc=3

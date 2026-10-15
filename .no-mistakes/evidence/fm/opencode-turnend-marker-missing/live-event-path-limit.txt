@@ -1,0 +1,13 @@
+Scenario: real Firstmate-spawned OpenCode v2.0.28 worker in the private lab.
+
+Observed completion:
+- The OpenCode pane produced OPENCODE_LIVE_ACK twice.
+- The Firstmate marker was touched at 2026-10-14T13:50:33-0700.
+- The persisted busy record ended idle with source=opencode-plugin.
+
+Live v2 event-path limitation:
+- The OpenCode pane printed: OpenCode event subscription failed: TypeError: undefined i.
+- The second-turn trace observed session-busy followed by session-status-idle and did not observe session-idle.
+- Therefore this live run proves worker completion, marker creation, and idle classification, but it does not prove that session.execution.* was consumed live. The focused adapter test is the evidence for the terminal event and bounded resubscription behavior.
+
+Evidence: live-pane.txt, live-pane-second-turn.txt, live-transition-trace.txt, live-final-state.txt, focused-test.log.

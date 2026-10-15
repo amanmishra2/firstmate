@@ -1,0 +1,23 @@
+command: sqlite3 -header -column .fm-opencode-worker-lab.7xy7Xo/opencode.db "session + assistant message proof"
+-- session --
+id                              title                          version  agent  model                                        time_updated 
+------------------------------  -----------------------------  -------  -----  -------------------------------------------  -------------
+ses_ec3d54ffdffe4kw6KUD5Y03r1x  OpenCode worker live ACK turn  1.19.0   build  {"id":"big-pickle","providerID":"opencode"}  1792011033005
+-- assistant parts --
+id                              role       finish  part_type    text                                                                                  
+------------------------------  ---------  ------  -----------  --------------------------------------------------------------------------------------
+msg_13c2ab2cb001chDzzaWhIdd6t4  assistant  stop    step-start                                                                                         
+
+msg_13c2ab2cb001chDzzaWhIdd6t4  assistant  stop    reasoning    The task is simple: reply exactly OPENCODE_LIVE_ACK. Do not use tools. This is a test.
+                                                                                                                                                      
+                                                                I should just output that.                                                            
+
+msg_13c2ab2cb001chDzzaWhIdd6t4  assistant  stop    text         OPENCODE_LIVE_ACK                                                                     
+
+msg_13c2ab2cb001chDzzaWhIdd6t4  assistant  stop    step-finish                                                                                        
+
+msg_13c2e50f7001Xy5TlNrUCB1Y08  assistant  stop    step-start                                                                                         
+
+msg_13c2e50f7001Xy5TlNrUCB1Y08  assistant  stop    text         OPENCODE_LIVE_ACK                                                                     
+
+msg_13c2e50f7001Xy5TlNrUCB1Y08  assistant  stop    step-finish                                                                                        

@@ -1,0 +1,4 @@
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home
+warn: no registry at /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home/data/projects.md; defaulting project to no-mistakes off
+error: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4XMM693177RX5PZ8HGANDYR/.fm-opencode-worker-lab.7xy7Xo/home/data/opencode-live-worker/brief.md must record Base branch: main and no other Base branch line to spawn with --base-branch main; scaffold it with bin/fm-brief.sh --base-branch main
+spawn_rc=1

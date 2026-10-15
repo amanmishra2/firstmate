@@ -1,0 +1,10 @@
+socket_tmpdir=/tmp/fml.R9Fmec
+command: tmux send-keys -t firstmate:fm-opencode-live-worker -l 'Reply exactly OPENCODE_LIVE_ACK again.'; tmux send-keys -t firstmate:fm-opencode-live-worker Enter
+baseline:
+v1 gen=g1792010777.35185.25777 seq=5 state=idle source=opencode-plugin event=session-status-idle ts=1792010798
+t+002: v1 gen=g1792010777.35185.25777 seq=6 state=busy source=opencode-plugin event=session-busy ts=1792011030
+t+003: v1 gen=g1792010777.35185.25777 seq=7 state=busy source=opencode-plugin event=session-busy ts=1792011030
+t+014: v1 gen=g1792010777.35185.25777 seq=8 state=busy source=opencode-plugin event=session-busy ts=1792011033
+t+015: v1 gen=g1792010777.35185.25777 seq=9 state=idle source=opencode-plugin event=session-status-idle ts=1792011033
+trace did not observe session-idle
+trace_rc=1

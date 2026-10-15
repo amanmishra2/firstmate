@@ -1,0 +1,23 @@
+Scenario: Firstmate-spawned OpenCode 2 worker turn and v2 plugin lifecycle
+OpenCode CLI: opencode v2.0.28
+Spawn output:
+spawned oc-v2-live harness=opencode kind=scout window=primary:fm-oc-v2-live worktree=/private/var/folders/rz/r_7y_j8903x
+
+Worker response and plugin diagnostic:
+22:  ┃  Return exactly: OpenCode v2 live worker completed.
+30:     OpenCode v2 live worker completed.
+36:  ┃  [fm-busy-state] OpenCode v2 event subscription failed: TypeError: undefined is not an object (evaluating 'ctx.event
+
+OpenCode plugin/config diagnostics:
+8:timestamp=2026-10-14T20:14:27.518Z level=WARN run=ebd1729e message="configuration compatibility diagnostic" source=/private/var/folders/rz/r_7y_j8903x7clhnpvydlpd00000gn/T/fm-lab.4VEXYf/treehouse/.treehouse/opencode-v2-lab-46a5d6/1/opencode-v2-lab/opencode.json path="[\"providers\"]" kind=unsupported action="Omitted native setting that cannot be represented in V1"
+15:timestamp=2026-10-14T20:14:34.806Z level=INFO run=ebd1729e message=created id=ses_ec3f294c9ffe2QHqc021anPpOk slug=proud-harbor version=1.19.0 projectID=48a7daf4a7f81fda81c62d5e331526373b4b23f3 directory=/private/var/folders/rz/r_7y_j8903x7clhnpvydlpd00000gn/T/fm-lab.4VEXYf/treehouse/.treehouse/opencode-v2-lab-46a5d6/1/opencode-v2-lab path="" workspaceID=undefined parentID=undefined title="New session - 2026-10-14T20:14:34.806Z" agent=build model.id=big-pickle model.providerID=opencode metadata=undefined permission=undefined cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1792008874806 time.updated=1792008874806
+20:timestamp=2026-10-14T20:14:35.097Z level=INFO run=ebd1729e message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+32:timestamp=2026-10-14T20:14:36.793Z level=INFO run=ebd1729e message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+
+Local disposable provider log (no completion request was received):
+mock-provider-listening=127.0.0.1:62663
+
+Persisted busy-state record:
+v1 gen=g1792008863.64438.10602 seq=5 state=idle source=opencode-plugin event=session-status-idle ts=1792008879
+Classifier: idle opencode-plugin
+Turn-ended marker: present (/var/folders/rz/r_7y_j8903x7clhnpvydlpd00000gn/T/fm-lab.4VEXYf/state/oc-v2-live.turn-ended)
