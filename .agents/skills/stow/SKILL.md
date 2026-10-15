@@ -251,7 +251,7 @@ It governs the knowledge classes the sweep exists to capture - operational learn
 2. **Route each finding using AGENTS.md's knowledge-routing table.**
    AGENTS.md section 6 is the source of truth for destinations.
    Do not re-derive or duplicate that mapping here.
-   Before routing or reporting discretionary operational-learning and project-intrinsic candidates, apply the durable-learning bar and pass-wide cap; write or report only the single admitted candidate.
+   Before routing or reporting any operational-learning or project-intrinsic candidate, apply the durable-learning bar and pass-wide cap; write or report only the single admitted candidate.
    Match each finding against the home's declared memory tiers first and capture a tier-owned finding to that tier, falling back to the local files only for classes no declared tier owns.
    When the owning tier is unreachable from this session, write the finding to the startup-loaded local memory file its class would otherwise use, or keep it where it already lives, carrying the pending-capture marker for that tier; it is still an exception for the receipt, never a reason to treat the local copy as sufficient.
 3. **Write within the existing boundaries.**
@@ -302,7 +302,7 @@ Report the outcome in plain captain-facing language with all of these facts:
 - effective startup-memory budget and total estimated tokens before and after;
 - one or more actions for each of `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`, using only `unchanged`, `added`, `rewritten`, `pruned`, `routed`, `archived`, or `proposed-offload`; adding or replacing a migration marker is `rewritten`, never a new action verb such as `migrated`;
 - each durable finding filed outside memory and its authoritative owner, including every capture to a declared memory tier;
-- the durable-learning bar's outcome: the one learning it admitted, or that it admitted none this pass;
+- the durable-learning bar's outcome: write exactly `Admitted: none this pass` when none is admitted, or name only the single admitted learning; never name or describe rejected candidates or passing candidates dropped by the cap anywhere in the receipt;
 - every finding or entry a declared tier should hold but this session could not reach, left carrying its pending-capture marker and named so a session that can reach it captures it;
 - each archived entry's reason, each autonomous offload's live destination and actual relief, and, when a pinned candidate was proposed, the `proposed-offload` section with every candidate's fields;
 - every unresolved exception, including a primary-owned shared-file constraint in a secondmate home, and every concrete captain decision opened for an over-budget result;
