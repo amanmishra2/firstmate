@@ -241,7 +241,6 @@ It governs the knowledge classes the sweep exists to capture - operational learn
 - An absent or empty `data/learnings.md` is not an invitation to fill it, and the bar is not relaxed for a pass that wrote nothing else.
 - An empty admission never leaves an uncaptured durable finding behind, because a candidate the bar rejects is not durable knowledge.
 - Never lower the test to avoid an empty result, and never treat a written learning as proof the pass was productive.
-- A direct captain instruction to record a named fact is followed as given; the bar governs the pass's own discretionary capture.
 - Reinforcing, retiering, consolidating, archiving, or offloading an entry already written is curation rather than admission, so it neither asks the test nor consumes the one slot.
 
 ## Knowledge sweep and routing
@@ -252,15 +251,16 @@ It governs the knowledge classes the sweep exists to capture - operational learn
 2. **Route each finding using AGENTS.md's knowledge-routing table.**
    AGENTS.md section 6 is the source of truth for destinations.
    Do not re-derive or duplicate that mapping here.
+   Before routing or reporting discretionary operational-learning and project-intrinsic candidates, apply the durable-learning bar and pass-wide cap; write or report only the single admitted candidate.
    Match each finding against the home's declared memory tiers first and capture a tier-owned finding to that tier, falling back to the local files only for classes no declared tier owns.
    When the owning tier is unreachable from this session, write the finding to the startup-loaded local memory file its class would otherwise use, or keep it where it already lives, carrying the pending-capture marker for that tier; it is still an exception for the receipt, never a reason to treat the local copy as sufficient.
 3. **Write within the existing boundaries.**
    - Captain preferences and fleet-local operational facts belong in the destination selected by AGENTS.md after the required whole-file curation pass.
-     Create `data/learnings.md` only for a genuinely new local learning with no stronger owner that has cleared the durable-learning bar.
+     Create `data/learnings.md` only for an admitted, genuinely new local learning with no stronger owner.
    - In a primary home, curate shared captain preferences only under the existing primary-authoritative shared-preference contract.
      In a secondmate home, route a newly discovered shared preference to the main firstmate through marked status or a document pointer instead of editing the inherited file.
    - Project-intrinsic knowledge never goes into a project's `AGENTS.md` through this fleet: a crewmate edits those files only to correct factually wrong information (AGENTS.md section 6), so no ship task carries an addition.
-     Keep the candidate in `data/learnings.md` or surface it in the completion receipt so the captain can extend the file by hand.
+     Keep an admitted project-intrinsic candidate in `data/learnings.md` or surface it in the completion receipt so the captain can extend the file by hand.
    - Knowledge general to every Firstmate user belongs in this repo's shared tracked material through the normal branch, no-mistakes, PR, and captain-merge path, which exists only under this home's firstmate-repository publication authority (`AGENTS.md` section 1's role boundary).
      A user/operator home instead keeps the lesson in `data/learnings.md` and may leave a sanitized local draft for the captain to carry upstream.
    - For task-scoped notes, inspect the item with `bin/fm-tasks-axi.sh show <id> --full`, classify the change as new, duplicate, superseding, or obsolete, then use a considered replacement body through `bin/fm-tasks-axi.sh update <id> --body-file <path>`.
