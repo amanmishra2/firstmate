@@ -302,7 +302,7 @@ Report the outcome in plain captain-facing language with all of these facts:
 - effective startup-memory budget and total estimated tokens before and after;
 - one or more actions for each of `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`, using only `unchanged`, `added`, `rewritten`, `pruned`, `routed`, `archived`, or `proposed-offload`; adding or replacing a migration marker is `rewritten`, never a new action verb such as `migrated`;
 - each durable finding filed outside memory and its authoritative owner, including every capture to a declared memory tier;
-- the durable-learning bar's outcome: write exactly `Admitted: none this pass` when none is admitted, or name only the single admitted learning; never name or describe rejected candidates or passing candidates dropped by the cap anywhere in the receipt;
+- the durable-learning bar's outcome: when none is admitted, write exactly `Admitted: none this pass` as the complete bar outcome and include no candidate names or rationale; otherwise name only the single admitted learning; rejected candidates and passing candidates dropped by the cap remain absent everywhere in the receipt;
 - every finding or entry a declared tier should hold but this session could not reach, left carrying its pending-capture marker and named so a session that can reach it captures it;
 - each archived entry's reason, each autonomous offload's live destination and actual relief, and, when a pinned candidate was proposed, the `proposed-offload` section with every candidate's fields;
 - every unresolved exception, including a primary-owned shared-file constraint in a secondmate home, and every concrete captain decision opened for an over-budget result;
