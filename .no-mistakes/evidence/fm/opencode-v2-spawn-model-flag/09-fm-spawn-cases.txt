@@ -1,0 +1,12 @@
+
+=== live-opencode-invalid-bare rc=1 ===
+error: the installed opencode's --model support could not be proven and 'sonnet' is not a provider/model id that OPENCODE_CONFIG_CONTENT can pin, so this launch cannot carry the model the task records; pass a provider/model id (or omit --model to run opencode's own default model)
+id=live-opencode-invalid-bare rc=1 meta=absent
+
+=== live-opencode-invalid-provider-empty rc=1 ===
+error: the installed opencode's --model support could not be proven and '/model' is not a provider/model id that OPENCODE_CONFIG_CONTENT can pin, so this launch cannot carry the model the task records; pass a provider/model id (or omit --model to run opencode's own default model)
+id=live-opencode-invalid-provider-empty rc=1 meta=absent
+
+=== live-opencode-invalid-model-empty rc=1 ===
+error: the installed opencode's --model support could not be proven and 'provider/' is not a provider/model id that OPENCODE_CONFIG_CONTENT can pin, so this launch cannot carry the model the task records; pass a provider/model id (or omit --model to run opencode's own default model)
+id=live-opencode-invalid-model-empty rc=1 meta=absent

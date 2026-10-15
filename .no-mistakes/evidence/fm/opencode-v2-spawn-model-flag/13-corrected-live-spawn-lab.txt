@@ -1,0 +1,14 @@
+scenario=real-fm-spawn-corrected
+lab=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn3.ZKg0oH
+/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn3.ZKg0oH
+socket_dir=/tmp/fml.dXBc75
+socket_label=fm-lab-opencode-spawn3
+session=fm-lab-opencode-spawn3
+control_started=1
+corrected_control_client_rc=0
+control_tmux=/private/tmp/fml.dXBc75/tmux-501/fm-lab-opencode-spawn3,43854,0
+control_pane=%5
+control_pwd=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn3.ZKg0oH/projects/opencode-spawn
+live_rc=0
+meta=present
+safety_stop=private server killed after task pane inherited shared TREEHOUSE_ROOT; no shared treehouse inspection or mutation performed

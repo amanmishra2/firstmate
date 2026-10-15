@@ -1,0 +1,26 @@
+config_command=cd /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-config.hlf7Sg/project && env -i HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-config.hlf7Sg/home XDG_CONFIG_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-config.hlf7Sg/xdg-config XDG_DATA_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-config.hlf7Sg/xdg-data XDG_CACHE_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-config.hlf7Sg/xdg-cache XDG_STATE_HOME=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-config.hlf7Sg/xdg-state PATH=/Users/aman/.opencode/bin:/opt/homebrew/bin:/usr/bin:/bin:/opt/homebrew/sbin:/sbin OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1 OPENCODE_CONFIG_CONTENT={"permission":{"*":"allow"},"agent":{"build":{"model":"anthropic/claude-sonnet-4-5","variant":"high"}}} /Users/aman/.opencode/bin/opencode debug config
+Error: Server process exited with code 1
+Error: Managed service port 49374 on 127.0.0.1 is already in use by another process. Configure another port with `opencode service set port <port>` and start the service again.
+    at <anonymous> (/$bunfs/root/chunk-r5x8gzyh.js:2:8825) {
+  [cause]: ServeError: 
+      at T (/$bunfs/root/chunk-8zhc4dm1.js:52:7706)
+      at applyHandlers (node:events:64:20)
+      at emitError (node:events:44:27)
+      at emitListenErrorNextTick (node:_http_server:134:12)
+      at processTicksAndRejections (unknown:7:39) {
+    [cause]: Error: Failed to start server. Is port 49374 in use?
+        at serve (unknown)
+        at <anonymous> (node:_http_server:359:39)
+        at <anonymous> (node:_http_server:332:33)
+        at <anonymous> (/$bunfs/root/chunk-8zhc4dm1.js:52:7744)
+  }
+}
+    at map (unknown:1:11)
+    at reap (/$bunfs/root/chunk-cj4ses6r.js:2:1203)
+    at <anonymous> (/$bunfs/root/chunk-cj4ses6r.js:3:6711)
+    at service.ensure (/$bunfs/root/chunk-4jhrvr7v.js:3:732)
+    at service.ensure (definition) (/$bunfs/root/chunk-cj4ses6r.js:3:5523)
+    at cli.server-connection.resolve (/$bunfs/root/chunk-a6bszmak.js:2:1623)
+    at cli.server-connection.resolve (definition) (/$bunfs/root/chunk-4jhrvr7v.js:2:402)
+    at cli.debug.config (/$bunfs/root/chunk-s4zsbqev.js:7:21270)
+    at cli.debug.config (definition) (/$bunfs/root/chunk-a6bszmak.js:2:1566)

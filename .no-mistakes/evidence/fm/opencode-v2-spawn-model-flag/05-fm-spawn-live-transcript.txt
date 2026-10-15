@@ -1,0 +1,45 @@
+socket_dir=/tmp/fml.3mXSid
+socket_path=/tmp/fml.3mXSid/tmux-501/fm-lab-opencode-spawn
+session=fm-lab-control
+control_command=env -i HOME='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/oc-home' XDG_CONFIG_HOME='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/xdg-config' XDG_DATA_HOME='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/xdg-data' XDG_CACHE_HOME='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/xdg-cache' XDG_STATE_HOME='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/xdg-state' PATH='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/bin:/Users/aman/.opencode/bin:/opt/homebrew/bin:/usr/bin:/bin:/opt/homebrew/sbin:/sbin' TERM=xterm-256color LANG=C LC_ALL=C ROOT='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8' LAB='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH' PROJECT='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/projects/opencode-spawn' OC_HOME='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/oc-home' XDG_CONFIG='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/xdg-config' XDG_DATA='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/xdg-data' XDG_CACHE='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/xdg-cache' XDG_STATE='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/xdg-state' BASE_PATH='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/bin:/Users/aman/.opencode/bin:/opt/homebrew/bin:/usr/bin:/bin:/opt/homebrew/sbin:/sbin' TMPDIR_RUN='/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8' SOCKET_PATH='/tmp/fml.3mXSid/tmux-501/fm-lab-opencode-spawn' bash '/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/run-spawn-cases.sh'; printf control_done > '/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn.wbVlXH/control.done'; sleep 300
+env_unset=CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS GEMINI_CLI
+control_poll_tenths=133
+
+=== live-opencode-invalid-bare rc ===
+3
+live-opencode-invalid-bare output:
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/aman/.no-mistakes/repos/90251462ea6c.git)
+live-opencode-invalid-bare meta: ABSENT
+
+=== live-opencode-invalid-provider-empty rc ===
+3
+live-opencode-invalid-provider-empty output:
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/aman/.no-mistakes/repos/90251462ea6c.git)
+live-opencode-invalid-provider-empty meta: ABSENT
+
+=== live-opencode-invalid-model-empty rc ===
+3
+live-opencode-invalid-model-empty output:
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/aman/.no-mistakes/repos/90251462ea6c.git)
+live-opencode-invalid-model-empty meta: ABSENT
+
+=== live-opencode-live rc ===
+3
+live-opencode-live output:
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/aman/.no-mistakes/repos/90251462ea6c.git)
+live-opencode-live meta: ABSENT
+
+=== live-opencode-dead rc ===
+3
+live-opencode-dead output:
+error: refusing fleet lifecycle from inside a no-mistakes gate worktree (/Users/aman/.no-mistakes/repos/90251462ea6c.git)
+live-opencode-dead meta: ABSENT
+
+=== dead interrupt coordination ===
+dead_target=
+dead_spawn_rc=3
+
+=== tmux windows before teardown ===
+fm-lab-control:control:sleep
+
+=== task pane captures ===

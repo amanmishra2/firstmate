@@ -1,0 +1,45 @@
+Final bounded live OpenCode attempt (real product only)
+Date: 2026-10-14
+
+Lab and socket setup
+- New disposable lab was created under the worktree with TMPDIR=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8 and bin/fm-lab-home.sh create.
+- mkdir -p "/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/tmux" was used directly; fm-lab-home.sh tmux-dir was not used.
+- macOS rejected the full lab socket pathname as too long. The safe adaptation was a short worktree-local symlink `/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/x -> /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/tmux`; the actual socket file was `/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/tmux/s`. The symlink was removed during cleanup.
+- The private named socket/session was fm-lab-opencode-final, operated only through the absolute socket `/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/x/s`.
+- The private tmux server was started with TREEHOUSE_ROOT="/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/treehouse" in its env before session creation. Verification returned exactly:
+  TREEHOUSE_ROOT=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/treehouse
+- A real OpenCode v2.0.28 TUI was launched as the primary session command through an exec-transparent wrapper:
+  #!/bin/sh
+  exec /Users/aman/.opencode/bin/opencode --standalone "$@"
+- The primary pane reached current_command=opencode with its cwd at the lab project. The actual process observed was:
+  /Users/aman/.opencode/bin/opencode --standalone
+
+In-session spawn attempt
+- The control shell was launched as a pane in the same private session. It had real values:
+  control_tmux=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/x/s,47759,0
+  control_pane=%1
+  control_treehouse_root=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/treehouse
+  control_pwd=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/projects/opencode-spawn
+- Foreign marker names were unset: CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS GEMINI_CLI.
+- Command attempted from that in-session shell:
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS -u GEMINI_CLI FM_HOME="/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0" FM_ROOT_OVERRIDE="/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8" FM_STATE_OVERRIDE="/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/state" FM_CONFIG_OVERRIDE="/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/config" TREEHOUSE_ROOT="/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/treehouse" FM_BACKEND=tmux FM_OPENCODE_READY_POLLS=0 FM_OPENCODE_POLL_INTERVAL=0.2 FM_OPENCODE_READY_DEAD_CONFIRM=2 "/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/bin/fm-spawn.sh" live-opencode-final "/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/projects/opencode-spawn" --scout --harness opencode --model anthropic/claude-sonnet-4-5 --effort high --backend tmux
+- Result: valid_rc=1. No task meta or reported worktree was created.
+- The real task pane visibly showed:
+  aman@Amans-MacBook-Pro opencode-spawn % treehouse get
+  zsh: command not found: treehouse
+- The minimal isolated PATH omitted the installed real Treehouse binary. After stopping the bounded attempt, command -v treehouse reported `/Users/aman/.local/bin/treehouse` (v3.1.2). I did not rerun with a changed PATH because this was the one authorized bounded attempt.
+
+Scenario status
+- Real primary OpenCode launch: PASS for process/TUI startup in the new private session.
+- Valid OpenCode fm-spawn model delivery: UNTESTED/BLOCKED before Treehouse allocation, because the actual treehouse executable was absent from the isolated PATH.
+- Invalid-model refusal: prior recorded evidence remains in 09-fm-spawn-cases.txt; not rerun.
+- Dead/early-exit readiness, busy-generation retirement, FM_OPENCODE_READY_POLLS=0 refusal, and overflow readiness: NOT RUN after the setup blocker.
+- No path outside `/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-final.GOzxE0/treehouse` was reported or inspected. The previously observed external Treehouse path was not touched.
+
+Cleanup checks
+- Killed only the private fm-lab-opencode-final tmux server.
+- Removed the private socket and short symlink, disposable lab, wrapper, primary TUI, and task pane.
+- Confirmed no fm-opencode-final.* lab directory remains in the worktree.
+- Confirmed no private final tmux socket directory remains under /tmp.
+- Confirmed no fm-lab-opencode-final, fm-opencode-final, or this run's `--standalone` OpenCode process remains.
+- No source or test files changed; final git status was clean (`## HEAD (no branch)`).

@@ -1,0 +1,15 @@
+Validation final status
+
+Real product evidence
+- PASS (live=true): actual /Users/aman/.opencode/bin/opencode v2.0.28 launched in a disposable private fm-lab-opencode-spawn3 tmux TUI with an exec-transparent --standalone wrapper.
+- PASS (live=true, prior recorded run): unpinnable model inputs were refused before launch/record; see 09-fm-spawn-cases.txt and 10-live-opencode-spawn-blocker.txt.
+- BLOCKED (live=false): valid fm-spawn supported-live and dead/early-exit readiness cases. The correction route had real TMUX/TMUX_PANE, but the task pane inherited the primary tmux server environment and used shared /Users/aman/.treehouse instead of the lab treehouse. The run was safety-stopped before accepting any result.
+- NOT RUN: FM_OPENCODE_READY_POLLS=0 and overflow-sized readiness cases after the safety stop. No claim is made for these cases.
+
+Exact blocker
+fm-spawn's child task pane did not inherit the control shell's lab TREEHOUSE_ROOT. Its output reported:
+spawned live-opencode-corrected harness=opencode kind=scout window=fm-lab-opencode-spawn3:fm-live-opencode-corrected worktree=/Users/aman/.treehouse/opencode-spawn-bd14a1/1/opencode-spawn
+
+No production code or test files were changed. The focused regression test was not rerun in this correction attempt because the parent already ran it.
+
+Cleanup status: complete. Disposable lab, private tmux server, and real OpenCode primary are gone. Shared treehouse was neither inspected nor mutated by this validation run.

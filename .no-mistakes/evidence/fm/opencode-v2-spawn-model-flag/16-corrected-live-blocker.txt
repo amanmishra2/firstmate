@@ -1,0 +1,41 @@
+OpenCode live validation correction attempt (real product only)
+Date: 2026-10-14
+Worktree: /Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8
+
+Safety setup and exact route
+- Created a disposable lab with TMPDIR=$PWD and bin/fm-lab-home.sh create.
+- Created $LAB/tmux and an empty $LAB/config/supervision-host.
+- Used the private named tmux server/session fm-lab-opencode-spawn3 only.
+- Started the session primary with the real /Users/aman/.opencode/bin/opencode v2.0.28.
+- Wrapper adaptation used solely to force standalone mode:
+  #!/bin/sh
+  exec /Users/aman/.opencode/bin/opencode --standalone "$@"
+- Isolated HOME/XDG and a minimal env were used; no credentials were inspected.
+- The control shell was started inside the same private session and had real values:
+  control_tmux=/private/tmp/fml.dXBc75/tmux-501/fm-lab-opencode-spawn3,43854,0
+  control_pane=%5
+
+Commands/checks used
+  command -v opencode
+  opencode --version
+  tmux -V
+  TMPDIR="$PWD" mktemp -d "$PWD/fm-opencode-spawn3.XXXXXX"
+  bin/fm-lab-home.sh create "$LAB"
+  TMUX_TMPDIR="$SOCKET_DIR" tmux -L fm-lab-opencode-spawn3 new-session ...
+  FM_OPENCODE_READY_POLLS=0 bin/fm-spawn.sh live-opencode-corrected --scout --harness opencode --model anthropic/claude-sonnet-4-5 --effort high --backend tmux
+
+Observed result
+- Real primary TUI was visible in the private session and displayed OpenCode 2.0.28. This is valid real-product evidence; see 15-corrected-live-spawn-evidence.txt.
+- The valid fm-spawn command returned rc=0 and printed:
+  spawned live-opencode-corrected harness=opencode kind=scout window=fm-lab-opencode-spawn3:fm-live-opencode-corrected worktree=/Users/aman/.treehouse/opencode-spawn-bd14a1/1/opencode-spawn
+- The task pane inherited the tmux server environment from the primary. TREEHOUSE_ROOT therefore was not propagated into the task pane, and fm-spawn used the shared /Users/aman/.treehouse path. This crossed the lab boundary.
+- The run was rejected as live spawn/readiness evidence and stopped immediately. No shared treehouse contents were inspected or mutated. No further live run was attempted.
+- Because the first valid case reached this unsafe path, the supported-live success assertion, dead/early-exit readiness assertion, FM_OPENCODE_READY_POLLS=0 refusal assertion, and overflow-poll assertion remain untested in this correction attempt.
+
+Cleanup
+- Killed only the private fm-lab-opencode-spawn3 tmux server.
+- Removed the disposable lab using the lab cleanup path plus permission repair for task-created read-only hook files.
+- Confirmed no fm-opencode-spawn3.* directory remains in the worktree.
+- Confirmed no /tmp/fml.* directory remains from this run.
+- Confirmed no fm-lab-opencode-spawn3, fm-opencode-spawn3, or real --standalone OpenCode process remains.
+- git status remained clean (## HEAD (no branch)).

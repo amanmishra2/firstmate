@@ -1,0 +1,13 @@
+validation_scope=OpenCode 2.x runtime behavior on target 02b786bf4f38e4eeb0f65a9a9fb4c6b7cfd2faec over base a24f4cb873d87295dddbc521599c21ea86d6dc00
+product=real /Users/aman/.opencode/bin/opencode v2.0.28
+wrapper_adaptation=disposable lab wrapper transparently execs the real binary with --standalone; no fake CLI
+live_direct_tui=PASS: private fm-lab-opencode tmux socket/session reached visible real OpenCode TUI; pane_current_command=opencode; backend_agent_state=alive; evidence=03-real-opencode-tui.txt
+live_help=PASS: real OpenCode --help has --standalone and --prompt but no --model; evidence=01-real-opencode-version-help.txt
+config_inspector=BLOCKED: real opencode debug config attempted managed service port 49374 already occupied by operator service; no service mutation and no credentials inspected; evidence=02-real-opencode-config.txt
+live_fm_spawn_invalid=PASS: real fm-spawn refused sonnet, /model, and provider/ before meta/launch; rc=1 for each; evidence=09-fm-spawn-cases.txt
+live_fm_spawn_valid=UNTESTED: lab route blocked before worker launch because the minimal env-i control command failed to preserve TMUX/TMUX_PANE; exact blocker evidence=10-live-opencode-spawn-blocker.txt
+live_fm_spawn_dead_readiness=UNTESTED: same prelaunch blocker; no real worker kill/refusal was claimed
+focused_regression=STARTED bash tests/fm-spawn-dispatch-profile.test.sh; interruption left passing output through raw launch-command escape hatch but no final exit status; evidence=11-focused-fm-spawn-dispatch-profile.test.txt
+code_changes=none
+cleanup=verified no fm-opencode-* lab dir, no /tmp/fml.* socket, no /Users/aman/.opencode/bin/opencode --standalone process from this run; worktree clean
+residual_risk=canonical fm-spawn success and real dead-worker readiness/busy-retirement remain unverified in this turn

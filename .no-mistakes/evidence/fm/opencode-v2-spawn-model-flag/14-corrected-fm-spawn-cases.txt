@@ -1,0 +1,3 @@
+
+=== live-opencode-corrected rc=0 ===
+spawned live-opencode-corrected harness=opencode kind=scout window=fm-lab-opencode-spawn3:fm-live-opencode-corrected worktree=/Users/aman/.treehouse/opencode-spawn-bd14a1/1/opencode-spawn

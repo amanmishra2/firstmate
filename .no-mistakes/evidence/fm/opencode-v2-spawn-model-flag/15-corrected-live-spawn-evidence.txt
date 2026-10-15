@@ -1,0 +1,72 @@
+=== real primary TUI ===
+fm-lab-opencode-spawn3:primary:43856:opencode:/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn3.ZKg0oH/projects/opencode-spawn
+                                                                                
+                  ┃                                                          ┃  
+                  ┃  5 plugins failed                        › Open plugins  ┃  
+                  ┃                                                          ┃  
+                  ┃  /Users/aman/.no-mistakes/worktrees/90251462ea6c/        ┃  
+                  ┃  01M4Y471B7GT7YWBWC5PSTTAJ8/.opencode/plugins/fm-        ┃  
+                  ┃  primary-cd-check.js, /Users/aman/.no-mistakes/          ┃  
+                  ┃  worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/.     ┃  
+                  ┃  opencode/plugins/fm-primary-pretool-check.js, /Users/   ┃  
+                  ┃  aman/.no-mistakes/worktrees/90251462ea6c/               ┃  
+                  ┃  01M4Y471B7GT7YWBWC5PSTTAJ8/.opencode/plugins/fm-        ┃  
+                  ┃  primary-sessionstart-nudge.js, /Users/aman/.no-         ┃  
+   ┃              ┃  mistakes/worktrees/90251462ea6c/                        ┃  
+   ┃  Ask anything┃  01M4Y471B7GT7YWBWC5PSTTAJ8/.opencode/plugins/fm-        ┃  
+   ┃              ┃  primary-turnend-guard.js, /Users/aman/.no-mistakes/     ┃  
+   ┃  Build · Cat ┃  worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/.     ┃  
+   ╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀┃  opencode/plugins/fm-primary-watch-arm.js                ┃  
+   /…/fm-open…/pro┃  Run /plugins to view details.                           ┃  
+                  ┃                                                          ┃  
+                                                                                
+                                                                                
+                                                                                
+  ⊙ 5 plugins failed /plugins                                           2.0.28  
+                                                                                
+
+=== supported-live meta ===
+window=fm-lab-opencode-spawn3:fm-live-opencode-corrected
+endpoint_task_id=live-opencode-corrected
+worktree=/Users/aman/.treehouse/opencode-spawn-bd14a1/1/opencode-spawn
+project=/Users/aman/.no-mistakes/worktrees/90251462ea6c/01M4Y471B7GT7YWBWC5PSTTAJ8/fm-opencode-spawn3.ZKg0oH/projects/opencode-spawn
+harness=opencode
+kind=scout
+tasktmp=/tmp/fm-live-opencode-corrected
+model=anthropic/claude-sonnet-4-5
+effort=high
+busy_gen=g1792033765.80063.23044
+spawn_gen=s1792033766.75812.14042
+
+=== supported-live target=fm-lab-opencode-spawn3:fm-live-opencode-corrected ===
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+                                                                                
+pane_pid=77808 current_command=opencode current_path=/Users/aman/.treehouse/opencode-spawn-bd14a1/1/opencode-spawn
+
+=== supported-live staged launch ===
+
+=== supported-live wrapper ===
+#!/bin/sh
+exec /Users/aman/.opencode/bin/opencode --standalone "$@"

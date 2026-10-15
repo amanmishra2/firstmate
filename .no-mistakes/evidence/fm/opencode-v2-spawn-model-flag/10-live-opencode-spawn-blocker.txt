@@ -1,0 +1,9 @@
+scenario=real-fm-spawn-valid-and-readiness
+status=blocked-before-worker-launch
+attempted_route=real bin/fm-spawn.sh in marked disposable lab home, private named tmux server/session, isolated HOME/XDG, local bare origin, TREEHOUSE_ROOT inside lab, PATH wrapper
+wrapper='#!/bin/sh\nexec /Users/aman/.opencode/bin/opencode --standalone "$@"'
+observed_blocker=the control command used env -i but did not preserve the tmux pane's TMUX/TMUX_PANE identity; fm-spawn therefore did not find the private pane context and remained in setup without creating a task window
+observed_process=the live spawn remained in bin/fm-spawn.sh with only lab lock files; no opencode worker or launch file was captured
+cleanup=private server killed; marked lab teardown completed; worktree lab and /tmp/fml socket removed; no task worker remained
+untested=canonical fm-spawn valid OpenCode success; real dead/early-exit readiness refusal; busy-generation retirement under FM_OPENCODE_READY_POLLS=0 and overflow
+note=real invalid model preflight cases did complete in this route and are recorded in 09-fm-spawn-cases.txt
