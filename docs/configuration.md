@@ -1262,6 +1262,7 @@ This single-provider table is separate from the frozen legacy mapping used by `f
   With no model resolved, the effort is recorded in task metadata but omitted from the launch.
   The spawn composes `--model` only when the installed TUI's help proves the flag is supported, and pins the model in the launch config otherwise.
   OpenCode 2.x dropped the flag from the interactive launch, so the model uses that config channel on those versions.
+  A model sent through the config channel must have nonempty provider and model components in `<provider>/<model>` form.
   A model that can ride neither channel refuses the spawn before any worktree, endpoint, or record exists, rather than launching a different model than the task records.
 - OpenCode launch readiness uses the backend's agent-state classifier; on zellij, orca, cmux, and other inconclusive states, an immediately dead launch may still report success, as recorded in [runtime verification](verification/runtime-backends.md#opencode-launch-flag-generation-check).
 - Every profile array is an implicit quota-aware choice resolved through `quota-array-dispatch`.
