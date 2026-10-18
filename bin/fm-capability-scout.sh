@@ -53,6 +53,7 @@ SCOUT_DIR="$DATA/capability-scout"
 ANCHOR="$SCOUT_DIR/last-sweep"
 CLAIM_DIR="$SCOUT_DIR/claim"
 CLAIM_META="$CLAIM_DIR/metadata"
+CLAIM_START_MARKER="$CLAIM_DIR/.dispatch-started"
 
 LAST_EPOCH=''
 LAST_DATE=''
@@ -159,6 +160,10 @@ validate_paths() {
     if [ -e "$CLAIM_META" ] && [ ! -f "$CLAIM_META" ]; then
       die "claim metadata is not a regular file: $CLAIM_META"
     fi
+    [ ! -L "$CLAIM_START_MARKER" ] || die "refusing symlinked dispatch-start marker $CLAIM_START_MARKER"
+    if [ -e "$CLAIM_START_MARKER" ] && [ ! -d "$CLAIM_START_MARKER" ]; then
+      die "dispatch-start marker is not a directory: $CLAIM_START_MARKER"
+    fi
   fi
 }
 
@@ -177,6 +182,7 @@ mtime_epoch() {
 
 read_claim_from_dir() {
   local dir=$1 allow_pending=$2
+  local started_marker=false
   CLAIM_STATE=none
   CLAIM_EPOCH=''
   CLAIM_DATE=''
@@ -187,9 +193,16 @@ read_claim_from_dir() {
   [ ! -L "$dir" ] || die "refusing symlinked claim path $dir"
   [ -d "$dir" ] || die "claim path is not a directory: $dir"
   local meta="$dir/metadata"
+  local marker="$dir/.dispatch-started"
   [ ! -L "$meta" ] || die "refusing symlinked claim metadata $meta"
+  [ ! -L "$marker" ] || die "refusing symlinked dispatch-start marker $marker"
+  if [ -e "$marker" ]; then
+    [ -d "$marker" ] || die "dispatch-start marker is not a directory: $marker"
+    started_marker=true
+  fi
   if [ ! -e "$meta" ]; then
     [ "$allow_pending" = true ] || die "claim metadata is missing: $meta"
+    [ "$started_marker" = false ] || die "claim metadata is missing beside dispatch-start marker: $meta"
     CLAIM_STATE=pending
     return 0
   fi
@@ -252,6 +265,11 @@ read_claim_from_dir() {
       die "corrupt claim $meta: dispatch_started must be true or false"
       ;;
   esac
+  if [ "$started_marker" = true ] && [ "$CLAIM_STARTED" = false ]; then
+    CLAIM_STARTED=true
+    CLAIM_STARTED_EPOCH=$CLAIM_EPOCH
+    CLAIM_STARTED_DATE=$CLAIM_DATE
+  fi
   CLAIM_STATE=ready
 }
 
@@ -410,46 +428,51 @@ write_claim_metadata() {
 }
 
 write_claim_started_metadata() {
-  local dir=$1 epoch=$2 claim_date=$3 task=$4 started_epoch=$5 started_date=$6 meta
-  local line key val actual_epoch='' actual_date='' actual_task=''
-  local actual_started=false actual_started_epoch='' actual_started_date=''
+  local dir=$1 epoch=$2 claim_date=$3 task=$4 started_epoch=$5 started_date=$6 meta marker
+  local metadata_tmp
   validate_task "$task" "claim task"
   validate_paths
   [ ! -L "$dir" ] || die "refusing symlinked claim path $dir"
   [ -d "$dir" ] || die "claim path is not a directory: $dir"
   meta="$dir/metadata"
+  marker="$dir/.dispatch-started"
   [ ! -L "$meta" ] || die "refusing symlinked claim metadata $meta"
   [ -f "$meta" ] || die "claim metadata is missing: $meta"
-  exec 9<> "$meta" || die "cannot open claim metadata $meta"
-  while IFS= read -r line <&9 || [ -n "$line" ]; do
-    case "$line" in
-      ''|'#'*) continue ;;
-      *=*) ;;
-      *) exec 9>&-; die "corrupt claim $meta: line without '=': $line" ;;
-    esac
-    key=${line%%=*}
-    val=${line#*=}
-    case "$key" in
-      claim_epoch) actual_epoch=$val ;;
-      claim_date) actual_date=$val ;;
-      task) actual_task=$val ;;
-      dispatch_started) actual_started=$val ;;
-      dispatch_started_epoch) actual_started_epoch=$val ;;
-      dispatch_started_date) actual_started_date=$val ;;
-    esac
-  done
-  if [ "$actual_epoch" != "$epoch" ] || [ "$actual_date" != "$claim_date" ] || \
-    [ "$actual_task" != "$task" ] || [ "$actual_started" != false ] || \
-    [ -n "$actual_started_epoch" ] || [ -n "$actual_started_date" ]; then
-    exec 9>&-
+  read_claim_from_dir "$dir" false
+  [ "$CLAIM_STATE" = ready ] && [ "$CLAIM_EPOCH" = "$epoch" ] && \
+    [ "$CLAIM_DATE" = "$claim_date" ] && [ "$CLAIM_TASK" = "$task" ] && \
+    [ "$CLAIM_STARTED" = false ] \
+    || die "claim changed before dispatch started"
+
+  if ! mkdir -- "$marker" 2>/dev/null; then
+    read_claim_from_dir "$dir" false
+    if [ "$CLAIM_STATE" = ready ] && [ "$CLAIM_STARTED" = true ]; then
+      die "dispatch has already started for this claim"
+    fi
     die "claim changed before dispatch started"
   fi
-  printf '\ndispatch_started=true\ndispatch_started_epoch=%s\ndispatch_started_date=%s\n' \
-    "$started_epoch" "$started_date" >&9 || {
-      exec 9>&-
-      die "cannot record dispatch start in $meta"
-    }
-  exec 9>&-
+
+  metadata_tmp=$(mktemp "$SCOUT_DIR/.claim-metadata.XXXXXX") \
+    || die "cannot create a temporary claim metadata in $SCOUT_DIR"
+  chmod 600 "$metadata_tmp" || {
+    rm -f -- "$metadata_tmp"
+    die "cannot secure temporary claim metadata in $dir"
+  }
+  {
+    printf 'claim_epoch=%s\n' "$epoch"
+    printf 'claim_date=%s\n' "$claim_date"
+    printf 'task=%s\n' "$task"
+    printf 'dispatch_started=true\n'
+    printf 'dispatch_started_epoch=%s\n' "$started_epoch"
+    printf 'dispatch_started_date=%s\n' "$started_date"
+  } > "$metadata_tmp" || {
+    rm -f -- "$metadata_tmp"
+    die "cannot write temporary claim metadata in $SCOUT_DIR"
+  }
+  if ! mv -f -- "$metadata_tmp" "$meta"; then
+    rm -f -- "$metadata_tmp"
+    die "cannot record dispatch start in $meta"
+  fi
 }
 
 cmd_start() {
@@ -481,31 +504,44 @@ cmd_start() {
 }
 
 preflight_claim_dir_clear() {
-  local dir=$1 meta entry
+  local dir=$1 meta marker entry
   [ ! -L "$dir" ] || die "refusing symlinked claim path $dir"
   [ -e "$dir" ] || return 0
   [ -d "$dir" ] || die "claim path is not a directory: $dir"
   meta="$dir/metadata"
+  marker="$dir/.dispatch-started"
   [ ! -L "$meta" ] || die "refusing symlinked claim metadata $meta"
   if [ -e "$meta" ]; then
     [ -f "$meta" ] || die "claim metadata is not a regular file: $meta"
   fi
+  [ ! -L "$marker" ] || die "refusing symlinked dispatch-start marker $marker"
+  if [ -e "$marker" ]; then
+    [ -d "$marker" ] || die "dispatch-start marker is not a directory: $marker"
+  fi
   for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
     [ -e "$entry" ] || [ -L "$entry" ] || continue
-    [ "$entry" = "$meta" ] || die "cannot clear claim $dir: unexpected contents remain"
+    [ "$entry" = "$meta" ] || [ "$entry" = "$marker" ] \
+      || die "cannot clear claim $dir: unexpected contents remain"
   done
 }
 
 clear_claim_dir() {
-  local dir=$1 meta has_meta=false
+  local dir=$1 meta marker has_meta=false has_marker=false
   preflight_claim_dir_clear "$dir"
   [ -e "$dir" ] || return 0
   meta="$dir/metadata"
+  marker="$dir/.dispatch-started"
   if [ -e "$meta" ]; then
     has_meta=true
   fi
+  if [ -e "$marker" ]; then
+    has_marker=true
+  fi
   if [ "$has_meta" = true ]; then
     rm -- "$meta" || die "cannot remove claim metadata $meta"
+  fi
+  if [ "$has_marker" = true ]; then
+    rmdir -- "$marker" || die "cannot remove dispatch-start marker $marker"
   fi
   rmdir -- "$dir" || die "cannot clear claim $dir: unexpected contents remain"
 }
@@ -513,12 +549,19 @@ clear_claim_dir() {
 claim_metadata_matches() {
   local dir=$1 expected_epoch=$2 expected_date=$3 expected_task=$4
   local expected_started=$5 expected_started_epoch=$6 expected_started_date=$7
-  local meta="$dir/metadata" line key val
+  local meta="$dir/metadata" marker="$dir/.dispatch-started" line key val
   local actual_epoch='' actual_date='' actual_task=''
   local actual_started=false actual_started_epoch='' actual_started_date=''
-  local canonical_epoch canonical_started_epoch=''
+  local marker_present=false canonical_epoch canonical_started_epoch=''
   [ ! -L "$dir" ] && [ -d "$dir" ] || return 1
-  [ ! -L "$meta" ] && [ -f "$meta" ] || return 1
+  [ ! -L "$meta" ] || return 1
+  [ ! -L "$marker" ] || return 1
+  if [ -e "$marker" ]; then
+    [ -d "$marker" ] || return 1
+    marker_present=true
+  fi
+
+  [ -f "$meta" ] || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       ''|'#'*) continue ;;
@@ -539,10 +582,16 @@ claim_metadata_matches() {
   if ! canonical_epoch=$(normalize_epoch "$actual_epoch"); then
     return 1
   fi
-  if [ "$actual_started" = true ]; then
+  if [ "$actual_started" = false ] && [ "$marker_present" = true ]; then
+    actual_started=true
+    actual_started_epoch=$canonical_epoch
+    actual_started_date=$actual_date
+    canonical_started_epoch=$canonical_epoch
+  elif [ "$actual_started" = true ]; then
     if ! canonical_started_epoch=$(normalize_epoch "$actual_started_epoch"); then
       return 1
     fi
+    [ "$actual_started_date" = "$(epoch_to_date "$canonical_started_epoch")" ] || return 1
   fi
   [ "$canonical_epoch" = "$expected_epoch" ] &&
     [ "$actual_date" = "$expected_date" ] &&

@@ -122,6 +122,130 @@ test_simultaneous_first_claims_have_one_winner() {
   pass "fm-capability-scout.sh: simultaneous first claims have one winner"
 }
 
+test_simultaneous_dispatch_starts_have_one_winner() {
+  local home wrapper_dir pause_dir resume real_mkdir start_pid_a start_pid_b waited paused
+  local rc_a rc_b out_a out_b successes handoffs metadata marker pause_marker
+  home=$(new_home simultaneous-start)
+  FM_HOME="$home" "$SCOUT" claim --task started-race --now 1705276800 >/dev/null 2>&1 \
+    || fail "claim should succeed before the concurrent start race"
+
+  wrapper_dir="$TMP_ROOT/simultaneous-start-mkdir"
+  pause_dir="$home/start-mkdir-paused"
+  resume="$home/start-mkdir-resume"
+  mkdir -p "$wrapper_dir" "$pause_dir"
+  real_mkdir=$(command -v mkdir)
+  # shellcheck disable=SC2016 # The strings are intentionally written for the wrapper shell.
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    "target=\${!#}" \
+    'case "$target" in' \
+    '  */.dispatch-started)' \
+    '    : > "$FM_TEST_START_PAUSE_DIR/$$"' \
+    '    while [ ! -e "$FM_TEST_START_RESUME" ]; do sleep 0.01; done' \
+    '    ;;' \
+    'esac' \
+    'exec "$FM_TEST_REAL_MKDIR" "$@"' > "$wrapper_dir/mkdir"
+  chmod 700 "$wrapper_dir/mkdir"
+
+  (
+    set +e
+    PATH="$wrapper_dir:$PATH" FM_HOME="$home" \
+      FM_TEST_START_PAUSE_DIR="$pause_dir" FM_TEST_START_RESUME="$resume" \
+      FM_TEST_REAL_MKDIR="$real_mkdir" \
+      "$SCOUT" start --task started-race --now 1705276800 >"$home/start-a.out" 2>&1
+    printf '%s\n' "$?" > "$home/start-a.rc"
+  ) &
+  start_pid_a=$!
+  (
+    set +e
+    PATH="$wrapper_dir:$PATH" FM_HOME="$home" \
+      FM_TEST_START_PAUSE_DIR="$pause_dir" FM_TEST_START_RESUME="$resume" \
+      FM_TEST_REAL_MKDIR="$real_mkdir" \
+      "$SCOUT" start --task started-race --now 1705276800 >"$home/start-b.out" 2>&1
+    printf '%s\n' "$?" > "$home/start-b.rc"
+  ) &
+  start_pid_b=$!
+
+  waited=0
+  paused=0
+  for pause_marker in "$pause_dir"/*; do
+    [ -f "$pause_marker" ] && paused=$((paused + 1))
+  done
+  while [ "$paused" -lt 2 ] && [ "$waited" -lt 500 ]; do
+    sleep 0.01
+    waited=$((waited + 1))
+    paused=0
+    for pause_marker in "$pause_dir"/*; do
+      [ -f "$pause_marker" ] && paused=$((paused + 1))
+    done
+  done
+  [ "$paused" -ge 2 ] || {
+    : > "$resume"
+    wait "$start_pid_a" || true
+    wait "$start_pid_b" || true
+    fail "both start callers did not reach the atomic marker barrier"
+  }
+  : > "$resume"
+  wait "$start_pid_a" || true
+  wait "$start_pid_b" || true
+
+  rc_a=$(cat "$home/start-a.rc")
+  rc_b=$(cat "$home/start-b.rc")
+  out_a=$(cat "$home/start-a.out")
+  out_b=$(cat "$home/start-b.out")
+  successes=0
+  [ "$rc_a" = 0 ] && successes=$((successes + 1))
+  [ "$rc_b" = 0 ] && successes=$((successes + 1))
+  assert_equals 1 "$successes" "concurrent dispatch starts must have exactly one winner"
+  handoffs=0
+  case "$out_a" in *"dispatch started for capability scout claim"*) handoffs=$((handoffs + 1)) ;; esac
+  case "$out_b" in *"dispatch started for capability scout claim"*) handoffs=$((handoffs + 1)) ;; esac
+  assert_equals 1 "$handoffs" "concurrent dispatch starts must report exactly one handoff"
+  if [ "$rc_a" = 0 ]; then
+    expect_code 2 "$rc_b" "the losing dispatch start must refuse the started claim (got: $out_b)"
+  else
+    expect_code 2 "$rc_a" "the losing dispatch start must refuse the started claim (got: $out_a)"
+  fi
+
+  metadata="$home/data/capability-scout/claim/metadata"
+  marker="$home/data/capability-scout/claim/.dispatch-started"
+  assert_grep "task=started-race" "$metadata" \
+    "the concurrent start race must preserve the owning task"
+  assert_grep "dispatch_started=true" "$metadata" \
+    "the winning dispatch start must publish durable metadata"
+  assert_equals 1 "$(grep -c '^dispatch_started=true$' "$metadata")" \
+    "the concurrent start race must leave one durable metadata start marker"
+  [ -d "$marker" ] || fail "the winning dispatch start must retain its durable atomic marker directory"
+  pass "fm-capability-scout.sh: concurrent dispatch starts have one deterministic winner"
+}
+
+test_interrupted_dispatch_start_marker_is_started() {
+  local home marker out rc
+  home=$(new_home interrupted-start)
+  FM_HOME="$home" "$SCOUT" claim --task interrupted-review --now 1705276800 >/dev/null 2>&1 \
+    || fail "claim should succeed before installing an interrupted start marker"
+  marker="$home/data/capability-scout/claim/.dispatch-started"
+  mkdir "$marker" || fail "the interrupted start marker setup should succeed"
+
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1705363200 2>&1); rc=$?
+  expect_code 1 "$rc" "an interrupted start marker must keep due closed (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: false" \
+    "an interrupted start marker must keep the month consumed"
+  assert_contains "$out" "claim_state=started" \
+    "an interrupted start marker must be reported as started"
+  out=$(FM_HOME="$home" "$SCOUT" claim --task replacement-review --now 1705363200 2>&1); rc=$?
+  expect_code 2 "$rc" "a stale claim must not be retaken after an interrupted start (got: $out)"
+  assert_grep "task=interrupted-review" "$home/data/capability-scout/claim/metadata" \
+    "an interrupted start marker must preserve the owning task"
+  FM_HOME="$home" "$SCOUT" claim --task next-month-review --now 1706745600 >/dev/null 2>&1 \
+    || fail "a prior-month interrupted start marker should roll forward"
+  assert_grep "last_date=2024-01-15" "$home/data/capability-scout/last-sweep" \
+    "retiring an interrupted start marker must preserve its consumed month"
+  assert_grep "task=next-month-review" "$home/data/capability-scout/claim/metadata" \
+    "a new month should receive a new claim after retiring an interrupted marker"
+  pass "fm-capability-scout.sh: an interrupted start marker is fail-closed as started"
+}
+
 test_stale_claim_is_due_and_can_be_retaken() {
   local home out rc claim_meta
   home=$(new_home stale-claim)
@@ -296,6 +420,7 @@ test_marked_month_refuses_a_late_claim() {
   pause="$home/claim-mkdir-paused"
   resume="$home/claim-mkdir-resume"
   real_mkdir=$(command -v mkdir)
+  # shellcheck disable=SC2016
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'target=${!#}' \
@@ -354,6 +479,7 @@ test_release_does_not_delete_a_replacement_claim() {
   pause="$home/release-mv-paused"
   resume="$home/release-mv-resume"
   real_mv=$(command -v mv)
+  # shellcheck disable=SC2016
   printf '%s\n' \
     '#!/usr/bin/env bash' \
     'target=${!#}' \
@@ -780,6 +906,8 @@ test_same_month_is_not_due_and_next_month_is_due
 test_claim_records_metadata_and_closes_due
 test_second_fresh_claim_is_refused
 test_simultaneous_first_claims_have_one_winner
+test_simultaneous_dispatch_starts_have_one_winner
+test_interrupted_dispatch_start_marker_is_started
 test_stale_claim_is_due_and_can_be_retaken
 test_started_claim_consumes_its_month_and_rolls_forward
 test_pending_claim_mtime_controls_expiry_and_recovery
