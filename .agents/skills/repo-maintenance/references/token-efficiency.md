@@ -7,9 +7,9 @@ The mechanics - flags, environment seams, paths, and output schemas - live in th
 
 `mine` records these aggregates for every task session it can attribute inside the window:
 
-- `files_read` / `unique_files` - total and distinct file-read events (files opened).
-- `reread_files` - files inspected three or more times inside one task (the re-read count).
-- `tokens_total` / `tokens_exploration` - the session's harness-reported token counters, and the cumulative prompt tokens burned before the first state-changing edit (the token payload of exploration).
+- `files_read` / `unique_files` - total and distinct named file-read events (files opened).
+- `reread_reads` - repeat read events after the first read of each file in one task; `three_plus_read_files` is a separate count of files read at least three times.
+- `tokens_total` / `tokens_exploration` - the session's total usage counter, and prompt/input tokens before the first named edit. Output, reasoning, cache, and total usage counters do not enter `tokens_exploration`.
 - `first_edit_turn` / `turns` - the turn index where the first edit lands, and the task's turn count (time to first edit).
 - `dir` - the task's working directory as a sanitized label.
 
@@ -20,10 +20,10 @@ Codex sessions contribute session-level metrics only: codex reads files through 
 
 For each recorded file inside the window:
 
-`THI = unique task reads x total reads x file token size`
+`THI = distinct task reads x repeat read events x file token size`
 
 - Unique task reads is the number of distinct tasks that opened the file.
-- Total reads is every observed read event of that file.
+- Repeat read events are every observed read after the first read by each task. A file read once by each task has zero repeat events and therefore zero THI.
 - File token size is the file's working-tree size in bytes divided by four, falling back to the largest observed read payload for files that no longer exist (flagged `stale`).
 
 A ranked file is `prioritized` when it exceeds the 500-line soft ceiling or its folder carries no `SUMMARY.md`.
@@ -38,14 +38,16 @@ Outputs are aggregates only, and the guard is enforced at extraction time:
 
 - Prompts, diffs, message text, tool output, and file contents are never copied into outputs; only counts, sizes, and sanitized paths are.
 - Paths under the home or pool roots are stored as a scope plus repo-relative path, for example `projects/<name>/src/module.py`; the absolute forms never appear.
-- Local prefixes are sanitized to `<HOME>` and `<POOL>` labels; every other path is counted in the `external` bucket with no path recorded.
+- Local prefixes are sanitized to `<HOME>` and `<POOL>` labels; every other path is counted in the `external` bucket with no path recorded. Physical containment is checked after resolving symlinks, and traversal or unknown absolute paths become `<EXTERNAL>`.
 - Coverage records what was scanned, what was skipped, and why, so a partial run is never presented as a complete week.
 
 ## Coverage honesty
 
-Every source reports one status (`mined`, `absent`, `sqlite3-missing`, `unreadable`) plus session counts and skip reasons (`skipped_cap`, `skipped_empty`, `skipped_error`).
+Every source reports one status (`mined`, `empty`, `absent`, `sqlite3-missing`, `unreadable`) plus session counts and skip reasons (`skipped_cap`, `skipped_empty`, `skipped_error`). An empty valid store remains distinct from a source that could not be read.
 When a source is absent or unreadable, say so in the report and in any captain-facing summary; never describe a partial dataset as the week's read picture.
-A rising `skipped_empty` is normal (sessions updated inside the window whose messages are older), while a rising `skipped_error` means the store shape changed and the adapter needs attention.
+A rising `skipped_empty` is normal (sessions updated inside the window whose messages are older), while a rising `skipped_error` means the store shape changed or candidate metadata was malformed and the adapter needs attention. Codex eligibility uses rollout file modification time, ordered newest first before the cap.
+
+File coverage is intentionally narrow: only tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing likewise recognizes named edit tools only (OpenCode edit/write/patch/apply_patch; Codex apply_patch/write).
 
 ## Weekly rhythm
 

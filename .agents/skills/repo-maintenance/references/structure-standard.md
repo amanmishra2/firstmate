@@ -13,8 +13,8 @@ This reference owns the universal repository baseline: layout, folder depth, per
 - Every subdirectory carries a `SUMMARY.md`, at most 30 lines:
   - A heading with the subsystem name.
   - A `Role:` line with the single-sentence subsystem charter.
-  - A table of every file in the folder: `` | `file.py` | responsibility | key exported symbols | ``.
-- A tracked file counts as listed when its basename appears in its folder's `SUMMARY.md`; the audit reports every file that is not.
+- A table of every file in the folder: `` | `file.py` | responsibility | key exported symbols | ``. Related files may share one row when each filename is an exact backticked entry in the File cell.
+- A tracked file counts as listed when its basename is an exact File cell entry in its folder's `SUMMARY.md`; substring lookalikes do not count, and the audit reports every file that is not.
 - Write summaries from the code, not from guesses: open each file's public surface, name its responsibility in one phrase, and list its exports.
   Update the summary in the same change that adds, removes, or renames a file.
 
@@ -29,14 +29,16 @@ This reference owns the universal repository baseline: layout, folder depth, per
 ## Entrypoints and discoverability
 
 - Root `README.md`: what the project is, how to set it up, and how to validate it.
-- Root `AGENTS.md` (or `CLAUDE.md`): the task routing table mapping task to domain files to tests.
+- Root `AGENTS.md`: the task routing table mapping task to domain files to tests. `CLAUDE.md` alone does not satisfy this entrypoint.
 - Zero orphan files: every tracked file is reachable from its folder's `SUMMARY.md` and the root entrypoints.
 
 ## Rollout
 
 1. Pilot one project: add the missing `SUMMARY.md` files for its hottest folders first, fix broken exports and duplicate math, and measure the read-cost drop on subsequent tasks.
-2. Roll the standard out to the remaining projects only after the pilot's ranking improves.
+2. Phase 2 rolls the standard out to remaining domain packages only after they meet the four-level depth bound, per-folder summary standard, and unexempted 500-line ceiling. The pilot's ranking improvement is necessary evidence, but it is not a universal rollout gate.
 3. A new repository is scaffolded to this standard from its first commit: `src/` layout, folder summaries, entrypoints, and the size ceiling.
+
+The current pilot build delivers Phase 1 slices and navigation summaries. It records invalid summary shapes and requires a non-empty root `AGENTS.md` alongside `README.md`.
 
 The audit reports against this standard; it never edits a project.
 Structure work ships as ordinary tasks, largest navigation wins first.

@@ -261,11 +261,19 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/repo-maintenance/SUMMARY.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/repo-maintenance/references/audit-playbook.md",
       "audience": "agent-runtime"
     },
     {
       "path": ".agents/skills/repo-maintenance/references/refactor-sequencing.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/repo-maintenance/references/SUMMARY.md",
       "audience": "agent-runtime"
     },
     {
@@ -317,6 +325,14 @@
       "audience": "public-product"
     },
     {
+      "path": "bin/SUMMARY.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "bin/lib/SUMMARY.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "VISION.md",
       "audience": "public-product"
     },
@@ -326,6 +342,10 @@
     },
     {
       "path": "docs/architecture.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "docs/SUMMARY.md",
       "audience": "maintainer-architecture"
     },
     {
@@ -594,6 +614,10 @@
     },
     {
       "path": "tests/captures/no-mistakes-v1.70.1/README.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/SUMMARY.md",
       "audience": "maintainer-verification"
     },
     {
