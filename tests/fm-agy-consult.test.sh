@@ -142,7 +142,9 @@ test_fresh_launch_waits_for_ready_composer_and_preserves_answer_lines() {
 Starting Antigravity CLI...
 EOF
   cat > "$dir/capture.2" <<'EOF'
+────────────────────────────────────────
 >
+────────────────────────────────────────
 ? for shortcuts                                          Gemini 3.8 Flash · high
 EOF
   cat > "$dir/capture.3" <<'EOF'
@@ -176,7 +178,9 @@ EOF
 
 ⣯  Generating...
 ⡿  Focusing on plan
+────────────────────────────────────────
 >
+────────────────────────────────────────
 ? for shortcuts                                          Gemini 3.8 Flash · high
 EOF
 
@@ -213,6 +217,7 @@ EOF
     || fail "quoted thinking status must remain while the trailing spinner row is stripped"
   [ "$(grep -Fxc '⣯  Generating...' "$stdout_file")" -eq 1 ] \
     || fail "stdout must preserve quoted spinner text without the trailing status row"
+  assert_not_contains "$content" "────────────────" "framing divider rows must be removed from the answer"
   assert_contains "$content" "? for shortcuts indicates help." "answer text resembling the idle footer must be preserved"
   assert_contains "$content" "? for shortcuts" "an exact footer label inside the answer must be preserved"
   assert_contains "$content" "esc to cancel indicates the active-turn footer." "answer text resembling the busy footer must be preserved"
@@ -239,7 +244,9 @@ test_session_reuse_and_restart_options_are_removed() {
 Do you trust the contents of this project?
 > Yes, I trust this folder
   No, exit
+────────────────────────────────────────
 >
+────────────────────────────────────────
 ? for shortcuts
 EOF
   cat > "$dir/capture.2" <<'EOF'

@@ -190,10 +190,6 @@ pane_last_nonblank_line() {
   printf '%s\n' "$1" | awk 'NF { line = $0 } END { print line }'
 }
 
-pane_previous_line() {
-  printf '%s\n' "$1" | awk '{ previous = line; line = $0 } END { print previous }'
-}
-
 pane_shows_trust_dialog() {
   if pane_is_idle "$1" || pane_is_busy "$1"; then
     return 1
@@ -222,7 +218,24 @@ pane_is_idle() {
 }
 
 pane_has_empty_composer() {
-  pane_previous_line "$1" | grep -Eq '^[[:space:]]*>[[:space:]]*$'
+  pane_bottom_lines "$1" | awk '
+    function is_divider(line) {
+      return line ~ /^[[:space:]]*(─+|━+|-+)[[:space:]]*$/
+    }
+    function is_composer(line) {
+      return line ~ /^[[:space:]]*>[[:space:]]*$/
+    }
+    { rows[NR] = $0 }
+    END {
+      i = NR - 1
+      if (i < 1) exit 1
+      if (is_divider(rows[i])) i--
+      if (i < 1 || !is_composer(rows[i])) exit 1
+      i--
+      if (i >= 1 && is_divider(rows[i])) i--
+      exit 0
+    }
+  '
 }
 
 pane_is_ready() {
@@ -278,6 +291,15 @@ send_literal_prompt() {  # <session> <prompt>
 
 dedupe_capture() {
   printf '%s\n' "$1" | awk '
+    function is_footer(line) {
+      return line ~ /^[[:space:]]*(\? for shortcuts|esc to cancel)([[:space:]]+Gemini[[:space:]]+[0-9]+(\.[0-9]+)*[[:space:]]+(Flash|Argon)[[:space:]]+·[[:space:]]+(high|medium|low))?[[:space:]]*$/
+    }
+    function is_divider(line) {
+      return line ~ /^[[:space:]]*(─+|━+|-+)[[:space:]]*$/
+    }
+    function is_composer(line) {
+      return line ~ /^[[:space:]]*>[[:space:]]*$/
+    }
     function is_spinner(line) {
       return line ~ /^[[:space:]]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷][[:space:]]+(Generating\.\.\.|Focusing on plan)[[:space:]]*$/
     }
@@ -288,10 +310,14 @@ dedupe_capture() {
     }
     END {
       end_line = NR
-      if (count >= 2 && nonblank[count] == nonblank[count - 1] + 1 &&
-          lines[nonblank[count]] ~ /^[[:space:]]*\? for shortcuts([[:space:]]+Gemini[[:space:]]+[0-9]+(\.[0-9]+)*[[:space:]]+(Flash|Argon)[[:space:]]+·[[:space:]]+(high|medium|low))?[[:space:]]*$/ &&
-          lines[nonblank[count - 1]] ~ /^[[:space:]]*>[[:space:]]*$/) {
-        end_line = nonblank[count - 1] - 1
+      if (count >= 2 && is_footer(lines[nonblank[count]])) {
+        i = count - 1
+        if (i >= 1 && is_divider(lines[nonblank[i]])) i--
+        if (i >= 1 && is_composer(lines[nonblank[i]])) {
+          end_line = nonblank[i] - 1
+          i--
+          if (i >= 1 && is_divider(lines[nonblank[i]])) end_line = nonblank[i] - 1
+        }
       }
       while (end_line > 0 && is_spinner(lines[end_line])) end_line--
       for (i = 1; i <= end_line; i++) {
