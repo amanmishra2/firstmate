@@ -257,6 +257,26 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/repo-maintenance/SKILL.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/repo-maintenance/references/audit-playbook.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/repo-maintenance/references/refactor-sequencing.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/repo-maintenance/references/structure-standard.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/repo-maintenance/references/token-efficiency.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/secondmate-provisioning/SKILL.md",
       "audience": "agent-runtime"
     },
