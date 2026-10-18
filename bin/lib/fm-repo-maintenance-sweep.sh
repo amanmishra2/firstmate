@@ -3,7 +3,6 @@
 
 SWEEP_PROJECT=""
 SWEEP_DATE=""
-SWEEP_FORCE=0
 SWEEP_MAX=$DEFAULT_MAX_FINDINGS
 
 rm_parse_sweep_args() {
@@ -20,7 +19,6 @@ rm_parse_sweep_args() {
         SWEEP_MAX=$2
         shift 2
         ;;
-      --force) SWEEP_FORCE=1; shift ;;
       -* ) rm_die_usage "unknown argument '$1'" ;;
       *)
         [ -z "$SWEEP_PROJECT" ] || rm_die_usage "sweep takes exactly one project"
@@ -94,8 +92,8 @@ rm_run_sweep() {
   date=${SWEEP_DATE:-$(date -u +%Y-%m-%d)}
   outdir="$RM_DATA/$SWEEP_PROJECT/$date"
   report="$outdir/report.md"
-  if [ -e "$report" ] && [ "$SWEEP_FORCE" -ne 1 ]; then
-    rm_die_refuse "report already exists: $(rm_sanitize_path "$report") (use --force to regenerate)"
+  if [ -e "$report" ] || [ -L "$report" ]; then
+    rm_die_refuse "report already exists: $(rm_sanitize_path "$report")"
   fi
 
   metrics=$(rm_latest_metrics 2>/dev/null || true)
@@ -185,10 +183,14 @@ EOF
     rm -f -- "$tmp_report"
     rm_die_fail "cannot write report"
   fi
-  if ! mv -f -- "$tmp_report" "$report"; then
+  if ! ln "$tmp_report" "$report"; then
     rm -f -- "$tmp_report"
+    if [ -e "$report" ] || [ -L "$report" ]; then
+      rm_die_refuse "report already exists: $(rm_sanitize_path "$report")"
+    fi
     rm_die_fail "cannot publish report"
   fi
+  rm -f -- "$tmp_report"
 
   printf 'report: %s\n' "$(rm_sanitize_path "$report")"
   if [ -n "$rank_json" ]; then

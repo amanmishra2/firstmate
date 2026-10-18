@@ -29,7 +29,7 @@ Files under `references/` are resources of this skill, not additional catalogued
 2. Sweep each registered project (`data/projects.md`) and this repository itself:
    `bin/fm-repo-maintenance.sh sweep <project>`
    Each sweep writes `data/repo-maintenance/<project>/<date>/report.md` with the instrument sections complete and the qualitative sections pending.
-   Re-running the same date refuses unless `--force` is deliberate.
+   Re-running the same date refuses when its report already exists.
 3. Complete each report's pending sections through `references/audit-playbook.md`, which owns their contract.
 4. File the sweep's "fix next" items and any confirmed findings into the backlog; the audit playbook's filing rule owns the limits and the exact command.
    Never dispatch from the sweep itself; implementation ships later through the normal task lifecycle, with the report as its evidence.

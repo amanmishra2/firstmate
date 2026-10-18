@@ -6,11 +6,11 @@
 #   fm-repo-maintenance.sh mine [--now EPOCH]
 #   fm-repo-maintenance.sh rank [--metrics PATH] [--project NAME] [--top N] [--json]
 #   fm-repo-maintenance.sh structure <root-dir> [--max-findings N] [--json]
-#   fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD] [--max-findings N] [--force]
+#   fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD] [--max-findings N]
 #   fm-repo-maintenance.sh --help
 #
 # mine always scans the fixed seven-day window and both structured sources and
-# writes aggregate-only metrics to data/repo-maintenance/metrics/<UTC-date>.json.
+# writes aggregate-only metrics to "$FM_HOME/data/repo-maintenance/metrics/<UTC-date>.json".
 # OpenCode contributes named tool read events; Codex and shell-mediated reads
 # have no file attribution and are excluded. Paths are stable labels or a
 # placeholder, and session identifiers stay transient join keys.
@@ -39,13 +39,13 @@ Usage:
   fm-repo-maintenance.sh mine [--now EPOCH]
   fm-repo-maintenance.sh rank [--metrics PATH] [--project NAME] [--top N] [--json]
   fm-repo-maintenance.sh structure <root-dir> [--max-findings N] [--json]
-  fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD] [--max-findings N] [--force]
+  fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD] [--max-findings N]
   fm-repo-maintenance.sh --help
 
 mine writes aggregate session metrics for the fixed seven-day, all-source window.
 rank prints the repeat-read Token Heat Index from the newest metrics.
 structure audits a git work tree against the structure standard (read-only).
-sweep composes data/repo-maintenance/<project>/<date>/report.md.
+sweep composes "$FM_HOME/data/repo-maintenance/<project>/<date>/report.md" and refuses to replace an existing report.
 EOF
 }
 

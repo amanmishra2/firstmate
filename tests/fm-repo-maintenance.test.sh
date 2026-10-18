@@ -278,6 +278,22 @@ test_mine_reports_absent_sources() {
   pass "mine reports absent sources instead of failing silently"
 }
 
+test_mine_uses_fixed_home_data_root() {
+  local lab expected alternate
+  lab=$(make_lab mine-fixed-data-root)
+  expected="$lab/home/data/repo-maintenance/metrics/2026-10-19.json"
+  alternate="$lab/alternate/repo-maintenance/metrics/2026-10-19.json"
+  lab_env "$lab"
+
+  FM_HOME="$lab/home" FM_DATA_OVERRIDE="$lab/alternate" \
+    FM_RM_OPENCODE_DB="$lab/home/.local/share/opencode/opencode.db" \
+    FM_RM_CODEX_SESSIONS="$lab/home/.codex/sessions" \
+    "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed with an ignored data override"
+  assert_present "$expected" "metrics stay under the fixed home data root"
+  assert_absent "$alternate" "the alternate data root receives no metrics"
+  pass "mine keeps metrics under the fixed home data root"
+}
+
 test_mine_reports_empty_sources() {
   local lab empty_db out status=0
   lab=$(make_lab mine-empty)
@@ -459,7 +475,7 @@ test_artifact_writers_fail_before_success_messages() {
 }
 
 test_sweep_writes_report_and_refuses_overwrite() {
-  local lab report status=0
+  local lab report original status=0
   lab=$(make_lab sweep-basic)
   lab_env "$lab"
   # The fixed metrics path is what sweep reads.
@@ -474,13 +490,69 @@ test_sweep_writes_report_and_refuses_overwrite() {
   assert_contains "$(cat "$report")" "pending qualitative audit" "the qualitative sections are visibly pending"
   assert_not_contains "$(cat "$report")" "$lab" "the report contains no fixture absolute path"
   assert_not_contains "$(cat "$report")" "$HOME" "the report contains no host home path"
+  original=$(cat "$report")
 
   FM_HOME="$lab/home" "$TOOL" sweep proj --date 2026-10-18 >/dev/null 2>"$lab/err.txt" || status=$?
   expect_code 2 "$status" "a second sweep of the same date refuses"
   assert_contains "$(cat "$lab/err.txt")" "already exists" "the refusal names the existing report"
+  assert_equals "$original" "$(cat "$report")" "the refusal preserves the completed report"
 
-  FM_HOME="$lab/home" "$TOOL" sweep proj --date 2026-10-18 --force >/dev/null || fail "forced sweep failed"
-  pass "sweep writes the dated report, refuses overwrite, and regenerates under --force"
+  pass "sweep writes the dated report and refuses overwrite"
+}
+
+test_sweep_concurrent_publish_refuses_second_writer() {
+  local lab report fakebin barrier real_ln first_status=0 second_status=0 wait_count=0
+  local first_pid second_pid
+  lab=$(make_lab sweep-concurrent-publish)
+  lab_env "$lab"
+  "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed before concurrent sweep"
+  report="$lab/home/data/repo-maintenance/proj/2026-10-18/report.md"
+  real_ln=$(command -v ln) || fail "ln is required for concurrent publish test"
+  fakebin="$lab/fake-bin"
+  barrier="$lab/link-barrier"
+  mkdir -p "$fakebin" "$barrier"
+  cat > "$fakebin/ln" <<'SH'
+#!/usr/bin/env bash
+set -u
+if mkdir "$FM_RM_TEST_LINK_BARRIER/first" 2>/dev/null; then
+  : > "$FM_RM_TEST_LINK_BARRIER/arrived-one"
+else
+  : > "$FM_RM_TEST_LINK_BARRIER/arrived-two"
+fi
+while [ ! -e "$FM_RM_TEST_LINK_BARRIER/release" ]; do sleep 0.01; done
+exec "$FM_RM_TEST_REAL_LN" "$@"
+SH
+  chmod +x "$fakebin/ln"
+
+  PATH="$fakebin:$PATH" FM_RM_TEST_LINK_BARRIER="$barrier" FM_RM_TEST_REAL_LN="$real_ln" \
+    FM_HOME="$lab/home" "$TOOL" sweep proj --date 2026-10-18 >"$lab/first.out" 2>&1 &
+  first_pid=$!
+  PATH="$fakebin:$PATH" FM_RM_TEST_LINK_BARRIER="$barrier" FM_RM_TEST_REAL_LN="$real_ln" \
+    FM_HOME="$lab/home" "$TOOL" sweep proj --date 2026-10-18 >"$lab/second.out" 2>&1 &
+  second_pid=$!
+
+  while [ ! -e "$barrier/arrived-one" ] || [ ! -e "$barrier/arrived-two" ]; do
+    wait_count=$((wait_count + 1))
+    if [ "$wait_count" -ge 500 ]; then
+      : > "$barrier/release"
+      wait "$first_pid" || true
+      wait "$second_pid" || true
+      fail "both sweeps did not reach atomic publication"
+    fi
+    sleep 0.01
+  done
+  : > "$barrier/release"
+
+  wait "$first_pid" || first_status=$?
+  wait "$second_pid" || second_status=$?
+  if ! { [ "$first_status" -eq 0 ] && [ "$second_status" -eq 2 ]; } \
+    && ! { [ "$first_status" -eq 2 ] && [ "$second_status" -eq 0 ]; }; then
+    fail "concurrent sweeps must publish once and refuse once (statuses $first_status, $second_status)"
+  fi
+  assert_present "$report" "one complete report wins the concurrent publish"
+  assert_contains "$(cat "$report")" "## Structure audit (instrument)" "the concurrent report is complete"
+  assert_not_contains "$(cat "$report")" "$lab" "the concurrent report contains no fixture absolute path"
+  pass "concurrent sweeps publish once without replacing the report"
 }
 
 test_structure_reports_ceiling_depth_and_summary_gaps
@@ -490,6 +562,7 @@ test_mine_extracts_read_metrics_from_opencode
 test_mine_never_records_raw_paths_or_content
 test_mine_codex_session_metrics
 test_mine_reports_absent_sources
+test_mine_uses_fixed_home_data_root
 test_mine_reports_empty_sources
 test_rank_orders_by_token_heat
 test_rank_without_metrics_refuses
@@ -500,3 +573,4 @@ test_codex_uses_mtime_for_window_and_cap_order
 test_mine_marks_codex_find_failures_unreadable
 test_artifact_writers_fail_before_success_messages
 test_sweep_writes_report_and_refuses_overwrite
+test_sweep_concurrent_publish_refuses_second_writer

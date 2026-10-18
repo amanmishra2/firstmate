@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Shared paths, validation, and transient-file helpers for repo maintenance.
+# Metrics and reports stay under "$FM_HOME/data/repo-maintenance".
 
 set -u
 
@@ -11,7 +11,7 @@ RM_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 RM_SCRIPT_DIR="$(cd "$RM_LIB_DIR/.." && pwd -P)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$RM_SCRIPT_DIR/.." && pwd -P)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+DATA="$FM_HOME/data"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 
 RM_DATA="$DATA/repo-maintenance"
@@ -106,13 +106,6 @@ rm_physical_dir() {
 rm_path_under() {
   local path=$1 root=$2
   [ "$path" = "$root" ] || case "$path" in "$root"/*) ;; *) return 1 ;; esac
-}
-
-rm_trim() {
-  local text=$1
-  text=${text#"${text%%[![:space:]]*}"}
-  text=${text%"${text##*[![:space:]]}"}
-  printf '%s' "$text"
 }
 
 RM_APPROVED_HOME=""
