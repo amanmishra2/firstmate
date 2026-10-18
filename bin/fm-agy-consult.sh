@@ -98,7 +98,8 @@
 #      clears to `? for shortcuts` (or until --settle-polls consecutive identical
 #      idle captures appear after the prompt lands). It keeps only the current
 #      turn from its submitted prompt, strips spinner and footer chrome, preserves
-#      repeated answer lines, and writes atomically to <data>/agy-reviews.
+#      repeated answer lines, and writes atomically to <data>/agy-reviews with
+#      owner-only permissions (0700 directory, 0600 transcript files).
 set -u
 unset CDPATH
 
@@ -142,6 +143,18 @@ is_positive_int() {
     '' | *[!0-9]* | 0*) return 1 ;;
     *) return 0 ;;
   esac
+}
+
+sleep_until_poll_deadline() {  # <start-epoch>
+  local start_epoch=$1 now_epoch elapsed remaining delay
+  now_epoch=$(date +%s)
+  elapsed=$(( now_epoch - start_epoch ))
+  remaining=$(( TIMEOUT - elapsed ))
+  [ "$remaining" -gt 0 ] || return 1
+  delay=$POLL_INTERVAL
+  [ "$remaining" -ge "$delay" ] || delay=$remaining
+  [ "$delay" -ge 1 ] || delay=1
+  sleep "$delay"
 }
 
 is_calendar_date() {
@@ -219,8 +232,8 @@ pane_is_idle() {
 
 pane_has_empty_composer() {
   pane_bottom_lines "$1" | awk '
-    function is_divider(line) {
-      return line ~ /^[[:space:]]*(─+|━+|-+)[[:space:]]*$/
+    function is_box_divider(line) {
+      return line ~ /^[[:space:]]*(─+|━+)[[:space:]]*$/
     }
     function is_composer(line) {
       return line ~ /^[[:space:]]*>[[:space:]]*$/
@@ -229,11 +242,9 @@ pane_has_empty_composer() {
     END {
       i = NR - 1
       if (i < 1) exit 1
-      if (is_divider(rows[i])) i--
-      if (i < 1 || !is_composer(rows[i])) exit 1
-      i--
-      if (i >= 1 && is_divider(rows[i])) i--
-      exit 0
+      if (is_composer(rows[i])) exit 0
+      if (i >= 3 && is_box_divider(rows[i]) && is_composer(rows[i - 1]) && is_box_divider(rows[i - 2])) exit 0
+      exit 1
     }
   '
 }
@@ -294,8 +305,8 @@ dedupe_capture() {
     function is_footer(line) {
       return line ~ /^[[:space:]]*(\? for shortcuts|esc to cancel)([[:space:]]+Gemini[[:space:]]+[0-9]+(\.[0-9]+)*[[:space:]]+(Flash|Argon)[[:space:]]+·[[:space:]]+(high|medium|low))?[[:space:]]*$/
     }
-    function is_divider(line) {
-      return line ~ /^[[:space:]]*(─+|━+|-+)[[:space:]]*$/
+    function is_box_divider(line) {
+      return line ~ /^[[:space:]]*(─+|━+)[[:space:]]*$/
     }
     function is_composer(line) {
       return line ~ /^[[:space:]]*>[[:space:]]*$/
@@ -312,11 +323,11 @@ dedupe_capture() {
       end_line = NR
       if (count >= 2 && is_footer(lines[nonblank[count]])) {
         i = count - 1
-        if (i >= 1 && is_divider(lines[nonblank[i]])) i--
-        if (i >= 1 && is_composer(lines[nonblank[i]])) {
+        if (i >= 3 && is_box_divider(lines[nonblank[i]]) &&
+            is_composer(lines[nonblank[i - 1]]) && is_box_divider(lines[nonblank[i - 2]])) {
+          end_line = nonblank[i - 2] - 1
+        } else if (i >= 1 && is_composer(lines[nonblank[i]])) {
           end_line = nonblank[i] - 1
-          i--
-          if (i >= 1 && is_divider(lines[nonblank[i]])) end_line = nonblank[i] - 1
         }
       }
       while (end_line > 0 && is_spinner(lines[end_line])) end_line--
@@ -559,7 +570,6 @@ TARGET_DIR_REAL=$(cd -P -- "$TARGET_DIR" 2>/dev/null && pwd -P) || true
 [ -n "$TARGET_DIR_REAL" ] || die "target directory '$TARGET_DIR' is not an accessible directory"
 
 command -v tmux >/dev/null 2>&1 || die "tmux executable not found on PATH"
-command -v agy >/dev/null 2>&1 || die "agy executable not found on PATH"
 command -v node >/dev/null 2>&1 || die "node executable is required to verify the agy workspace trust store"
 [ -n "${HOME:-}" ] || [ -n "${FM_AGY_SETTINGS_FILE:-}" ] \
   || die "HOME is not set, so the agy workspace trust store cannot be located"
@@ -602,11 +612,13 @@ else
     || refuse_untrusted_directory "$PANE_DIR_REAL"
 fi
 
-mkdir -p -- "$OUTPUT_DIR" || die "could not create output directory '$OUTPUT_DIR'"
+(umask 077; mkdir -p -- "$OUTPUT_DIR") || die "could not create output directory '$OUTPUT_DIR'"
 OUTPUT_DIR_REAL=$(cd -P -- "$OUTPUT_DIR" 2>/dev/null && pwd -P) || die "output directory '$OUTPUT_DIR' is not accessible"
+chmod 0700 "$OUTPUT_DIR_REAL" || die "could not restrict output directory permissions for '$OUTPUT_DIR_REAL'"
 OUT_FILE="$OUTPUT_DIR_REAL/${DATE_STR}-${TOPIC}.txt"
 
 if [ "$SESSION_REUSED" -eq 0 ]; then
+  command -v agy >/dev/null 2>&1 || die "agy executable not found on PATH"
   AGY_LAUNCH_CMD="agy"
   if [ -n "$MODEL" ]; then
     AGY_LAUNCH_CMD="$AGY_LAUNCH_CMD --model $MODEL"
@@ -621,10 +633,7 @@ fi
 PRE_CAPTURE=""
 READY_PANE=""
 READY_START=$(date +%s)
-READY_POLLS=0
-READY_MAX_POLLS=$(( TIMEOUT / POLL_INTERVAL ))
-[ "$READY_MAX_POLLS" -ge 1 ] || READY_MAX_POLLS=1
-while [ "$READY_POLLS" -lt "$READY_MAX_POLLS" ]; do
+while :; do
   PRE_CAPTURE=$(tmux capture-pane -p -t "$SESSION" -S -"$LINES" 2>/dev/null) \
     || die "failed to capture tmux session '$SESSION'"
   if pane_shows_trust_dialog "$PRE_CAPTURE"; then
@@ -637,12 +646,11 @@ while [ "$READY_POLLS" -lt "$READY_MAX_POLLS" ]; do
     READY_PANE="$PRE_CAPTURE"
     break
   fi
-  sleep "$POLL_INTERVAL"
-  READY_POLLS=$(( READY_POLLS + 1 ))
   READY_NOW=$(date +%s)
   if [ $(( READY_NOW - READY_START )) -ge "$TIMEOUT" ]; then
     break
   fi
+  sleep_until_poll_deadline "$READY_START" || break
 done
 [ -n "$READY_PANE" ] || die "agy session '$SESSION' did not reach the ready idle composer within ${TIMEOUT}s"
 PRE_CAPTURE="$READY_PANE"
@@ -656,10 +664,7 @@ send_literal_prompt "$SESSION" "$FINAL_PROMPT" \
 tmux send-keys -t "$SESSION" Enter \
   || die "failed to send Enter to tmux session '$SESSION'"
 
-MAX_POLLS=$(( TIMEOUT / POLL_INTERVAL ))
-[ "$MAX_POLLS" -ge 1 ] || MAX_POLLS=1
 START_EPOCH=$(date +%s)
-POLL_COUNT=0
 SAW_BUSY=0
 IDLE_STABLE=0
 PREV_IDLE_PANE=""
@@ -667,9 +672,8 @@ SETTLED_PANE=""
 LAST_PANE="$PRE_CAPTURE"
 PROMPT_LANDED=0
 
-while [ "$POLL_COUNT" -lt "$MAX_POLLS" ]; do
-  sleep "$POLL_INTERVAL"
-  POLL_COUNT=$(( POLL_COUNT + 1 ))
+while :; do
+  sleep_until_poll_deadline "$START_EPOCH" || break
 
   PANE=$(tmux capture-pane -p -t "$SESSION" -S -"$LINES" 2>/dev/null) \
     || die "lost tmux session '$SESSION' while waiting for consultation reply"
@@ -741,7 +745,8 @@ TURN_CAPTURE=$(extract_current_turn "$SETTLED_PANE" "$FINAL_PROMPT" "$PRE_CAPTUR
 DEDUPED=$(dedupe_capture "$TURN_CAPTURE"; printf '\034')
 DEDUPED=${DEDUPED%$'\034'}
 TMP_OUT="$OUTPUT_DIR_REAL/.${DATE_STR}-${TOPIC}.txt.tmp.$$"
-if ! printf '%s' "$DEDUPED" > "$TMP_OUT" || ! mv -f -- "$TMP_OUT" "$OUT_FILE"; then
+if ! (umask 077; : > "$TMP_OUT") || ! chmod 0600 "$TMP_OUT" \
+  || ! printf '%s' "$DEDUPED" > "$TMP_OUT" || ! mv -f -- "$TMP_OUT" "$OUT_FILE"; then
   rm -f -- "$TMP_OUT" 2>/dev/null || true
   die "could not write consultation log '$OUT_FILE'"
 fi

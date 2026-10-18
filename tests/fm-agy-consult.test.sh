@@ -34,6 +34,7 @@ make_consult_stubs() {  # <case-dir> -> echoes fakebin path
     > "$dir/home/.gemini/antigravity-cli/settings.json"
   : > "$dir/tmux.log"
   : > "$dir/sleep.log"
+  printf '0\n' > "$dir/clock"
   printf '%s\n' "$dir/work" > "$dir/session.path"
 
   cat > "$fb/agy" <<'SH'
@@ -45,9 +46,21 @@ SH
   cat > "$fb/sleep" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\${1:-}" >> "$dir/sleep.log"
+now=\$(cat "$dir/clock")
+printf '%s\n' "\$((now + \${1:-0}))" > "$dir/clock"
 exit 0
 SH
   chmod +x "$fb/sleep"
+
+  cat > "$fb/date" <<SH
+#!/usr/bin/env bash
+case "\${1:-}" in
+  +%s) cat "$dir/clock" ;;
+  +%Y-%m-%d) printf '2026-10-18\\n' ;;
+  *) exec /bin/date "\$@" ;;
+esac
+SH
+  chmod +x "$fb/date"
 
   cat > "$fb/tmux" <<SH
 #!/usr/bin/env bash
@@ -114,6 +127,41 @@ run_consult() {  # <case-dir> <args...>
     FM_AGY_REVIEWS_DIR="$dir/redirected" "$CONSULT" --dir "$dir/work" "$@"
 }
 
+run_consult_without_agy() {  # <case-dir> <args...>
+  local dir=$1 fb="$1/fakebin" no_agy_bin="$1/no-agy-bin"
+  local node_path entry filtered_path="" old_ifs=$IFS
+  local -a path_entries
+  shift
+  node_path=$(command -v node 2>/dev/null) || fail "node is required for the reuse-without-agy test"
+  mkdir -p "$no_agy_bin"
+  rm -f "$fb/agy"
+  ln -s "$fb/tmux" "$no_agy_bin/tmux"
+  ln -s "$fb/sleep" "$no_agy_bin/sleep"
+  ln -s "$fb/date" "$no_agy_bin/date"
+  ln -s "$node_path" "$no_agy_bin/node"
+  IFS=: read -r -a path_entries <<< "$PATH"
+  IFS=$old_ifs
+  for entry in "${path_entries[@]}"; do
+    [ -n "$entry" ] || continue
+    [ "$entry" = "$fb" ] && continue
+    [ -x "$entry/agy" ] && continue
+    filtered_path="${filtered_path:+$filtered_path:}$entry"
+  done
+  if ( PATH="$no_agy_bin:$filtered_path" command -v agy >/dev/null 2>&1 ); then
+    fail "test setup left agy on the reuse-only PATH"
+  fi
+  HOME="$dir/home" FM_ROOT_OVERRIDE="$dir/home" FM_HOME="$dir/home" \
+    FM_DATA_OVERRIDE="$dir/home/data" PATH="$no_agy_bin:$filtered_path" \
+    "$CONSULT" --dir "$dir/work" "$@"
+}
+
+file_mode() {
+  case "$(uname -s)" in
+    Darwin) stat -f '%Lp' "$1" ;;
+    *) stat -c '%a' "$1" ;;
+  esac
+}
+
 test_help_documents_usage_policies_caveats_and_models() {
   local out
   out=$("$CONSULT" --help) || fail "--help must exit 0"
@@ -129,7 +177,146 @@ test_help_documents_usage_policies_caveats_and_models() {
   assert_contains "$out" "Per-command approval caveat" "--help must document the per-command approval caveat"
   assert_contains "$out" "gemini-3.8-flash-high" "--help must list verified Flash High model id"
   assert_contains "$out" "gemini-4-argon-high" "--help must list verified Argon High model id"
+  assert_contains "$out" "0700" "--help must document private output-directory permissions"
+  assert_contains "$out" "0600" "--help must document private transcript permissions"
   pass "fm-agy-consult.sh: --help documents usage, permission policy, caveats, and verified models"
+}
+
+test_unframed_markdown_rule_is_preserved() {
+  local dir fb log_file
+  dir="$TMP_ROOT/case-unframed-rule"
+  fb=$(make_consult_stubs "$dir")
+  [ -d "$fb" ] || fail "fakebin was not created"
+  cat > "$dir/capture.1" <<'EOF'
+>
+? for shortcuts
+EOF
+  cat > "$dir/capture.2" <<'EOF'
+> Markdown review
+  The closing horizontal rule is content.
+---
+>
+? for shortcuts
+EOF
+
+  run_consult "$dir" --date 2026-10-18 --topic markdown-rule --policy prompt-as-is \
+    --settle-polls 1 --quiet --prompt "Markdown review" >/dev/null \
+    || fail "unframed composer capture should settle"
+  log_file="$dir/home/data/agy-reviews/2026-10-18-markdown-rule.txt"
+  [ "$(grep -Fxc -- '---' "$log_file")" -eq 1 ] \
+    || fail "an answer's Markdown rule above an unframed composer must be preserved"
+  pass "fm-agy-consult.sh: preserves Markdown rules above unframed composers"
+}
+
+test_polling_honors_timeout_deadlines() {
+  local ready_dir answer_dir
+  ready_dir="$TMP_ROOT/case-ready-deadline"
+  make_consult_stubs "$ready_dir" >/dev/null
+  cat > "$ready_dir/capture.1" <<'EOF'
+Starting Antigravity CLI...
+EOF
+  cat > "$ready_dir/capture.2" <<'EOF'
+Waiting for the composer...
+EOF
+  cat > "$ready_dir/capture.3" <<'EOF'
+>
+? for shortcuts
+EOF
+  cat > "$ready_dir/capture.4" <<'EOF'
+> Read-only consultation (do not modify, create, or delete any file, and do not run state-changing commands): Deadline question
+  Readiness poll completed.
+>
+? for shortcuts
+EOF
+  run_consult "$ready_dir" --date 2026-10-18 --topic ready-deadline --timeout 5 \
+    --poll-interval 3 --settle-polls 1 --quiet --prompt "Deadline question" >/dev/null \
+    || fail "readiness polling must continue through the partial final interval"
+  [ "$(sed -n '1p' "$ready_dir/sleep.log")" = 3 ] \
+    || fail "readiness polling must sleep for the configured interval before its second capture"
+  [ "$(sed -n '2p' "$ready_dir/sleep.log")" = 2 ] \
+    || fail "readiness polling must bound its final sleep to the remaining deadline"
+
+  answer_dir="$TMP_ROOT/case-answer-deadline"
+  make_consult_stubs "$answer_dir" >/dev/null
+  cat > "$answer_dir/capture.1" <<'EOF'
+>
+? for shortcuts
+EOF
+  cat > "$answer_dir/capture.2" <<'EOF'
+> Read-only consultation (do not modify, create, or delete any file, and do not run state-changing commands): Deadline answer
+esc to cancel
+EOF
+  cat > "$answer_dir/capture.3" <<'EOF'
+> Read-only consultation (do not modify, create, or delete any file, and do not run state-changing commands): Deadline answer
+  Answer appeared at the deadline.
+>
+? for shortcuts
+EOF
+  run_consult "$answer_dir" --date 2026-10-18 --topic answer-deadline --timeout 5 \
+    --poll-interval 3 --settle-polls 1 --quiet --prompt "Deadline answer" >/dev/null \
+    || fail "answer polling must capture at the partial final interval"
+  [ "$(sed -n '1p' "$answer_dir/sleep.log")" = 3 ] \
+    || fail "answer polling must first sleep for the configured interval"
+  [ "$(sed -n '2p' "$answer_dir/sleep.log")" = 2 ] \
+    || fail "answer polling must bound its final sleep to the remaining deadline"
+  assert_contains "$(cat "$answer_dir/home/data/agy-reviews/2026-10-18-answer-deadline.txt")" \
+    "Answer appeared at the deadline." "a response visible at the deadline must be accepted"
+  pass "fm-agy-consult.sh: readiness and answer polling honor timeout deadlines"
+}
+
+test_reused_session_does_not_require_agy_on_path() {
+  local dir
+  dir="$TMP_ROOT/case-reuse-without-agy"
+  make_consult_stubs "$dir" >/dev/null
+  : > "$dir/session.alive"
+  cat > "$dir/capture.1" <<'EOF'
+>
+? for shortcuts
+EOF
+  cat > "$dir/capture.2" <<'EOF'
+> Existing session question
+  Reuse does not need the agy executable.
+>
+? for shortcuts
+EOF
+  cp "$dir/capture.2" "$dir/capture.3"
+
+  run_consult_without_agy "$dir" --date 2026-10-18 --topic reuse-no-agy \
+    --policy prompt-as-is --quiet --prompt "Existing session question" >/dev/null \
+    || fail "reusing an existing session must not require agy on PATH"
+  grep -q '^new-session ' "$dir/tmux.log" && fail "reuse must not launch a new agy process"
+  assert_contains "$(cat "$dir/home/data/agy-reviews/2026-10-18-reuse-no-agy.txt")" \
+    "Reuse does not need the agy executable." "the existing session response must be saved"
+  pass "fm-agy-consult.sh: reuses an active session without agy on PATH"
+}
+
+test_transcript_output_permissions_are_owner_only() {
+  local dir artifact output_dir
+  dir="$TMP_ROOT/case-private-output"
+  make_consult_stubs "$dir" >/dev/null
+  cat > "$dir/capture.1" <<'EOF'
+>
+? for shortcuts
+EOF
+  cat > "$dir/capture.2" <<'EOF'
+> Private transcript question
+  Private transcript answer.
+>
+? for shortcuts
+EOF
+  (
+    umask 022
+    run_consult "$dir" --date 2026-10-18 --topic private-output \
+      --policy prompt-as-is --settle-polls 1 --quiet \
+      --prompt "Private transcript question" >/dev/null
+  ) || fail "consultation should be written with permissive ambient umask"
+  output_dir="$dir/home/data/agy-reviews"
+  artifact="$output_dir/2026-10-18-private-output.txt"
+  [ "$(file_mode "$output_dir")" = 700 ] \
+    || fail "agy-reviews directory must have mode 0700"
+  [ "$(file_mode "$artifact")" = 600 ] \
+    || fail "consultation transcript must have mode 0600"
+  pass "fm-agy-consult.sh: keeps consultation output owner-only"
 }
 
 test_fresh_launch_waits_for_ready_composer_and_preserves_answer_lines() {
@@ -774,6 +961,10 @@ EOF
 
 test_help_documents_usage_policies_caveats_and_models
 test_fresh_launch_waits_for_ready_composer_and_preserves_answer_lines
+test_unframed_markdown_rule_is_preserved
+test_polling_honors_timeout_deadlines
+test_reused_session_does_not_require_agy_on_path
+test_transcript_output_permissions_are_owner_only
 test_session_reuse_and_restart_options_are_removed
 test_trust_dialog_is_refused_without_enter
 test_untrusted_target_and_live_reuse_directory_are_refused
