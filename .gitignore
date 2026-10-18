@@ -14,5 +14,5 @@ config/
 
 .tools/
 
-node_modules/
-test-results/
+tests/playwright/node_modules/
+tests/playwright/test-results/
