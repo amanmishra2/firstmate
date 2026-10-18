@@ -1,0 +1,28 @@
+UTC now: 2026-10-18T22:22:19Z
+
+Scenario: current month reserve, start, mark, and close
+$ fm-capability-scout.sh due
+CAPABILITY_SCOUT_DUE: true
+last_sweep=none
+next_due=2026-11-01
+claim_state=none
+$ fm-capability-scout.sh claim --task weekly-review-2026-10
+claimed capability scout dispatch: 2026-10-18 task=weekly-review-2026-10
+$ fm-capability-scout.sh start --task weekly-review-2026-10
+dispatch started for capability scout claim: 2026-10-18 task=weekly-review-2026-10
+$ fm-capability-scout.sh mark --task weekly-review-2026-10
+marked capability scout sweep: 2026-10-18
+Persisted anchor:
+last_epoch=1792362139
+last_date=2026-10-18
+task=weekly-review-2026-10
+$ fm-capability-scout.sh due (exit 1 means no second session is due this month)
+CAPABILITY_SCOUT_DUE: false
+last_sweep=2026-10-18
+next_due=2026-11-01
+claim_state=none
+exit=1
+
+Adversarial check: public --now override
+capability-scout: unknown argument: --now
+exit=2

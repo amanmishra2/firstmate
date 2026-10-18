@@ -1,0 +1,22 @@
+Scenario: session starts 2026-10-31 23:50 UTC, marks 2026-11-01 00:10 UTC
+$ claim at 2026-10-31 23:40 UTC
+claimed capability scout dispatch: 2026-10-31 task=boundary-review
+$ start at 2026-10-31 23:50 UTC
+dispatch started for capability scout claim: 2026-10-31 task=boundary-review
+$ mark at 2026-11-01 00:10 UTC
+marked capability scout sweep: 2026-10-31
+Persisted anchor:
+last_epoch=1793490600
+last_date=2026-10-31
+task=boundary-review
+$ due at 2026-11-01 00:11 UTC
+CAPABILITY_SCOUT_DUE: true
+last_sweep=2026-10-31
+next_due=2026-12-01
+claim_state=none
+
+Adversarial check: test timestamp environment without armed test seam
+CAPABILITY_SCOUT_DUE: true
+last_sweep=none
+next_due=2026-11-01
+claim_state=none
