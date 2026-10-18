@@ -11,16 +11,13 @@ This skill owns the procedure; `bin/fm-capability-scout.sh` owns the cadence dat
 ## Cadence
 
 The scout rides the first weekly review of each month as one bounded session; there is no separate scheduler.
-The weekly review runs `bin/fm-capability-scout.sh due`, which prints `CAPABILITY_SCOUT_DUE: true` and exits 0 when no anchor exists or its validated UTC date is in a different UTC calendar month than the current date, and prints `false` with exit 1 when the anchor is in the current UTC calendar month or a fresh dispatch claim exists. A started claim keeps its start month closed even if 24 hours pass; when a later month is due, `claim` first records that prior started month before reserving the new one.
-The reported `next_due` is always the first day of the next UTC calendar month.
-When the line is true, reserve the dispatch with `bin/fm-capability-scout.sh claim --task <task-id>`. Immediately before handing off exactly one scout session on the configured `agy` scout profile, run `bin/fm-capability-scout.sh start --task <task-id>` to persist that dispatch has started; keep the session bounded to about 15-20 minutes.
-After dispatch starts, record the sweep with `bin/fm-capability-scout.sh mark --task <task-id>` whether the session succeeds or fails; the anchor uses the recorded dispatch-start epoch and date, so a session completing in a later month consumes its start month.
-If dispatch never starts, release the unstarted reservation with `bin/fm-capability-scout.sh release --task <task-id>` so a new due check may retry it.
-The required transitions are `claim -> start -> dispatch -> mark` after dispatch begins, or `claim -> release` when dispatch never starts.
-Never open a second session for the same month, and never build a scheduler, watcher, or standing service around this.
+At the first weekly review, consult the script's documented due check and follow its documented reservation, start, recording, or release workflow.
+If a sweep is due, hand off exactly one scout session on the configured `agy` scout profile and keep it bounded to about 15-20 minutes.
+The script header owns command syntax, return values, claim recovery, and anchor semantics.
+Never open a second session for the same month, and do not add a scheduler or standing service around this cadence.
 
 The session scans, read-only: newly starred upstreams, watched tool releases, and the local plugin and skill caches.
-It writes its findings to `data/capability-scout/<YYYY-MM>.md`, and the weekly review consumes that report and may carry at most one selected candidate into the coming week's action drafts.
+It writes its findings as a dated report in the capability-scout data directory described in [the operational-home layout](../../../docs/configuration.md), and the weekly review consumes that report and may carry at most one selected candidate into the coming week's action drafts.
 When nothing passes the gates, the report says `NO_CANDIDATE_PASSED` with its rejection notes; that is a complete session, not a failure.
 
 ## Bounded trial wave
@@ -50,4 +47,4 @@ Maintenance versus yield - external binaries, packages, tokens, daemons, or ongo
 ## Boundaries
 
 Never install a trial candidate into another project, a global config, or a shared store during the trial; trials run in a disposable copy and the adopting change lands through the normal firstmate delivery path.
-Never touch the job-search Gemini API rotation pool, and never turn the scout into a platform: no new daemon, scheduled job, or background service.
+Never touch the job-search Gemini API rotation pool.
