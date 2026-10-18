@@ -154,11 +154,11 @@ esc to cancel                                            Gemini 3.8 Flash · hig
 EOF
   cat > "$dir/capture.4" <<'EOF'
 > Read-only consultation (do not modify, create, or delete any file, and do not run state-changing commands): Review this plan. Second line with tabs.
-⣯  Generating...
-⡿  Focusing on plan
 ● Explored 2 files (plan.md, backlog.md)
 ● Explored 2 files (plan.md, backlog.md)
   ### Critique Summary
+⣯  Generating...
+⡿  Focusing on plan
   1. Tighten the holdout gate.
   1. Tighten the holdout gate.
   2. Collapse duplicate slice.
@@ -174,6 +174,8 @@ EOF
   Preserve this separation.
 
 
+⣯  Generating...
+⡿  Focusing on plan
 >
 ? for shortcuts                                          Gemini 3.8 Flash · high
 EOF
@@ -205,8 +207,12 @@ EOF
   assert_contains "$content" "### Critique Summary" "deduped log must keep the answer heading"
   assert_contains "$content" "1. Tighten the holdout gate." "deduped log must keep bullet 1"
   assert_contains "$content" "2. Collapse duplicate slice." "deduped log must keep bullet 2"
-  assert_not_contains "$content" "Generating..." "deduped log must strip the recognized spinner status row"
-  assert_not_contains "$content" "Focusing on plan" "deduped log must strip the recognized thinking status row"
+  [ "$(grep -Fxc '⣯  Generating...' "$log_file")" -eq 1 ] \
+    || fail "quoted spinner text must remain while the trailing spinner row is stripped"
+  [ "$(grep -Fxc '⡿  Focusing on plan' "$log_file")" -eq 1 ] \
+    || fail "quoted thinking status must remain while the trailing spinner row is stripped"
+  [ "$(grep -Fxc '⣯  Generating...' "$stdout_file")" -eq 1 ] \
+    || fail "stdout must preserve quoted spinner text without the trailing status row"
   assert_contains "$content" "? for shortcuts indicates help." "answer text resembling the idle footer must be preserved"
   assert_contains "$content" "? for shortcuts" "an exact footer label inside the answer must be preserved"
   assert_contains "$content" "esc to cancel indicates the active-turn footer." "answer text resembling the busy footer must be preserved"
@@ -233,8 +239,6 @@ test_session_reuse_and_restart_options_are_removed() {
 Do you trust the contents of this project?
 > Yes, I trust this folder
   No, exit
-Old transcript after a resolved trust dialog.
-Old transcript line 1.
 >
 ? for shortcuts
 EOF
@@ -371,6 +375,32 @@ EOF
   [ ! -e "$dir/home/data/agy-reviews/2026-10-18-late-trust.txt" ] \
     || fail "late trust refusal must not write a review file"
   pass "fm-agy-consult.sh: refuses trust dialogs that appear during a submitted turn"
+}
+
+test_resolved_trust_transcript_does_not_hide_busy_footer() {
+  local dir rc out
+  dir="$TMP_ROOT/case-resolved-trust-busy"
+  make_consult_stubs "$dir" >/dev/null
+  : > "$dir/session.alive"
+
+  cat > "$dir/capture.1" <<'EOF'
+Do you trust the contents of this project?
+> Yes, I trust this folder
+  No, exit
+> Existing turn
+esc to cancel
+EOF
+
+  rc=0
+  out=$(run_consult "$dir" --date 2026-10-18 --topic resolved-trust-busy \
+    --quiet --prompt "Another question" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an existing busy turn must still be refused"
+  assert_contains "$out" "already busy (esc to cancel)" \
+    "resolved trust history must not mask the active busy footer"
+  assert_not_contains "$out" "displayed a folder-trust dialog" \
+    "resolved trust history must not be reported as a live dialog"
+  grep -q 'send-keys' "$dir/tmux.log" && fail "busy session must not receive injected keys"
+  pass "fm-agy-consult.sh: ignores resolved trust history below an active busy footer"
 }
 
 test_read_only_prefix_cannot_be_bypassed_by_prompt_text() {
@@ -695,17 +725,59 @@ EOF
   pass "fm-agy-consult.sh: requires an identifiable reused model family and tier"
 }
 
+test_calendar_dates_are_validated_before_paths() {
+  local dir rc out invalid_date
+  dir="$TMP_ROOT/case-calendar-date"
+  make_consult_stubs "$dir" >/dev/null
+
+  for invalid_date in 2026-02-30 2026-13-01 2026-04-31; do
+    rc=0
+    out=$(run_consult "$dir" --date "$invalid_date" --topic invalid-date \
+      --prompt "Date check" 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "impossible calendar date '$invalid_date' must be rejected"
+    assert_contains "$out" "invalid --date '$invalid_date'" \
+      "invalid date refusal must name the supplied date"
+  done
+
+  rc=0
+  out=$(FM_AGY_CONSULT_DATE=2026-02-29 run_consult "$dir" \
+    --topic invalid-environment-date --prompt "Date check" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "an impossible environment calendar date must be rejected"
+  assert_contains "$out" "invalid --date '2026-02-29'" \
+    "environment date refusal must identify the invalid value"
+  [ ! -s "$dir/tmux.log" ] || fail "invalid dates must be rejected before touching tmux"
+
+  cat > "$dir/capture.1" <<'EOF'
+>
+? for shortcuts
+EOF
+  cat > "$dir/capture.2" <<'EOF'
+> Read-only consultation (do not modify, create, or delete any file, and do not run state-changing commands): Date check
+  Leap day accepted.
+>
+? for shortcuts
+EOF
+  FM_AGY_CONSULT_DATE=2024-02-29 run_consult "$dir" --topic valid-leap-day \
+    --settle-polls 1 --quiet --prompt "Date check" >/dev/null \
+    || fail "a valid leap day from the environment must be accepted"
+  assert_contains "$(cat "$dir/home/data/agy-reviews/2024-02-29-valid-leap-day.txt")" \
+    "Leap day accepted." "valid leap-day date must be used in the output path"
+  pass "fm-agy-consult.sh: validates calendar dates before creating output paths"
+}
+
 test_help_documents_usage_policies_caveats_and_models
 test_fresh_launch_waits_for_ready_composer_and_preserves_answer_lines
 test_session_reuse_and_restart_options_are_removed
 test_trust_dialog_is_refused_without_enter
 test_untrusted_target_and_live_reuse_directory_are_refused
 test_late_trust_dialog_is_refused_without_extra_enter
+test_resolved_trust_transcript_does_not_hide_busy_footer
 test_model_and_policy_validation_and_passthrough
 test_per_command_approval_and_busy_session_fail_closed
 test_settle_without_observed_busy_frame
 test_idle_settle_without_prompt_evidence_is_rejected
 test_late_busy_and_reused_model_mismatch
 test_reused_model_must_match_family_and_tier
+test_calendar_dates_are_validated_before_paths
 test_read_only_prefix_cannot_be_bypassed_by_prompt_text
 test_canonical_cli_forms_are_required

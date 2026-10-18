@@ -144,6 +144,30 @@ is_positive_int() {
   esac
 }
 
+is_calendar_date() {
+  local value=$1 year month day max_day
+  case "$value" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+    *) return 1 ;;
+  esac
+  year=$((10#${value:0:4}))
+  month=$((10#${value:5:2}))
+  day=$((10#${value:8:2}))
+  (( year >= 1 && month >= 1 && month <= 12 && day >= 1 )) || return 1
+  case "$month" in
+    1 | 3 | 5 | 7 | 8 | 10 | 12) max_day=31 ;;
+    4 | 6 | 9 | 11) max_day=30 ;;
+    2)
+      if (( year % 400 == 0 || (year % 4 == 0 && year % 100 != 0) )); then
+        max_day=29
+      else
+        max_day=28
+      fi
+      ;;
+  esac
+  (( day <= max_day ))
+}
+
 normalize_single_line() {
   printf '%s' "$1" | tr '\r\n\t' '   ' | awk '
     {
@@ -171,6 +195,9 @@ pane_previous_line() {
 }
 
 pane_shows_trust_dialog() {
+  if pane_is_idle "$1" || pane_is_busy "$1"; then
+    return 1
+  fi
   pane_bottom_lines "$1" | awk '
     /Do you trust the contents of this project\?/ { question = NR }
     question && /^[[:space:]]*(>[[:space:]]*)?Yes, I trust this folder([[:space:]]|$)/ { yes = NR }
@@ -251,6 +278,9 @@ send_literal_prompt() {  # <session> <prompt>
 
 dedupe_capture() {
   printf '%s\n' "$1" | awk '
+    function is_spinner(line) {
+      return line ~ /^[[:space:]]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷][[:space:]]+(Generating\.\.\.|Focusing on plan)[[:space:]]*$/
+    }
     {
       gsub(/\r/, "")
       lines[NR] = $0
@@ -263,8 +293,9 @@ dedupe_capture() {
           lines[nonblank[count - 1]] ~ /^[[:space:]]*>[[:space:]]*$/) {
         end_line = nonblank[count - 1] - 1
       }
+      while (end_line > 0 && is_spinner(lines[end_line])) end_line--
       for (i = 1; i <= end_line; i++) {
-        if (lines[i] !~ /^[[:space:]]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷][[:space:]]+(Generating\.\.\.|Focusing on plan)[[:space:]]*$/) print lines[i]
+        print lines[i]
       }
     }
   '
@@ -431,10 +462,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$DATE_STR" ] || DATE_STR=$(date +%Y-%m-%d)
-case "$DATE_STR" in
-  [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
-  *) die_usage "invalid --date '$DATE_STR'; expected YYYY-MM-DD" ;;
-esac
+is_calendar_date "$DATE_STR" || die_usage "invalid --date '$DATE_STR'; expected a real calendar date in YYYY-MM-DD form"
 
 [ -n "$TOPIC" ] || die_usage "--topic <slug> is required"
 TOPIC=${TOPIC%.txt}
