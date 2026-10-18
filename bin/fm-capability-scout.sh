@@ -12,7 +12,6 @@
 # Usage:
 #   fm-capability-scout.sh due [--now <epoch>]
 #   fm-capability-scout.sh mark [--task <id>] [--now <epoch>]
-#   fm-capability-scout.sh status [--now <epoch>]
 #
 #   due     prints CAPABILITY_SCOUT_DUE: true and exits 0 when the cadence
 #           interval has elapsed since the last mark, otherwise prints
@@ -23,7 +22,6 @@
 #           so a failed session still consumes that month's single session
 #           budget instead of re-triggering every week. --task records the
 #           dispatched task id for traceability.
-#   status  prints the same facts in a human-readable form and exits 0.
 #
 # --now <epoch> is a deterministic-test and replay override only; it must be
 # plain digits. The anchor is key=value text written atomically; a corrupt or
@@ -41,12 +39,11 @@ CADENCE_SECONDS=$((CADENCE_DAYS * 86400))
 SCOUT_DIR="$DATA/capability-scout"
 ANCHOR="$SCOUT_DIR/last-sweep"
 
-LAST_EPOCH=0
+LAST_EPOCH=''
 LAST_DATE=''
-LAST_TASK=''
 
 usage() {
-  sed -n '2,26{s/^# \{0,1\}//;p;}' "$0"
+  sed -n '2,24{s/^# \{0,1\}//;p;}' "$0"
 }
 
 die() {
@@ -72,14 +69,13 @@ epoch_to_date() {
 }
 
 read_anchor() {
-  LAST_EPOCH=0
+  LAST_EPOCH=''
   LAST_DATE=''
-  LAST_TASK=''
-  [ -e "$ANCHOR" ] || return 0
   [ ! -L "$ANCHOR" ] || die "refusing symlinked anchor $ANCHOR"
+  [ -e "$ANCHOR" ] || return 0
   [ -f "$ANCHOR" ] || die "anchor is not a regular file: $ANCHOR"
-  local line key val
-  while IFS= read -r line; do
+  local line key val canonical_date
+  while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       ''|'#'*) continue ;;
     esac
@@ -92,10 +88,14 @@ read_anchor() {
     case "$key" in
       last_epoch) LAST_EPOCH=$val ;;
       last_date) LAST_DATE=$val ;;
-      task) LAST_TASK=$val ;;
     esac
   done < "$ANCHOR"
   is_digits "$LAST_EPOCH" || die "corrupt anchor $ANCHOR: last_epoch is not plain digits"
+  [ -n "$LAST_DATE" ] || die "corrupt anchor $ANCHOR: last_date is missing"
+  if ! canonical_date=$(epoch_to_date "$LAST_EPOCH"); then
+    die "corrupt anchor $ANCHOR: last_epoch is not a valid epoch"
+  fi
+  [ "$LAST_DATE" = "$canonical_date" ] || die "corrupt anchor $ANCHOR: last_date does not match last_epoch"
 }
 
 resolve_now() {
@@ -111,7 +111,7 @@ resolve_now() {
 cmd_due() {
   local now=$1 due next_from next_due
   read_anchor
-  if [ "$LAST_EPOCH" -eq 0 ]; then
+  if [ -z "$LAST_EPOCH" ]; then
     due=true
     next_from=$now
   elif [ $((now - LAST_EPOCH)) -ge "$CADENCE_SECONDS" ]; then
@@ -152,27 +152,6 @@ cmd_mark() {
   } > "$tmp"
   mv -f -- "$tmp" "$ANCHOR" || die "cannot write $ANCHOR"
   printf 'marked capability scout sweep: %s\n' "$(epoch_to_date "$now")"
-}
-
-cmd_status() {
-  local now=$1 next_due state
-  read_anchor
-  if [ "$LAST_EPOCH" -eq 0 ]; then
-    state=true
-    next_due=$(epoch_to_date "$now")
-  else
-    if [ $((now - LAST_EPOCH)) -ge "$CADENCE_SECONDS" ]; then
-      state=true
-    else
-      state=false
-    fi
-    next_due=$(epoch_to_date "$((LAST_EPOCH + CADENCE_SECONDS))")
-  fi
-  printf 'due=%s\n' "$state"
-  printf 'last_sweep=%s\n' "${LAST_DATE:-none}"
-  printf 'last_task=%s\n' "${LAST_TASK:-none}"
-  printf 'next_due=%s\n' "$next_due"
-  printf 'cadence_days=%s\n' "$CADENCE_DAYS"
 }
 
 CMD=${1:-}
@@ -218,9 +197,6 @@ case "$CMD" in
     ;;
   mark)
     cmd_mark "$NOW" "$TASK"
-    ;;
-  status)
-    cmd_status "$NOW"
     ;;
   *)
     printf 'capability-scout: unknown command: %s\n' "$CMD" >&2

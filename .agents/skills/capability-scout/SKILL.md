@@ -1,6 +1,6 @@
 ---
 name: capability-scout
-description: Load on the first weekly review of each month or a CAPABILITY_SCOUT_DUE line when the monthly capability scout is due, and whenever the captain asks for a capability sweep, ecosystem scan, new-skill evaluation, or a trial of an outside capability. Runs the light monthly cadence that brings validated outside capabilities into fleet stores.
+description: Load on the first weekly review of each month or a CAPABILITY_SCOUT_DUE line when the monthly capability scout is due. Runs the light monthly cadence that brings validated outside capabilities into fleet stores.
 ---
 
 # Capability scout
@@ -21,7 +21,7 @@ When nothing passes the gates, the report says `NO_CANDIDATE_PASSED` with its re
 
 ## Bounded trial wave
 
-A wave holds 1-3 candidates or one workflow pattern, and bulk imports are prohibited.
+A wave holds 1-3 skills, and bulk imports are prohibited.
 Trial evidence requires a recorded operational friction (a report, a learnings entry, or a task record), a counterfactual comparison against the current way of working, and artifact receipts: exact commands, diffs, output paths, and measured time or token deltas.
 Claims without verifiable receipts stay unverified and are discarded.
 
