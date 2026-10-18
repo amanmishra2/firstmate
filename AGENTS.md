@@ -156,7 +156,7 @@ Route durable knowledge to its most specific owner:
 - Knowledge useful to almost every contributor to one project belongs in that project's committed `AGENTS.md`, which only deliberate human edits extend.
 - Knowledge general to every firstmate user belongs in this repo's shared tracked surface, which a user/operator home can only reach through an authorized contribution - otherwise it stays in `data/learnings.md` or a local draft for the captain.
 
-The light monthly capability scout that brings validated outside skills and patterns into the fleet rides the first weekly review of each month; load `capability-scout` when that cadence is due or the captain asks for a capability sweep, and never give it a platform of its own.
+The light monthly capability scout that brings validated outside skills and patterns into the fleet rides the first weekly review of each month; load `capability-scout` for that first weekly review or when a `CAPABILITY_SCOUT_DUE` line is emitted, and never give it a platform of its own.
 
 Firstmate never writes a project's `AGENTS.md` directly.
 A crewmate edits a project's `AGENTS.md` or `CLAUDE.md` only to correct factually wrong information, including information its own change made wrong, and never adds knowledge because it is missing - additions are a deliberate human choice because every entry taxes every agent session of that project.

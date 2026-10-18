@@ -16,8 +16,8 @@
 #   due     prints CAPABILITY_SCOUT_DUE: true and exits 0 when the cadence
 #           interval has elapsed since the last mark, otherwise prints
 #           false and exits 1, so a weekly review can branch on it directly.
-#           Exit 2 is a real error (a missing, corrupt, or unsafe anchor),
-#           never a quiet "not due".
+#           Exit 2 is a real error for a corrupt or unsafe anchor; an absent
+#           anchor is first-run due=true and exits 0.
 #   mark    records the sweep anchor after the scout session is dispatched,
 #           so a failed session still consumes that month's single session
 #           budget instead of re-triggering every week. --task records the
@@ -68,6 +68,17 @@ epoch_to_date() {
   date -u -d "@$epoch" +%Y-%m-%d
 }
 
+normalize_epoch() {
+  local epoch=$1
+  is_digits "$epoch" || return 1
+  while [ "${epoch#0}" != "$epoch" ]; do
+    epoch=${epoch#0}
+  done
+  [ -n "$epoch" ] || epoch=0
+  epoch_to_date "$epoch" >/dev/null 2>&1 || return 1
+  printf '%s\n' "$epoch"
+}
+
 read_anchor() {
   LAST_EPOCH=''
   LAST_DATE=''
@@ -91,21 +102,30 @@ read_anchor() {
     esac
   done < "$ANCHOR"
   is_digits "$LAST_EPOCH" || die "corrupt anchor $ANCHOR: last_epoch is not plain digits"
+  if ! LAST_EPOCH=$(normalize_epoch "$LAST_EPOCH"); then
+    die "corrupt anchor $ANCHOR: last_epoch is not a valid epoch"
+  fi
   [ -n "$LAST_DATE" ] || die "corrupt anchor $ANCHOR: last_date is missing"
-  if ! canonical_date=$(epoch_to_date "$LAST_EPOCH"); then
+  if ! canonical_date=$(epoch_to_date "$LAST_EPOCH" 2>/dev/null); then
     die "corrupt anchor $ANCHOR: last_epoch is not a valid epoch"
   fi
   [ "$LAST_DATE" = "$canonical_date" ] || die "corrupt anchor $ANCHOR: last_date does not match last_epoch"
 }
 
 resolve_now() {
-  local given=$1
+  local given=$1 epoch
   if [ -n "$given" ]; then
     is_digits "$given" || die "--now must be an epoch in plain digits"
-    printf '%s\n' "$given"
-    return 0
+    if ! epoch=$(normalize_epoch "$given"); then
+      die "--now must be a representable epoch in plain digits"
+    fi
+  else
+    epoch=$(date +%s)
+    if ! epoch=$(normalize_epoch "$epoch"); then
+      die "current time is not a representable epoch"
+    fi
   fi
-  date +%s
+  printf '%s\n' "$epoch"
 }
 
 cmd_due() {
@@ -121,7 +141,12 @@ cmd_due() {
     due=false
     next_from=$((LAST_EPOCH + CADENCE_SECONDS))
   fi
-  next_due=$(epoch_to_date "$next_from")
+  if ! next_from=$(normalize_epoch "$next_from"); then
+    die "next due epoch is not a valid epoch"
+  fi
+  if ! next_due=$(epoch_to_date "$next_from" 2>/dev/null); then
+    die "next due epoch is not a valid epoch"
+  fi
   printf 'CAPABILITY_SCOUT_DUE: %s\n' "$due"
   if [ -n "$LAST_DATE" ]; then
     printf 'last_sweep=%s\n' "$LAST_DATE"
@@ -133,11 +158,14 @@ cmd_due() {
 }
 
 cmd_mark() {
-  local now=$1 task=$2
+  local now=$1 task=$2 mark_date
   if [ -n "$task" ]; then
     case "$task" in
       *[!A-Za-z0-9._-]*) die "--task must be a plain task id (letters, digits, dot, dash, underscore)" ;;
     esac
+  fi
+  if ! mark_date=$(epoch_to_date "$now" 2>/dev/null); then
+    die "mark epoch is not a valid epoch"
   fi
   [ ! -L "$SCOUT_DIR" ] || die "refusing symlinked data directory $SCOUT_DIR"
   mkdir -p "$SCOUT_DIR" || die "cannot create $SCOUT_DIR"
@@ -147,11 +175,11 @@ cmd_mark() {
   chmod 600 "$tmp"
   {
     printf 'last_epoch=%s\n' "$now"
-    printf 'last_date=%s\n' "$(epoch_to_date "$now")"
+    printf 'last_date=%s\n' "$mark_date"
     printf 'task=%s\n' "$task"
   } > "$tmp"
   mv -f -- "$tmp" "$ANCHOR" || die "cannot write $ANCHOR"
-  printf 'marked capability scout sweep: %s\n' "$(epoch_to_date "$now")"
+  printf 'marked capability scout sweep: %s\n' "$mark_date"
 }
 
 CMD=${1:-}

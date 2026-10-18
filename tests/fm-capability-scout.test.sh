@@ -53,6 +53,49 @@ test_mark_then_not_due_and_boundary() {
   pass "fm-capability-scout.sh: mark resets the cadence and the boundary is exact"
 }
 
+test_leading_zero_epoch_is_normalized() {
+  local home out rc anchor
+  home=$(new_home leading-zero)
+  FM_HOME="$home" "$SCOUT" mark --now 01000000000 --task wave-leading >/dev/null 2>&1 \
+    || fail "mark should accept a leading-zero epoch"
+  anchor="$home/data/capability-scout/last-sweep"
+  assert_grep "last_epoch=1000000000" "$anchor" "mark must persist a canonical epoch"
+  assert_no_grep "last_epoch=01000000000" "$anchor" "mark must not persist leading zeroes"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1002419200 2>&1); rc=$?
+  expect_code 0 "$rc" "a canonical boundary after a leading-zero mark must be due (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" "leading-zero epoch must preserve the cadence boundary"
+  pass "fm-capability-scout.sh: leading-zero epochs are normalized"
+}
+
+test_out_of_range_now_is_refused() {
+  local home out rc out_of_range
+  home=$(new_home now-range)
+  out_of_range=999999999999999999999999
+  out=$(FM_HOME="$home" "$SCOUT" due --now "$out_of_range" 2>&1); rc=$?
+  expect_code 2 "$rc" "due must reject an out-of-range --now epoch (got: $out)"
+  out=$(FM_HOME="$home" "$SCOUT" mark --now "$out_of_range" 2>&1); rc=$?
+  expect_code 2 "$rc" "mark must reject an out-of-range --now epoch (got: $out)"
+  assert_absent "$home/data/capability-scout/last-sweep" "an out-of-range --now must not create an anchor"
+  pass "fm-capability-scout.sh: out-of-range current epochs are refused"
+}
+
+test_out_of_range_stored_epoch_is_refused() {
+  local home anchor before out rc out_of_range
+  home=$(new_home stored-range)
+  mkdir -p "$home/data/capability-scout"
+  anchor="$home/data/capability-scout/last-sweep"
+  out_of_range=999999999999999999999999
+  printf 'last_epoch=%s\nlast_date=1970-01-01\ntask=wave-range\n' "$out_of_range" > "$anchor"
+  before=$(cat "$anchor")
+  out=$(FM_HOME="$home" "$SCOUT" due 2>&1); rc=$?
+  expect_code 2 "$rc" "due must reject an out-of-range stored epoch (got: $out)"
+  assert_contains "$out" "last_epoch" "stored-epoch refusal must name last_epoch"
+  out=$(FM_HOME="$home" "$SCOUT" mark 2>&1); rc=$?
+  expect_code 2 "$rc" "mark must reject an out-of-range stored epoch (got: $out)"
+  [ "$(cat "$anchor")" = "$before" ] || fail "mark replaced the out-of-range stored anchor"
+  pass "fm-capability-scout.sh: out-of-range stored epochs are refused and preserved"
+}
+
 test_corrupt_anchor_fails_loud() {
   local home anchor before out rc
   home=$(new_home corrupt)
@@ -157,6 +200,9 @@ test_argument_validation() {
 
 test_absent_anchor_is_due
 test_mark_then_not_due_and_boundary
+test_leading_zero_epoch_is_normalized
+test_out_of_range_now_is_refused
+test_out_of_range_stored_epoch_is_refused
 test_corrupt_anchor_fails_loud
 test_symlinked_anchor_is_refused
 test_empty_anchor_is_refused
