@@ -10,11 +10,11 @@
 # durable anchor under data/capability-scout/last-sweep.
 #
 # Usage:
-#   fm-capability-scout.sh due [--now <epoch>]
-#   fm-capability-scout.sh claim --task <id> [--now <epoch>]
-#   fm-capability-scout.sh start --task <id> [--now <epoch>]
-#   fm-capability-scout.sh mark --task <id> [--now <epoch>]
-#   fm-capability-scout.sh release [--task <id>] [--now <epoch>]
+#   fm-capability-scout.sh due
+#   fm-capability-scout.sh claim --task <id>
+#   fm-capability-scout.sh start --task <id>
+#   fm-capability-scout.sh mark --task <id>
+#   fm-capability-scout.sh release [--task <id>]
 #
 #   due     prints CAPABILITY_SCOUT_DUE: true and exits 0 when no anchor exists
 #           or its validated UTC date is in another UTC calendar month, otherwise
@@ -26,11 +26,15 @@
 #           A fresh claim is refused; an unstarted claim at least 24 hours old
 #           may be retaken.
 #   start   records durable dispatch-started state for the owning claim before
-#           dispatch. Started claims cannot be released or stale-retaken; the
-#           next month can retire the prior started claim after anchoring it.
-#   mark    records the sweep anchor once dispatch starts, so a failed session
-#           still consumes that month's single session budget. It then clears the
-#           claim owned by --task, which is required for every mark.
+#           dispatch. A completed started session consumes the UTC month recorded
+#           at dispatch start, even when mark runs in a later month. Started claims
+#           cannot be released or stale-retaken; the next month can retire the
+#           prior started claim after anchoring it.
+#   mark    records the sweep anchor once dispatch starts, using the recorded
+#           dispatch-start epoch and date, so a failed session still consumes that
+#           month's single session budget. A manual mark with no claim uses the
+#           current date. It then clears the claim owned by --task, which is
+#           required for every mark.
 #   release clears a claim only when dispatch never started and succeeds as a
 #           no-op when no claim exists. When a claim exists, --task is required
 #           and must identify the current claim.
@@ -38,10 +42,9 @@
 # Workflow: claim --task <review-id> -> start --task <review-id> -> dispatch ->
 # mark --task <review-id>. If dispatch never starts, release the unstarted claim.
 #
-# --now <epoch> is a deterministic-test and replay override only; it must be
-# plain digits. The claim metadata and anchor are key=value text written under
-# validated non-symlinked directories; corrupt state is refused rather than
-# repaired or silently resetting the cadence.
+# The claim metadata and anchor are key=value text written under validated
+# non-symlinked directories; corrupt state is refused rather than repaired or
+# silently resetting the cadence.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -347,17 +350,14 @@ claim_is_stale() {
 }
 
 resolve_now() {
-  local given=$1 epoch
-  if [ -n "$given" ]; then
-    is_digits "$given" || die "--now must be an epoch in plain digits"
-    if ! epoch=$(normalize_epoch "$given"); then
-      die "--now must be a representable epoch in plain digits"
-    fi
+  local epoch
+  if [ "${FM_TEST_SEAM:-}" = 1 ] && [ -n "${FM_CAPABILITY_SCOUT_TEST_NOW:-}" ]; then
+    epoch=$FM_CAPABILITY_SCOUT_TEST_NOW
   else
     epoch=$(date +%s)
-    if ! epoch=$(normalize_epoch "$epoch"); then
-      die "current time is not a representable epoch"
-    fi
+  fi
+  if ! epoch=$(normalize_epoch "$epoch"); then
+    die "current time is not a representable epoch"
   fi
   printf '%s\n' "$epoch"
 }
@@ -432,6 +432,13 @@ write_claim_metadata() {
   fi
 }
 
+rollback_dispatch_start_marker() {
+  local marker=$1
+  if [ -e "$marker" ]; then
+    rmdir -- "$marker" || die "cannot roll back dispatch-start marker $marker"
+  fi
+}
+
 write_claim_started_metadata() {
   local dir=$1 epoch=$2 claim_date=$3 task=$4 started_epoch=$5 started_date=$6 meta marker
   local metadata_tmp
@@ -457,19 +464,24 @@ write_claim_started_metadata() {
     die "claim changed before dispatch started"
   fi
 
-  metadata_tmp=$(mktemp "$SCOUT_DIR/.claim-metadata.XXXXXX") \
-    || die "cannot create a temporary claim metadata in $SCOUT_DIR"
-  chmod 600 "$metadata_tmp" || {
+  if ! metadata_tmp=$(mktemp "$SCOUT_DIR/.claim-metadata.XXXXXX"); then
+    rollback_dispatch_start_marker "$marker"
+    die "cannot create a temporary claim metadata in $SCOUT_DIR"
+  fi
+  if ! chmod 600 "$metadata_tmp"; then
     rm -f -- "$metadata_tmp"
+    rollback_dispatch_start_marker "$marker"
     die "cannot secure temporary claim metadata in $dir"
-  }
+  fi
   if ! printf 'claim_epoch=%s\nclaim_date=%s\ntask=%s\ndispatch_started=true\ndispatch_started_epoch=%s\ndispatch_started_date=%s\n' \
     "$epoch" "$claim_date" "$task" "$started_epoch" "$started_date" > "$metadata_tmp"; then
     rm -f -- "$metadata_tmp"
+    rollback_dispatch_start_marker "$marker"
     die "cannot write temporary claim metadata in $SCOUT_DIR"
   fi
   if ! mv -f -- "$metadata_tmp" "$meta"; then
     rm -f -- "$metadata_tmp"
+    rollback_dispatch_start_marker "$marker"
     die "cannot record dispatch start in $meta"
   fi
 }
@@ -896,7 +908,7 @@ write_anchor() {
 }
 
 cmd_mark() {
-  local now=$1 task=$2 mark_date
+  local now=$1 task=$2 mark_date anchor_epoch anchor_date manual_mark=false
   validate_task "$task" "--task"
   if ! mark_date=$(epoch_to_date "$now" 2>/dev/null); then
     die "mark epoch is not a valid epoch"
@@ -908,6 +920,7 @@ cmd_mark() {
   local claim_started=$CLAIM_STARTED claim_started_epoch=$CLAIM_STARTED_EPOCH claim_started_date=$CLAIM_STARTED_DATE
   if [ "$claim_present" = false ]; then
     if create_claim "$now" "$mark_date" "$task"; then
+      manual_mark=true
       claim_present=true
       claim_epoch=$now
       claim_date=$mark_date
@@ -929,6 +942,7 @@ cmd_mark() {
         if ! create_claim "$now" "$mark_date" "$task"; then
           die "capability scout claim changed during mark reservation"
         fi
+        manual_mark=true
       fi
       [ "$CLAIM_STATE" = ready ] || read_claim
       [ "$CLAIM_STATE" = ready ] || die "claim metadata is incomplete: $CLAIM_META"
@@ -944,10 +958,20 @@ cmd_mark() {
   if [ "$task" != "$claim_task" ]; then
     die "claim belongs to task $claim_task, not $task"
   fi
-  write_anchor "$now" "$mark_date" "$task"
+  if [ "$manual_mark" = false ] && [ "$claim_started" = false ]; then
+    die "dispatch has not started for claim; release it instead"
+  fi
+  if [ "$claim_started" = true ]; then
+    anchor_epoch=$claim_started_epoch
+    anchor_date=$claim_started_date
+  else
+    anchor_epoch=$now
+    anchor_date=$mark_date
+  fi
+  write_anchor "$anchor_epoch" "$anchor_date" "$task"
   clear_current_claim_if_matches "$claim_epoch" "$claim_date" "$claim_task" \
     "$claim_started" "$claim_started_epoch" "$claim_started_date"
-  printf 'marked capability scout sweep: %s\n' "$mark_date"
+  printf 'marked capability scout sweep: %s\n' "$anchor_date"
 }
 
 cmd_release() {
@@ -989,15 +1013,9 @@ if [ -z "$CMD" ]; then
   exit 2
 fi
 shift
-NOW=''
 TASK=''
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --now)
-      [ "$#" -ge 2 ] || die "--now requires an epoch"
-      NOW=$2
-      shift 2
-      ;;
     --task)
       [ "$#" -ge 2 ] || die "--task requires an id"
       TASK=$2
@@ -1013,7 +1031,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-NOW=$(resolve_now "$NOW")
+NOW=$(resolve_now)
 case "$CMD" in
   due)
     cmd_due "$NOW"
