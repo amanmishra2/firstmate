@@ -1629,6 +1629,40 @@ test_crewmate_scaffolds_forbid_pool_administration() {
   pass "fm-brief.sh: every crewmate scaffold forbids administering the shared worktree pool"
 }
 
+# The completion-verification discipline adopted 2026-10-18 through the
+# capability scout (verification-before-completion) must reach every generated
+# brief, not one mode: the ship definition of done and the scout report contract
+# are the surfaces the adoption named.
+test_completion_verification_discipline_in_every_brief() {
+  local home name args brief count
+  home="$TMP_ROOT/verification-home"
+  mkdir -p "$home/data"
+  while IFS='|' read -r name args; do
+    [ -n "$name" ] || continue
+    # shellcheck disable=SC2086  # args is an intentional word-split arg list
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" $args >/dev/null 2>&1 \
+      || fail "$name: scaffold failed"
+  done <<'ROWS'
+brief-verif-a1|brief-verif-a1 some-proj --mode no-mistakes
+brief-verif-a2|brief-verif-a2 some-proj --mode direct-PR
+brief-verif-a3|brief-verif-a3 some-proj --mode local-only
+brief-verif-a4|brief-verif-a4 some-proj --scout
+ROWS
+  for name in brief-verif-a1 brief-verif-a2 brief-verif-a3 brief-verif-a4; do
+    brief="$home/data/$name/brief.md"
+    assert_present "$brief" "$name: brief was not scaffolded"
+    count=$(grep -c '^## Verification before completion$' "$brief") || true
+    [ "$count" = 1 ] || fail "$name: expected exactly one verification block, found $count"
+    assert_grep "identify the command that proves the claim" "$brief" \
+      "$name: the discipline must name the proving command"
+    assert_grep "another agent's success report are not evidence" "$brief" \
+      "$name: a self-report must not count as evidence"
+    assert_grep "report the actual state instead" "$brief" \
+      "$name: unconfirmed evidence must fall back to the true state"
+  done
+  pass "fm-brief.sh: the completion-verification discipline renders in every brief"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
@@ -1640,6 +1674,7 @@ test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
+test_completion_verification_discipline_in_every_brief
 test_no_mistakes_dod_green_detection
 test_pr_based_dod_requires_non_draft
 test_ask_user_escalation_format

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Single owner of a ship task's mode-specific "Definition of done" block and of
+# Single owner of a ship task's mode-specific "Definition of done" block, of the
+# worker-facing completion-verification discipline those blocks carry, and of
 # the named-head reachability gate that accepts a ship `done:` claim.
 # Sourced by bin/fm-brief.sh, which renders it into a generated ship brief, and by
 # bin/fm-promote.sh, which renders it into the ship instructions a promoted scout
@@ -448,9 +449,30 @@ There is no pull request, no \`gh-axi\` call, and no forge CI result to report: 
 EOF
 }
 
+# Worker-facing completion-verification discipline, rendered into every crewmate
+# brief: fm_dod_block renders it into ship definitions of done, and
+# bin/fm-brief.sh renders it into scout definitions of done, so both paths hand
+# the worker the same rule. It is the fleet's distilled form of the ecosystem
+# skill `verification-before-completion` (adopted 2026-10-18 through the
+# capability scout's security gate and durable-learning bar); this brief surface
+# is the single owner of the worker-facing wording, and AGENTS.md hard rule 5
+# keeps only its one-line supervisor-facing rule. Prints the block with no
+# leading or trailing blank line; callers separate it with blank lines.
+fm_verification_block() {
+  cat <<'EOF'
+## Verification before completion
+A completion claim needs fresh verification evidence: identify the command that proves the claim, run it in full, and read the whole output and exit code.
+State success only when that output confirms the claim; a previous run, a partial check, self-assessment, and another agent's success report are not evidence.
+When the evidence does not confirm the claim, report the actual state instead.
+This applies to test, lint, build, bug-fix, report, and PR claims and to the `done:` line itself.
+EOF
+}
+
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-}
   local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check adapter
+  local verif
+  verif=$(fm_verification_block)
   fm_forge_valid_for_mode "$forge" "$mode" fm_dod_block || return 1
   fm_base_branch_valid "$base" "$mode" "$forge" fm_dod_block || return 1
   if [ -n "$consent" ]; then
@@ -478,6 +500,9 @@ fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>]
 # Definition of done
 Delivery contract: mode=direct-PR forge=gerrit shape=squash$contract_consent
 Ship branch: $branch
+
+$verif
+
 This task ships **direct-PR** to a Gerrit review server: you publish the change yourself, without the no-mistakes pipeline.
 Gerrit has no pull requests, so there is nothing to open; publishing creates the change.
 The task is complete only when committed on your branch.
@@ -493,6 +518,9 @@ EOF
 # Definition of done
 Delivery contract: mode=no-mistakes forge=gerrit shape=squash$contract_consent
 Ship branch: $branch
+
+$verif
+
 This project's review server is Gerrit: it has no pull requests and no forge CI the pipeline can watch, so **no-mistakes runs here as a review pass that ends at a ready branch**, and you then publish that branch as one change.
 Pass \`--skip push,pr,ci\` on every \`no-mistakes axi run\` for this task, and skip nothing else: \`review\`, \`test\`, \`document\`, and \`lint\` are the whole point of the run.
 Those three are the only steps that reach a forge, and skipping them is a supported outcome, not a degraded one.
@@ -527,6 +555,9 @@ EOF
 # Definition of done
 Delivery contract: mode=direct-PR forge=external$contract_consent
 Ship branch: $branch
+
+$verif
+
 This task ships **direct-PR** through an external review tool: the tool uploads a snapshot of your local commits itself, so you never push a branch to publish, and there is no pull request to open.
 The task is complete only when committed on your branch.
 EOF
@@ -555,6 +586,9 @@ EOF
 # Definition of done
 Delivery contract: mode=direct-PR$contract_forge$contract_consent
 Ship branch: $branch
+
+$verif
+
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch and open a PR with \`$forge_cli\` that is ready for review, not a draft$pr_base.
@@ -571,6 +605,9 @@ EOF
 # Definition of done
 Delivery contract: mode=local-only
 Ship branch: $branch
+
+$verif
+
 This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`$branch\`. Do NOT push, do NOT open a PR, do NOT merge.
 A \`done:\` is accepted when the named head is on this project's shared local branch, not only on a detached copy; the check tests that head, not merely that a branch moved.
@@ -584,6 +621,9 @@ EOF
 # Definition of done
 Delivery contract: mode=no-mistakes$contract_forge$contract_consent
 Ship branch: $branch
+
+$verif
+
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done [at=<epoch>]: {summary}\` to the status file and stop.
 Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
