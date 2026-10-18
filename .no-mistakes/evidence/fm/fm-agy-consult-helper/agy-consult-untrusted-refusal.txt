@@ -1,0 +1,41 @@
+Live untrusted-workspace refusal with actual tmux; no agy session was created.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ bin/fm-agy-consult.sh --topic agy-live-untrusted-proof --session agy-untrusted-proof --dir "/var/folders/rz/r_
+7y_j8903x7clhnpvydlpd00000gn/T//fm-lab.3WG2Vl/untrusted" --date 2026-10-18 --timeout 5 --prompt "Reply with exactly: SHO
+ULD_NOT_RUN"; rc=$?; printf "helper_exit=%s\\n" "$rc"; if tmux has-session -t agy-untrusted-proof 2>/dev/null; then prin
+tf "unexpected-session-created\\n"; else printf "no-session-created\\n"; fi
+error: agy workspace '/private/var/folders/rz/r_7y_j8903x7clhnpvydlpd00000gn/T/fm-lab.3WG2Vl/untrusted' is not listed in
+ '/var/folders/rz/r_7y_j8903x7clhnpvydlpd00000gn/T//fm-lab.3WG2Vl/home/.gemini/antigravity-cli/settings.json' trustedWor
+kspaces; trust a linked task worktree with bin/fm-agy-trust.sh or launch agy manually once, then retry
+helper_exit=1
+no-session-created
+bash-3.2$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

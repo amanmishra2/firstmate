@@ -1,0 +1,41 @@
+Fresh helper launch with isolated HOME; actual agy reached login but no idle composer or transcript was produced.
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+bash-3.2$ bin/fm-agy-consult.sh --topic agy-live-fresh-blocked --session agy-live-fresh-blocked --dir "/var/folders/rz/r
+_7y_j8903x7clhnpvydlpd00000gn/T//fm-lab.3WG2Vl/project" --date 2026-10-18 --model gemini-4-argon-high --effort high --ti
+meout 8 --poll-interval 1 --settle-polls 1 --prompt "Reply with exactly: AGY_CONSULT_LIVE_OK"; rc=$?; printf "fresh_help
+er_exit=%s\\n" "$rc"; if [ -e "/var/folders/rz/r_7y_j8903x7clhnpvydlpd00000gn/T//fm-lab.3WG2Vl/data/agy-reviews/2026-10-
+18-agy-live-fresh-blocked.txt" ]; then printf "transcript_created=yes\\n"; else printf "transcript_created=no\\n"; fi
+error: agy session 'agy-live-fresh-blocked' did not reach the ready idle composer within 8s
+fresh_helper_exit=1
+transcript_created=no
+bash-3.2$
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
