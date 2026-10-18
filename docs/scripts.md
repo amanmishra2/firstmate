@@ -167,7 +167,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-mail.sh`             | General-purpose mail plane: read unseen IMAP mail, send one SMTP message, or surface new mail as a `check` wake via `poll` (configuration in the home's gitignored `.env`) |
 | `fm-mail.py`             | The IMAP/SMTP engine behind `fm-mail.sh` |
 | `fm-mail-check.sh`       | Standing received-mail poll: `arm` registers a watcher check that runs `fm-mail.sh poll` on the watcher cadence (new mail still wakes via the poll; the check's own line also wakes unless the poll is a proven no-op), `disarm` removes it |
-| `fm-capability-scout.sh` | Own the capability scout's one-session-per-UTC-calendar-month due test, exclusive `claim --task` reservation, and durable sweep anchor; use `claim -> dispatch -> mark`, or `claim -> release` only when dispatch never starts, so the scout rides the first weekly review without a scheduler |
+| `fm-capability-scout.sh` | Own the capability scout's one-session-per-UTC-calendar-month due test, exclusive `claim --task` reservation, durable `start --task` dispatch marker, and sweep anchor; use `claim -> start -> dispatch -> mark`, or `claim -> release` only when dispatch never starts, so the scout rides the first weekly review without a scheduler |
 | `fm-voice-relay.py`      | Hold the spoken conversation on this host, answer from the records, and hand real work to `fm-inbox.sh` ([voice-relay.md](voice-relay.md)) |
 | `fm-voice-client.py`     | The laptop end of the spoken interface: capture, playback, and turn timing over SSH; audio devices unverified |
 | `fm_voice_frame.py`      | The wire format both machines share, copied to the laptop beside the client          |

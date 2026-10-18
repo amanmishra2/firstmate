@@ -11,12 +11,12 @@ This skill owns the procedure; `bin/fm-capability-scout.sh` owns the cadence dat
 ## Cadence
 
 The scout rides the first weekly review of each month as one bounded session; there is no separate scheduler.
-The weekly review runs `bin/fm-capability-scout.sh due`, which prints `CAPABILITY_SCOUT_DUE: true` and exits 0 when no anchor exists or its validated UTC date is in a different UTC calendar month than the current date, and prints `false` with exit 1 when the anchor is in the current UTC calendar month or a fresh dispatch claim exists.
+The weekly review runs `bin/fm-capability-scout.sh due`, which prints `CAPABILITY_SCOUT_DUE: true` and exits 0 when no anchor exists or its validated UTC date is in a different UTC calendar month than the current date, and prints `false` with exit 1 when the anchor is in the current UTC calendar month or a fresh dispatch claim exists. A started claim keeps its start month closed even if 24 hours pass; when a later month is due, `claim` first records that prior started month before reserving the new one.
 The reported `next_due` is always the first day of the next UTC calendar month.
-When the line is true, reserve the dispatch with `bin/fm-capability-scout.sh claim --task <task-id>` before dispatching exactly one scout session on the configured `agy` scout profile, bounded to about 15-20 minutes.
-Once dispatch starts, record the sweep with `bin/fm-capability-scout.sh mark --task <task-id>` whether the session succeeds or fails; the mark consumes that month's single-session budget.
-If dispatch never starts, release the reservation with `bin/fm-capability-scout.sh release --task <task-id>` so a new due check may retry it.
-The required transitions are `claim -> dispatch -> mark` after dispatch begins, or `claim -> release` when dispatch never starts.
+When the line is true, reserve the dispatch with `bin/fm-capability-scout.sh claim --task <task-id>`. Immediately before handing off exactly one scout session on the configured `agy` scout profile, run `bin/fm-capability-scout.sh start --task <task-id>` to persist that dispatch has started; keep the session bounded to about 15-20 minutes.
+After dispatch starts, record the sweep with `bin/fm-capability-scout.sh mark --task <task-id>` whether the session succeeds or fails; the mark records the completion anchor.
+If dispatch never starts, release the unstarted reservation with `bin/fm-capability-scout.sh release --task <task-id>` so a new due check may retry it.
+The required transitions are `claim -> start -> dispatch -> mark` after dispatch begins, or `claim -> release` when dispatch never starts.
 Never open a second session for the same month, and never build a scheduler, watcher, or standing service around this.
 
 The session scans, read-only: newly starred upstreams, watched tool releases, and the local plugin and skill caches.

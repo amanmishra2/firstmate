@@ -60,6 +60,8 @@ test_claim_records_metadata_and_closes_due() {
   assert_grep "claim_epoch=1705276800" "$claim_meta" "claim must record its epoch"
   assert_grep "claim_date=2024-01-15" "$claim_meta" "claim must record its UTC date"
   assert_grep "task=monthly-review" "$claim_meta" "claim must record its task identity"
+  assert_grep "dispatch_started=false" "$claim_meta" \
+    "a reservation must remain unstarted until the dispatch handoff"
 
   out=$(FM_HOME="$home" "$SCOUT" due --now 1705276800 2>&1); rc=$?
   expect_code 1 "$rc" "a fresh claim must close due (got: $out)"
@@ -137,6 +139,56 @@ test_stale_claim_is_due_and_can_be_retaken() {
   assert_grep "task=replacement-review" "$claim_meta" "retaken claim must record the new task"
   assert_absent "$home/data/capability-scout/.claim-stale" "stale claim recovery must not leave a fixed quarantine path"
   pass "fm-capability-scout.sh: stale claims become due and can be retaken"
+}
+
+test_started_claim_consumes_its_month_and_rolls_forward() {
+  local home out rc metadata
+  home=$(new_home started-claim)
+  FM_HOME="$home" "$SCOUT" claim --task started-review --now 1705276800 >/dev/null 2>&1 \
+    || fail "claim should succeed before dispatch start"
+
+  out=$(FM_HOME="$home" "$SCOUT" start --task foreign-review --now 1705276800 2>&1); rc=$?
+  expect_code 2 "$rc" "a foreign task must not start another task's claim (got: $out)"
+  metadata="$home/data/capability-scout/claim/metadata"
+  assert_grep "dispatch_started=false" "$metadata" \
+    "a foreign start must not change the claim's started state"
+
+  out=$(FM_HOME="$home" "$SCOUT" start --task started-review --now 1705276800 2>&1); rc=$?
+  expect_code 0 "$rc" "the claim owner should be able to start dispatch (got: $out)"
+  assert_grep "dispatch_started=true" "$metadata" "dispatch start must be durable"
+  assert_grep "dispatch_started_epoch=1705276800" "$metadata" \
+    "dispatch start must record its epoch"
+  assert_grep "dispatch_started_date=2024-01-15" "$metadata" \
+    "dispatch start must record its UTC date"
+
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1705363200 2>&1); rc=$?
+  expect_code 1 "$rc" "a started claim must keep due false after 24 hours in its month (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: false" \
+    "a started claim must consume the rest of its UTC month"
+  assert_contains "$out" "claim_state=started" "due must identify the started claim"
+
+  out=$(FM_HOME="$home" "$SCOUT" claim --task retry-review --now 1705363200 2>&1); rc=$?
+  expect_code 2 "$rc" "a started claim must not be stale-retaken (got: $out)"
+  assert_grep "task=started-review" "$metadata" \
+    "a stale-retake attempt must preserve the started claim owner"
+  out=$(FM_HOME="$home" "$SCOUT" release --task started-review --now 1705363200 2>&1); rc=$?
+  expect_code 2 "$rc" "a started claim must not be released (got: $out)"
+  assert_grep "dispatch_started=true" "$metadata" \
+    "a release attempt must preserve the started marker"
+
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1706745600 2>&1); rc=$?
+  expect_code 0 "$rc" "a started claim from the previous month must not close this month (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" \
+    "a new UTC month must become due after the prior started month"
+  FM_HOME="$home" "$SCOUT" claim --task february-review --now 1706745600 >/dev/null 2>&1 \
+    || fail "a new month should retire the previous started claim and reserve its own"
+  assert_grep "last_date=2024-01-15" "$home/data/capability-scout/last-sweep" \
+    "retiring the prior started claim must preserve its consumed month"
+  assert_grep "task=february-review" "$metadata" \
+    "the new month must receive a distinct unstarted claim"
+  assert_grep "dispatch_started=false" "$metadata" \
+    "a new month's claim must begin unstarted"
+  pass "fm-capability-scout.sh: started claims consume one month and roll forward"
 }
 
 test_pending_claim_mtime_controls_expiry_and_recovery() {
@@ -292,6 +344,69 @@ test_marked_month_refuses_a_late_claim() {
   pass "fm-capability-scout.sh: a completed manual mark wins over a paused competing claim"
 }
 
+test_release_does_not_delete_a_replacement_claim() {
+  local home wrapper_dir pause resume real_mv release_pid waited release_rc release_out metadata out rc
+  home=$(new_home release-replacement-race)
+  FM_HOME="$home" "$SCOUT" claim --task original-review --now 1705276800 >/dev/null 2>&1 \
+    || fail "initial stale claim should succeed"
+  wrapper_dir="$TMP_ROOT/release-replacement-mv"
+  mkdir -p "$wrapper_dir"
+  pause="$home/release-mv-paused"
+  resume="$home/release-mv-resume"
+  real_mv=$(command -v mv)
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'target=${!#}' \
+    'case "$target" in' \
+    '  */.claim-clear.*/claim)' \
+    '    : > "$FM_TEST_RELEASE_PAUSE"' \
+    '    while [ ! -e "$FM_TEST_RELEASE_RESUME" ]; do sleep 0.01; done' \
+    '    ;;' \
+    'esac' \
+    'exec "$FM_TEST_REAL_MV" "$@"' > "$wrapper_dir/mv"
+  chmod 700 "$wrapper_dir/mv"
+
+  (
+    set +e
+    PATH="$wrapper_dir:$PATH" FM_HOME="$home" \
+      FM_TEST_RELEASE_PAUSE="$pause" FM_TEST_RELEASE_RESUME="$resume" \
+      FM_TEST_REAL_MV="$real_mv" \
+      "$SCOUT" release --task original-review --now 1705363200 >"$home/release.out" 2>&1
+    printf '%s\n' "$?" > "$home/release.rc"
+  ) &
+  release_pid=$!
+  waited=0
+  while [ ! -e "$pause" ] && [ "$waited" -lt 500 ]; do
+    sleep 0.01
+    waited=$((waited + 1))
+  done
+  [ -e "$pause" ] || {
+    : > "$resume"
+    wait "$release_pid" || true
+    fail "release did not reach the claim removal boundary"
+  }
+
+  FM_HOME="$home" "$SCOUT" claim --task replacement-review --now 1705363200 >/dev/null 2>&1 \
+    || fail "the stale claim should be retaken before release verifies its moved copy"
+  : > "$resume"
+  wait "$release_pid" || true
+  release_rc=$(cat "$home/release.rc")
+  release_out=$(cat "$home/release.out")
+  expect_code 2 "$release_rc" "release must refuse a replacement claim (got: $release_out)"
+  assert_contains "$release_out" "restored the current claim" \
+    "release should restore the claim it moved without verifying"
+  metadata="$home/data/capability-scout/claim/metadata"
+  assert_grep "task=replacement-review" "$metadata" \
+    "release must preserve a replacement claim owned by another task"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1705363200 2>&1); rc=$?
+  expect_code 1 "$rc" "a replacement claim must continue to close due (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: false" \
+    "the replacement claim must remain visible to due"
+  out=$(FM_HOME="$home" "$SCOUT" claim --task third-review --now 1705363200 2>&1); rc=$?
+  expect_code 2 "$rc" "the removed claim must not open a second reservation (got: $out)"
+  pass "fm-capability-scout.sh: release removes only the claim it verified"
+}
+
 test_claim_cleanup_preflights_unexpected_contents() {
   local home out rc claim_dir
   home=$(new_home claim-cleanup)
@@ -353,6 +468,20 @@ test_leading_zero_epoch_is_normalized() {
   expect_code 0 "$rc" "the next month after a leading-zero mark must be due (got: $out)"
   assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" "leading-zero epoch must preserve the monthly boundary"
   pass "fm-capability-scout.sh: leading-zero epochs are normalized"
+}
+
+test_epoch_conversion_ignores_numeric_filename() {
+  local home anchor
+  home=$(new_home numeric-filename)
+  touch "$home/1705276800"
+  (
+    cd "$home"
+    FM_HOME="$home" "$SCOUT" mark --now 1705276800 --task filename-review >/dev/null 2>&1
+  ) || fail "mark should interpret --now as an epoch when a same-named file exists"
+  anchor="$home/data/capability-scout/last-sweep"
+  assert_grep "last_date=2024-01-15" "$anchor" \
+    "epoch conversion must not use the numeric filename's mtime"
+  pass "fm-capability-scout.sh: epoch conversion ignores numeric filenames"
 }
 
 test_december_to_january_is_due() {
@@ -629,6 +758,8 @@ test_argument_validation() {
   expect_code 2 "$rc" "--task must reject a non-id value (got: $out)"
   out=$(FM_HOME="$home" "$SCOUT" claim --now 1705276800 2>&1); rc=$?
   expect_code 2 "$rc" "claim must require --task (got: $out)"
+  out=$(FM_HOME="$home" "$SCOUT" start --now 1705276800 2>&1); rc=$?
+  expect_code 2 "$rc" "start must require --task (got: $out)"
   out=$(FM_HOME="$home" "$SCOUT" release --task 'bad id' 2>&1); rc=$?
   expect_code 2 "$rc" "release --task must reject a non-id value (got: $out)"
   out=$(FM_HOME="$home" "$SCOUT" bogus 2>&1); rc=$?
@@ -636,9 +767,11 @@ test_argument_validation() {
   out=$(FM_HOME="$home" "$SCOUT" --help 2>&1); rc=$?
   expect_code 0 "$rc" "--help must exit 0 (got: $out)"
   assert_contains "$out" "claim --task <id>" "help must document claim syntax"
+  assert_contains "$out" "start --task <id>" "help must document start syntax"
   assert_contains "$out" "mark --task <id>" "help must document mark syntax"
   assert_contains "$out" "release [--task <id>]" "help must document release syntax"
-  assert_contains "$out" "claim --task <review-id> -> dispatch" "help must document the claim transition"
+  assert_contains "$out" "claim --task <review-id> -> start --task <review-id> -> dispatch" \
+    "help must document the dispatch-start transition"
   pass "fm-capability-scout.sh: arguments are validated"
 }
 
@@ -648,14 +781,17 @@ test_claim_records_metadata_and_closes_due
 test_second_fresh_claim_is_refused
 test_simultaneous_first_claims_have_one_winner
 test_stale_claim_is_due_and_can_be_retaken
+test_started_claim_consumes_its_month_and_rolls_forward
 test_pending_claim_mtime_controls_expiry_and_recovery
 test_mark_converts_and_clears_claim
 test_mark_requires_the_claim_owner_and_a_task
 test_release_requires_the_claim_owner
 test_marked_month_refuses_a_late_claim
+test_release_does_not_delete_a_replacement_claim
 test_claim_cleanup_preflights_unexpected_contents
 test_release_clears_unstarted_dispatch_claim_and_is_noop_without_one
 test_leading_zero_epoch_is_normalized
+test_epoch_conversion_ignores_numeric_filename
 test_december_to_january_is_due
 test_weekly_checks_across_several_months
 test_out_of_range_now_is_refused
