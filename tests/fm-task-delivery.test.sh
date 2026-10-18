@@ -359,6 +359,8 @@ STUB
 
     # Both the delivered prompt and persisted relaunch brief are public outputs.
     for contract in "$payload" "$home/data/$id/brief.md"; do
+      count=$(grep -Fc '## Verification before completion' "$contract" || true)
+      [ "$count" -eq 1 ] || fail "$mode: $contract contains $count verification blocks instead of one"
       assert_grep "This replaces the scout rule limiting outside-worktree writes to the report and status file." "$contract" \
         "$mode: $contract retained the scout-only write restriction"
       assert_grep "Keep project edits inside this worktree; keep proof and scratch output outside it, under \`$home/data/$id/\` or a temporary directory." "$contract" \

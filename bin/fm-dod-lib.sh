@@ -468,6 +468,17 @@ This applies to test, lint, build, bug-fix, report, and PR claims and to the `do
 EOF
 }
 
+fm_strip_verification_block() {
+  local heading
+  heading=$(fm_verification_block | sed -n '1p')
+  awk -v heading="$heading" '
+    /^# Definition of done$/ { in_dod=1 }
+    in_dod && !removed && $0 == heading { skip=1; removed=1; next }
+    skip && /^$/ { skip=0; next }
+    !skip { print }
+  '
+}
+
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-}
   local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check adapter

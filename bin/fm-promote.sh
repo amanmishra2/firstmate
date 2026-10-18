@@ -350,7 +350,7 @@ TMP=
 # there so a later relaunch cannot revive the original scout delivery rules.
 BRIEF_REPLACEMENT="$DATA/$ID/.brief.md.promote.${BASHPID:-$$}"
 {
-  cat "$SCOUT_BRIEF"
+  fm_strip_verification_block < "$SCOUT_BRIEF"
   printf '\n\n'
   printf '# Current ship Firstmate spec\n%s\n\n' "$PROMOTION_SHIP_SPEC"
   promote_delivery_contract
