@@ -414,17 +414,22 @@ write_claim_metadata() {
   meta="$dir/metadata"
   [ ! -L "$meta" ] || die "refusing symlinked claim metadata $meta"
   [ ! -e "$meta" ] || die "claim metadata already exists: $meta"
-  tmp=$(mktemp "$SCOUT_DIR/.claim-metadata.XXXXXX") || die "cannot create temporary claim metadata in $SCOUT_DIR"
-  chmod 600 "$tmp" || die "cannot secure temporary claim metadata in $dir"
-  {
-    printf 'claim_epoch=%s\n' "$epoch"
-    printf 'claim_date=%s\n' "$claim_date"
-    printf 'task=%s\n' "$task"
-    printf 'dispatch_started=false\n'
-    printf 'dispatch_started_epoch=\n'
-    printf 'dispatch_started_date=\n'
-  } > "$tmp"
-  mv -f -- "$tmp" "$meta" || die "cannot write claim metadata $meta"
+  if ! tmp=$(mktemp "$SCOUT_DIR/.claim-metadata.XXXXXX"); then
+    return 1
+  fi
+  if ! chmod 600 "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  if ! printf 'claim_epoch=%s\nclaim_date=%s\ntask=%s\ndispatch_started=false\ndispatch_started_epoch=\ndispatch_started_date=\n' \
+    "$epoch" "$claim_date" "$task" > "$tmp"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+  if ! mv -f -- "$tmp" "$meta"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
 }
 
 write_claim_started_metadata() {
@@ -458,17 +463,11 @@ write_claim_started_metadata() {
     rm -f -- "$metadata_tmp"
     die "cannot secure temporary claim metadata in $dir"
   }
-  {
-    printf 'claim_epoch=%s\n' "$epoch"
-    printf 'claim_date=%s\n' "$claim_date"
-    printf 'task=%s\n' "$task"
-    printf 'dispatch_started=true\n'
-    printf 'dispatch_started_epoch=%s\n' "$started_epoch"
-    printf 'dispatch_started_date=%s\n' "$started_date"
-  } > "$metadata_tmp" || {
+  if ! printf 'claim_epoch=%s\nclaim_date=%s\ntask=%s\ndispatch_started=true\ndispatch_started_epoch=%s\ndispatch_started_date=%s\n' \
+    "$epoch" "$claim_date" "$task" "$started_epoch" "$started_date" > "$metadata_tmp"; then
     rm -f -- "$metadata_tmp"
     die "cannot write temporary claim metadata in $SCOUT_DIR"
-  }
+  fi
   if ! mv -f -- "$metadata_tmp" "$meta"; then
     rm -f -- "$metadata_tmp"
     die "cannot record dispatch start in $meta"
@@ -651,7 +650,10 @@ create_claim() {
   mkdir -p "$SCOUT_DIR" || die "cannot create $SCOUT_DIR"
   validate_paths
   if mkdir -- "$CLAIM_DIR"; then
-    write_claim_metadata "$CLAIM_DIR" "$now" "$claim_date" "$task"
+    if ! write_claim_metadata "$CLAIM_DIR" "$now" "$claim_date" "$task"; then
+      clear_claim_dir "$CLAIM_DIR"
+      die "cannot write claim metadata $CLAIM_META"
+    fi
     return 0
   fi
   return 1
@@ -712,7 +714,13 @@ retake_stale_claim() {
   fi
 
   if mkdir -- "$CLAIM_DIR"; then
-    write_claim_metadata "$CLAIM_DIR" "$now" "$claim_date" "$task"
+    if ! write_claim_metadata "$CLAIM_DIR" "$now" "$claim_date" "$task"; then
+      clear_claim_dir "$CLAIM_DIR"
+      if ! mv -- "$stale_dir" "$CLAIM_DIR"; then
+        die "cannot restore claim after metadata write failure"
+      fi
+      die "cannot write claim metadata $CLAIM_META"
+    fi
     clear_claim_dir "$stale_dir"
     return 0
   fi
@@ -873,13 +881,18 @@ write_anchor() {
   mkdir -p "$SCOUT_DIR" || die "cannot create $SCOUT_DIR"
   validate_paths
   tmp=$(mktemp "$SCOUT_DIR/.last-sweep.XXXXXX") || die "cannot create a temporary anchor in $SCOUT_DIR"
-  chmod 600 "$tmp"
-  {
-    printf 'last_epoch=%s\n' "$now"
-    printf 'last_date=%s\n' "$mark_date"
-    printf 'task=%s\n' "$task"
-  } > "$tmp"
-  mv -f -- "$tmp" "$ANCHOR" || die "cannot write $ANCHOR"
+  if ! chmod 600 "$tmp"; then
+    rm -f -- "$tmp"
+    die "cannot secure temporary anchor in $SCOUT_DIR"
+  fi
+  if ! printf 'last_epoch=%s\nlast_date=%s\ntask=%s\n' "$now" "$mark_date" "$task" > "$tmp"; then
+    rm -f -- "$tmp"
+    die "cannot write temporary anchor in $SCOUT_DIR"
+  fi
+  if ! mv -f -- "$tmp" "$ANCHOR"; then
+    rm -f -- "$tmp"
+    die "cannot write $ANCHOR"
+  fi
 }
 
 cmd_mark() {

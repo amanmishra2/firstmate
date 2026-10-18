@@ -17,6 +17,23 @@ new_home() {  # <name> -> prints a fresh home path
   printf '%s\n' "$home"
 }
 
+make_failed_record_printf() {
+  local wrapper_dir=$1 real_printf
+  real_printf=$(type -P printf 2>/dev/null || true)
+  [ -n "$real_printf" ] || real_printf=/usr/bin/printf
+  mkdir -p "$wrapper_dir"
+  # shellcheck disable=SC2016
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'case "${1-}" in' \
+    '  claim_epoch=*|last_epoch=*) exit 73 ;;' \
+    'esac' \
+    'exec "$FM_TEST_REAL_PRINTF" "$@"' > "$wrapper_dir/printf"
+  chmod 700 "$wrapper_dir/printf"
+  printf '%s\n' 'enable -n printf' > "$wrapper_dir/bash-env"
+  printf '%s\n' "$real_printf"
+}
+
 test_absent_anchor_is_due() {
   local home out rc
   home=$(new_home absent)
@@ -71,6 +88,100 @@ test_claim_records_metadata_and_closes_due() {
   assert_contains "$out" "claim_date=2024-01-15" "due must report the claim date"
   assert_contains "$out" "claim_task=monthly-review" "due must report the claim task"
   pass "fm-capability-scout.sh: claim metadata is recorded and a fresh claim closes due"
+}
+
+test_fresh_claim_write_failure_removes_claim() {
+  local home wrapper_dir real_printf out rc
+  home=$(new_home fresh-write-failure)
+  wrapper_dir="$TMP_ROOT/fresh-write-failure-bin"
+  real_printf=$(make_failed_record_printf "$wrapper_dir")
+  out=$(PATH="$wrapper_dir:$PATH" BASH_ENV="$wrapper_dir/bash-env" \
+    FM_TEST_REAL_PRINTF="$real_printf" FM_HOME="$home" \
+    "$SCOUT" claim --task failed-review --now 1705276800 2>&1); rc=$?
+  expect_code 2 "$rc" "a failed fresh claim write must return a hard error (got: $out)"
+  assert_absent "$home/data/capability-scout/claim" \
+    "a failed fresh claim write must remove the uncommitted claim"
+  [ -z "$(find "$home/data/capability-scout" -name '.claim-metadata.*' -print -quit)" ] \
+    || fail "a failed fresh claim write left a temporary metadata file"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1705276800 2>&1); rc=$?
+  expect_code 0 "$rc" "a failed fresh claim write must leave the month due (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" \
+    "a failed fresh claim write must leave due available"
+  pass "fm-capability-scout.sh: failed fresh claim writes remove the claim and preserve due"
+}
+
+test_stale_claim_write_failure_restores_old_claim() {
+  local home wrapper_dir real_printf claim_meta before out rc
+  home=$(new_home stale-write-failure)
+  FM_HOME="$home" "$SCOUT" claim --task old-review --now 1705276800 >/dev/null 2>&1 \
+    || fail "initial claim should succeed before stale-write failure"
+  claim_meta="$home/data/capability-scout/claim/metadata"
+  before=$(cat "$claim_meta")
+  wrapper_dir="$TMP_ROOT/stale-write-failure-bin"
+  real_printf=$(make_failed_record_printf "$wrapper_dir")
+  out=$(PATH="$wrapper_dir:$PATH" BASH_ENV="$wrapper_dir/bash-env" \
+    FM_TEST_REAL_PRINTF="$real_printf" FM_HOME="$home" \
+    "$SCOUT" claim --task replacement-review --now 1705363200 2>&1); rc=$?
+  expect_code 2 "$rc" "a failed stale retake write must return a hard error (got: $out)"
+  [ "$(cat "$claim_meta")" = "$before" ] \
+    || fail "a failed stale retake write changed the old claim"
+  [ -z "$(find "$home/data/capability-scout" -maxdepth 1 -name '.claim-stale.*' -print -quit)" ] \
+    || fail "a failed stale retake write left its recovery directory"
+  [ -z "$(find "$home/data/capability-scout" -name '.claim-metadata.*' -print -quit)" ] \
+    || fail "a failed stale retake write left a temporary metadata file"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1705363200 2>&1); rc=$?
+  expect_code 0 "$rc" "a restored stale claim must remain due (got: $out)"
+  assert_contains "$out" "claim_state=stale" \
+    "a restored stale claim must remain visible as stale"
+  pass "fm-capability-scout.sh: failed stale retakes restore the old claim"
+}
+
+test_started_metadata_write_failure_preserves_metadata() {
+  local home wrapper_dir real_printf metadata before out rc marker
+  home=$(new_home started-write-failure)
+  FM_HOME="$home" "$SCOUT" claim --task started-review --now 1705276800 >/dev/null 2>&1 \
+    || fail "claim should succeed before dispatch-start write failure"
+  metadata="$home/data/capability-scout/claim/metadata"
+  before=$(cat "$metadata")
+  marker="$home/data/capability-scout/claim/.dispatch-started"
+  wrapper_dir="$TMP_ROOT/started-write-failure-bin"
+  real_printf=$(make_failed_record_printf "$wrapper_dir")
+  out=$(PATH="$wrapper_dir:$PATH" BASH_ENV="$wrapper_dir/bash-env" \
+    FM_TEST_REAL_PRINTF="$real_printf" FM_HOME="$home" \
+    "$SCOUT" start --task started-review --now 1705276800 2>&1); rc=$?
+  expect_code 2 "$rc" "a failed dispatch-start write must return a hard error (got: $out)"
+  [ "$(cat "$metadata")" = "$before" ] \
+    || fail "a failed dispatch-start write replaced claim metadata"
+  [ -d "$marker" ] || fail "a failed dispatch-start write must retain its durable marker"
+  [ -z "$(find "$home/data/capability-scout" -name '.claim-metadata.*' -print -quit)" ] \
+    || fail "a failed dispatch-start write left a temporary metadata file"
+  pass "fm-capability-scout.sh: failed dispatch-start writes preserve metadata"
+}
+
+test_anchor_write_failure_preserves_anchor_and_claim() {
+  local home wrapper_dir real_printf anchor claim_meta anchor_before claim_before out rc
+  home=$(new_home anchor-write-failure)
+  FM_HOME="$home" "$SCOUT" mark --task january-review --now 1705276800 >/dev/null 2>&1 \
+    || fail "initial mark should succeed before anchor-write failure"
+  FM_HOME="$home" "$SCOUT" claim --task february-review --now 1706745600 >/dev/null 2>&1 \
+    || fail "current-month claim should succeed before anchor-write failure"
+  anchor="$home/data/capability-scout/last-sweep"
+  claim_meta="$home/data/capability-scout/claim/metadata"
+  anchor_before=$(cat "$anchor")
+  claim_before=$(cat "$claim_meta")
+  wrapper_dir="$TMP_ROOT/anchor-write-failure-bin"
+  real_printf=$(make_failed_record_printf "$wrapper_dir")
+  out=$(PATH="$wrapper_dir:$PATH" BASH_ENV="$wrapper_dir/bash-env" \
+    FM_TEST_REAL_PRINTF="$real_printf" FM_HOME="$home" \
+    "$SCOUT" mark --task february-review --now 1706745600 2>&1); rc=$?
+  expect_code 2 "$rc" "a failed anchor write must return a hard error (got: $out)"
+  [ "$(cat "$anchor")" = "$anchor_before" ] \
+    || fail "a failed anchor write replaced the existing anchor"
+  [ "$(cat "$claim_meta")" = "$claim_before" ] \
+    || fail "a failed anchor write changed the existing claim"
+  [ -z "$(find "$home/data/capability-scout" -name '.last-sweep.*' -print -quit)" ] \
+    || fail "a failed anchor write left a temporary anchor file"
+  pass "fm-capability-scout.sh: failed anchor writes preserve anchor and claim"
 }
 
 test_second_fresh_claim_is_refused() {
@@ -904,6 +1015,10 @@ test_argument_validation() {
 test_absent_anchor_is_due
 test_same_month_is_not_due_and_next_month_is_due
 test_claim_records_metadata_and_closes_due
+test_fresh_claim_write_failure_removes_claim
+test_stale_claim_write_failure_restores_old_claim
+test_started_metadata_write_failure_preserves_metadata
+test_anchor_write_failure_preserves_anchor_and_claim
 test_second_fresh_claim_is_refused
 test_simultaneous_first_claims_have_one_winner
 test_simultaneous_dispatch_starts_have_one_winner
