@@ -8,21 +8,21 @@
 # <data>/agy-reviews/<YYYY-MM-DD>-<topic>.txt.
 #
 # Usage:
-#   fm-agy-consult.sh --topic <slug> [options] [<prompt>]
+#   fm-agy-consult.sh --topic <slug> (--prompt <text> | --prompt-file <path>) [options]
 #
 # Options:
-#   -t, --topic <slug>              Required topic slug for the dated review log
+#   --topic <slug>                  Required topic slug for the dated review log
 #                                   (<data>/agy-reviews/<YYYY-MM-DD>-<topic>.txt).
 #                                   A leading <YYYY-MM-DD>- or trailing .txt is
 #                                   stripped automatically.
-#   -p, --prompt <text>             Prompt text to send (mutually exclusive with
-#                                   --prompt-file and positional <prompt>).
-#   -f, --prompt-file <path>        Read prompt text from <path> ('-' reads stdin).
-#   -C, -c, --dir <dir>             Target directory when creating the tmux session
+#   --prompt <text>                 Prompt text to send (mutually exclusive with
+#                                   --prompt-file).
+#   --prompt-file <path>            Read prompt text from a regular file.
+#   --dir <dir>                     Target directory when creating the tmux session
 #                                   (default: current working directory).
-#   -s, --session <name>            Named tmux session to start or reuse
+#   --session <name>                Named tmux session to start or reuse
 #                                   (default: agy).
-#   -m, --model <id>                Pass --model <id> to agy when launching a
+#   --model <id>                    Pass --model <id> to agy when launching a
 #                                   session. Verified model IDs:
 #                                     gemini-3.8-flash-high
 #                                     gemini-3.8-flash-medium
@@ -32,7 +32,7 @@
 #                                     gemini-4-argon-low
 #   --effort <level>                Pass --effort <low|medium|high> to agy when
 #                                   launching a session.
-#   --policy, --permission-policy <mode>
+#   --policy <mode>
 #                                   Permission policy for the consultation:
 #                                     read-only     (default) Prepend an explicit
 #                                                   read-only instruction to the
@@ -42,7 +42,7 @@
 #                                                   the read-only prefix; still
 #                                                   launches without
 #                                                   --dangerously-skip-permissions.
-#   -n, --lines <count>             Scrollback line count for tmux capture-pane
+#   --lines <count>                 Scrollback line count for tmux capture-pane
 #                                   -S -<count> (default: 500, or
 #                                   FM_AGY_CONSULT_LINES).
 #   --timeout <seconds>             Maximum wait for the answer to settle
@@ -54,7 +54,7 @@
 #                                   or FM_AGY_CONSULT_SETTLE_POLLS).
 #   --date <YYYY-MM-DD>             Date prefix override for the output filename
 #                                   (default: today, or FM_AGY_CONSULT_DATE).
-#   -q, --quiet                     Print only the written log path on stdout.
+#   --quiet                         Print only the written log path on stdout.
 #   -h, --help                      Print this usage and mechanics reference.
 #
 # Mechanics and permission caveats:
@@ -158,51 +158,88 @@ normalize_single_line() {
   '
 }
 
-pane_tail_lines() {
-  printf '%s\n' "$1" | awk 'NF { lines[++n] = $0 } END { start = (n > 15 ? n - 14 : 1); for (i = start; i <= n; i++) print lines[i] }'
+pane_bottom_lines() {
+  printf '%s\n' "$1" | awk 'NF { lines[++n] = $0 } END { start = (n > 8 ? n - 7 : 1); for (i = start; i <= n; i++) print lines[i] }'
+}
+
+pane_last_nonblank_line() {
+  printf '%s\n' "$1" | awk 'NF { line = $0 } END { print line }'
+}
+
+pane_previous_line() {
+  printf '%s\n' "$1" | awk '{ previous = line; line = $0 } END { print previous }'
 }
 
 pane_shows_trust_dialog() {
-  if pane_is_busy "$1" || pane_is_idle "$1"; then
-    return 1
-  fi
-  pane_tail_lines "$1" | grep -Fq 'Do you trust the contents of this project?'
+  pane_bottom_lines "$1" | awk '
+    /Do you trust the contents of this project\?/ { question = NR }
+    question && /^[[:space:]]*(>[[:space:]]*)?Yes, I trust this folder([[:space:]]|$)/ { yes = NR }
+    question && /^[[:space:]]*No, exit([[:space:]]|$)/ { no = NR }
+    END {
+      if (question && yes > question && no > yes && NR - question <= 5) exit 0
+      exit 1
+    }
+  '
 }
 
 pane_is_busy() {
-  pane_tail_lines "$1" | grep -Fq 'esc to cancel'
+  pane_last_nonblank_line "$1" | grep -Eq '^[[:space:]]*esc to cancel([[:space:]]+Gemini[[:space:]]+[0-9]+(\.[0-9]+)*[[:space:]]+(Flash|Argon)[[:space:]]+·[[:space:]]+(high|medium|low))?[[:space:]]*$'
 }
 
 pane_is_idle() {
-  if pane_is_busy "$1"; then
+  if pane_last_nonblank_line "$1" | grep -Eq '^[[:space:]]*\? for shortcuts([[:space:]]+Gemini[[:space:]]+[0-9]+(\.[0-9]+)*[[:space:]]+(Flash|Argon)[[:space:]]+·[[:space:]]+(high|medium|low))?[[:space:]]*$'; then
+    pane_has_empty_composer "$1"
+  else
     return 1
   fi
-  pane_tail_lines "$1" | grep -Fq '? for shortcuts'
 }
 
 pane_has_empty_composer() {
-  pane_tail_lines "$1" | grep -Eq '^[[:space:]]*>[[:space:]]*$'
+  pane_previous_line "$1" | grep -Eq '^[[:space:]]*>[[:space:]]*$'
 }
 
 pane_is_ready() {
-  pane_is_idle "$1" && pane_has_empty_composer "$1"
+  pane_is_idle "$1"
 }
 
-pane_conflicts_with_model() {  # <pane> <requested-model>
-  local pane=$1 req=$2
-  case "$req" in
-    gemini-3.8-flash-*)
-      printf '%s\n' "$pane" | grep -Fq 'Gemini 4 Argon' && return 0
-      ;;
-    gemini-4-argon-*)
-      printf '%s\n' "$pane" | grep -Fq 'Gemini 3.8 Flash' && return 0
-      ;;
+pane_model_matches_requested() {  # <pane> <requested-model>
+  local line model_label tier
+  line=$(pane_last_nonblank_line "$1" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+  case "$2" in
+    gemini-3.8-flash-high) model_label='Gemini 3.8 Flash'; tier=high ;;
+    gemini-3.8-flash-medium) model_label='Gemini 3.8 Flash'; tier=medium ;;
+    gemini-3.8-flash-low) model_label='Gemini 3.8 Flash'; tier=low ;;
+    gemini-4-argon-high) model_label='Gemini 4 Argon'; tier=high ;;
+    gemini-4-argon-medium) model_label='Gemini 4 Argon'; tier=medium ;;
+    gemini-4-argon-low) model_label='Gemini 4 Argon'; tier=low ;;
+    *) return 1 ;;
   esac
-  return 1
+  case "$line" in
+    "? for shortcuts "*"$model_label · $tier") return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 pane_shows_command_approval() {
-  pane_tail_lines "$1" | grep -Eq 'Allow .* to (run|execute|edit|write|modify)|Do you want to (run|execute|allow|approve)|requires permission to (run|execute|edit|write)'
+  if pane_is_busy "$1" || pane_is_idle "$1"; then
+    return 1
+  fi
+  pane_bottom_lines "$1" | awk '
+    function is_approval(line) {
+      return line ~ /Allow .* to (run|execute|edit|write|modify)/ ||
+        line ~ /Do you want to (run|execute|allow|approve)/ ||
+        line ~ /requires permission to (run|execute|edit|write)/
+    }
+    {
+      if (is_approval($0)) question = NR
+      if (question && NR > question && $0 ~ /^[[:space:]]*(>[[:space:]]*)?(Yes|Allow|Approve)([[:space:]]|$)/) yes = NR
+      if (question && NR > question && $0 ~ /^[[:space:]]*(>[[:space:]]*)?(No|Deny|Cancel)([[:space:]]|$)/) no = NR
+    }
+    END {
+      if (question && yes > question && no > yes && NR - question <= 5) exit 0
+      exit 1
+    }
+  '
 }
 
 send_literal_prompt() {  # <session> <prompt>
@@ -216,19 +253,20 @@ dedupe_capture() {
   printf '%s\n' "$1" | awk '
     {
       gsub(/\r/, "")
+      lines[NR] = $0
+      if ($0 ~ /[^[:space:]]/) nonblank[++count] = NR
     }
-    /^[[:space:]]*(⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|⣾|⣽|⣻|⢿|⡿|⣟|⣯|⣷)([[:space:]]|$)/ {
-      next
+    END {
+      end_line = NR
+      if (count >= 2 && nonblank[count] == nonblank[count - 1] + 1 &&
+          lines[nonblank[count]] ~ /^[[:space:]]*\? for shortcuts([[:space:]]+Gemini[[:space:]]+[0-9]+(\.[0-9]+)*[[:space:]]+(Flash|Argon)[[:space:]]+·[[:space:]]+(high|medium|low))?[[:space:]]*$/ &&
+          lines[nonblank[count - 1]] ~ /^[[:space:]]*>[[:space:]]*$/) {
+        end_line = nonblank[count - 1] - 1
+      }
+      for (i = 1; i <= end_line; i++) {
+        if (lines[i] !~ /^[[:space:]]*[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏⣾⣽⣻⢿⡿⣟⣯⣷][[:space:]]+(Generating\.\.\.|Focusing on plan)[[:space:]]*$/) print lines[i]
+      }
     }
-    /^[[:space:]]*(esc to cancel|\? for shortcuts)([[:space:]].*)?$/ { next }
-    /^[[:space:]]*>[[:space:]]*$/ { next }
-    /^[[:space:]]*●[[:space:]]+(Explored|Searched|Read|Listed|Opened|Found)[[:space:]]/ {
-      if (previous_tool == $0) next
-      previous_tool = $0
-      print
-      next
-    }
-    { previous_tool = ""; print }
   '
 }
 
@@ -303,7 +341,6 @@ SETTLE_POLLS="${FM_AGY_CONSULT_SETTLE_POLLS:-2}"
 DATE_STR="${FM_AGY_CONSULT_DATE:-}"
 OUTPUT_DIR="$DATA_DIR/agy-reviews"
 QUIET=0
-POSITIONAL_PROMPT=()
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -311,157 +348,87 @@ while [ "$#" -gt 0 ]; do
       usage
       exit 0
       ;;
-    -t | --topic)
+    --topic)
       [ "$#" -ge 2 ] || die_usage "$1 requires a topic slug"
       TOPIC=$2
       shift 2
       ;;
-    --topic=*)
-      TOPIC=${1#--topic=}
-      shift
-      ;;
-    -p | --prompt)
+    --prompt)
       [ "$#" -ge 2 ] || die_usage "$1 requires prompt text"
-      [ -z "$PROMPT_SOURCE" ] || die_usage "specify only one of --prompt, --prompt-file, or positional prompt"
+      [ -z "$PROMPT_SOURCE" ] || die_usage "specify only one of --prompt or --prompt-file"
       PROMPT_SOURCE="flag"
       PROMPT_TEXT=$2
       shift 2
       ;;
-    --prompt=*)
-      [ -z "$PROMPT_SOURCE" ] || die_usage "specify only one of --prompt, --prompt-file, or positional prompt"
-      PROMPT_SOURCE="flag"
-      PROMPT_TEXT=${1#--prompt=}
-      shift
-      ;;
-    -f | --prompt-file)
+    --prompt-file)
       [ "$#" -ge 2 ] || die_usage "$1 requires a file path"
-      [ -z "$PROMPT_SOURCE" ] || die_usage "specify only one of --prompt, --prompt-file, or positional prompt"
+      [ -z "$PROMPT_SOURCE" ] || die_usage "specify only one of --prompt or --prompt-file"
       PROMPT_SOURCE="file"
       PROMPT_FILE=$2
       shift 2
       ;;
-    --prompt-file=*)
-      [ -z "$PROMPT_SOURCE" ] || die_usage "specify only one of --prompt, --prompt-file, or positional prompt"
-      PROMPT_SOURCE="file"
-      PROMPT_FILE=${1#--prompt-file=}
-      shift
-      ;;
-    -C | -c | --dir)
+    --dir)
       [ "$#" -ge 2 ] || die_usage "$1 requires a directory path"
       TARGET_DIR=$2
       shift 2
       ;;
-    --dir=*)
-      TARGET_DIR=${1#--dir=}
-      shift
-      ;;
-    -s | --session)
+    --session)
       [ "$#" -ge 2 ] || die_usage "$1 requires a tmux session name"
       SESSION=$2
       shift 2
       ;;
-    --session=*)
-      SESSION=${1#--session=}
-      shift
-      ;;
-    -m | --model)
+    --model)
       [ "$#" -ge 2 ] || die_usage "$1 requires a model id"
       MODEL=$2
       shift 2
-      ;;
-    --model=*)
-      MODEL=${1#--model=}
-      shift
       ;;
     --effort)
       [ "$#" -ge 2 ] || die_usage "--effort requires low, medium, or high"
       EFFORT=$2
       shift 2
       ;;
-    --effort=*)
-      EFFORT=${1#--effort=}
-      shift
-      ;;
-    --policy | --permission-policy)
+    --policy)
       [ "$#" -ge 2 ] || die_usage "$1 requires read-only or prompt-as-is"
       POLICY=$2
       shift 2
       ;;
-    --policy=* | --permission-policy=*)
-      POLICY=${1#*=}
-      shift
-      ;;
-    -n | --lines)
+    --lines)
       [ "$#" -ge 2 ] || die_usage "$1 requires a positive line count"
       LINES=$2
       shift 2
-      ;;
-    --lines=*)
-      LINES=${1#--lines=}
-      shift
       ;;
     --timeout)
       [ "$#" -ge 2 ] || die_usage "--timeout requires a positive integer (seconds)"
       TIMEOUT=$2
       shift 2
       ;;
-    --timeout=*)
-      TIMEOUT=${1#--timeout=}
-      shift
-      ;;
     --poll-interval)
       [ "$#" -ge 2 ] || die_usage "--poll-interval requires a positive integer (seconds)"
       POLL_INTERVAL=$2
       shift 2
-      ;;
-    --poll-interval=*)
-      POLL_INTERVAL=${1#--poll-interval=}
-      shift
       ;;
     --settle-polls)
       [ "$#" -ge 2 ] || die_usage "--settle-polls requires a positive integer"
       SETTLE_POLLS=$2
       shift 2
       ;;
-    --settle-polls=*)
-      SETTLE_POLLS=${1#--settle-polls=}
-      shift
-      ;;
     --date)
       [ "$#" -ge 2 ] || die_usage "--date requires YYYY-MM-DD"
       DATE_STR=$2
       shift 2
       ;;
-    --date=*)
-      DATE_STR=${1#--date=}
-      shift
-      ;;
-    -q | --quiet)
+    --quiet)
       QUIET=1
       shift
-      ;;
-    --)
-      shift
-      while [ "$#" -gt 0 ]; do
-        POSITIONAL_PROMPT+=("$1")
-        shift
-      done
       ;;
     -*)
       die_usage "unknown option: $1 (see --help)"
       ;;
     *)
-      POSITIONAL_PROMPT+=("$1")
-      shift
+      die_usage "unexpected argument: $1 (use --prompt or --prompt-file)"
       ;;
   esac
 done
-
-if [ "${#POSITIONAL_PROMPT[@]}" -gt 0 ]; then
-  [ -z "$PROMPT_SOURCE" ] || die_usage "specify only one of --prompt, --prompt-file, or positional prompt"
-  PROMPT_SOURCE="positional"
-  PROMPT_TEXT="${POSITIONAL_PROMPT[*]}"
-fi
 
 [ -n "$DATE_STR" ] || DATE_STR=$(date +%Y-%m-%d)
 case "$DATE_STR" in
@@ -511,26 +478,23 @@ is_positive_int "$TIMEOUT" || die_usage "--timeout must be a positive integer in
 is_positive_int "$POLL_INTERVAL" || die_usage "--poll-interval must be a positive integer in seconds (got '$POLL_INTERVAL')"
 is_positive_int "$SETTLE_POLLS" || die_usage "--settle-polls must be a positive integer (got '$SETTLE_POLLS')"
 
-[ -n "$PROMPT_SOURCE" ] || die_usage "a prompt is required via --prompt, --prompt-file, or a positional argument"
+[ -n "$PROMPT_SOURCE" ] || die_usage "a prompt is required via --prompt or --prompt-file"
 if [ "$PROMPT_SOURCE" = "file" ]; then
-  if [ "$PROMPT_FILE" = "-" ]; then
-    PROMPT_TEXT=$(cat)
-  else
-    [ -f "$PROMPT_FILE" ] && [ -r "$PROMPT_FILE" ] || die "prompt file '$PROMPT_FILE' is not a readable regular file"
-    PROMPT_TEXT=$(cat -- "$PROMPT_FILE")
-  fi
+  [ -f "$PROMPT_FILE" ] && [ -r "$PROMPT_FILE" ] || die "prompt file '$PROMPT_FILE' is not a readable regular file"
+  PROMPT_TEXT=$(cat -- "$PROMPT_FILE")
 fi
 
 SINGLE_LINE_RAW=$(normalize_single_line "$PROMPT_TEXT")
 [ -n "$SINGLE_LINE_RAW" ] || die_usage "prompt text must not be empty"
 
 if [ "$POLICY" = "read-only" ]; then
+  READ_ONLY_PREFIX='Read-only consultation (do not modify, create, or delete any file, and do not run state-changing commands): '
   case "$SINGLE_LINE_RAW" in
-    [Rr]ead-only\ consultation*)
+    "$READ_ONLY_PREFIX"*)
       FINAL_PROMPT="$SINGLE_LINE_RAW"
       ;;
     *)
-      FINAL_PROMPT="Read-only consultation (do not modify, create, or delete any file, and do not run state-changing commands): $SINGLE_LINE_RAW"
+      FINAL_PROMPT="$READ_ONLY_PREFIX$SINGLE_LINE_RAW"
       ;;
   esac
 else
@@ -629,8 +593,8 @@ done
 [ -n "$READY_PANE" ] || die "agy session '$SESSION' did not reach the ready idle composer within ${TIMEOUT}s"
 PRE_CAPTURE="$READY_PANE"
 
-if [ "$SESSION_REUSED" -eq 1 ] && [ -n "$MODEL" ] && pane_conflicts_with_model "$PRE_CAPTURE" "$MODEL"; then
-  die "existing tmux session '$SESSION' is running a different model than requested '$MODEL'; use a different --session"
+if [ "$SESSION_REUSED" -eq 1 ] && [ -n "$MODEL" ] && ! pane_model_matches_requested "$PRE_CAPTURE" "$MODEL"; then
+  die "existing tmux session '$SESSION' is running a different model than requested '$MODEL' or its model cannot be identified; use a different --session"
 fi
 
 send_literal_prompt "$SESSION" "$FINAL_PROMPT" \
@@ -685,7 +649,7 @@ while [ "$POLL_COUNT" -lt "$MAX_POLLS" ]; do
       SETTLED_PANE="$PANE"
       break
     fi
-    if [ "$PANE" != "$PRE_CAPTURE" ] && pane_has_empty_composer "$PANE"; then
+    if [ "$PANE" != "$PRE_CAPTURE" ]; then
       if [ "$PANE" = "$PREV_IDLE_PANE" ]; then
         IDLE_STABLE=$(( IDLE_STABLE + 1 ))
       else
