@@ -184,6 +184,114 @@ test_mark_converts_and_clears_claim() {
   pass "fm-capability-scout.sh: mark converts a claim into an anchor and clears it"
 }
 
+test_mark_requires_the_claim_owner_and_a_task() {
+  local home anchor_before claim_before out rc
+  home=$(new_home mark-owner)
+  out=$(FM_HOME="$home" "$SCOUT" mark --now 1705276800 2>&1); rc=$?
+  expect_code 2 "$rc" "mark without a task must be refused (got: $out)"
+  assert_absent "$home/data/capability-scout/last-sweep" \
+    "mark without a task must not create an anchor"
+
+  FM_HOME="$home" "$SCOUT" mark --task prior-review --now 1705276800 >/dev/null 2>&1 \
+    || fail "the prior-month mark should succeed"
+  FM_HOME="$home" "$SCOUT" claim --task owner-review --now 1706745600 >/dev/null 2>&1 \
+    || fail "the next-month claim should succeed"
+  anchor_before=$(cat "$home/data/capability-scout/last-sweep")
+  claim_before=$(cat "$home/data/capability-scout/claim/metadata")
+
+  out=$(FM_HOME="$home" "$SCOUT" mark --now 1706745600 2>&1); rc=$?
+  expect_code 2 "$rc" "mark without the live claim task must be refused (got: $out)"
+  [ "$(cat "$home/data/capability-scout/last-sweep")" = "$anchor_before" ] \
+    || fail "mark without the live claim task changed the anchor"
+  [ "$(cat "$home/data/capability-scout/claim/metadata")" = "$claim_before" ] \
+    || fail "mark without the live claim task changed the claim"
+
+  out=$(FM_HOME="$home" "$SCOUT" mark --task other-review --now 1706745600 2>&1); rc=$?
+  expect_code 2 "$rc" "mark by a foreign task must be refused (got: $out)"
+  [ "$(cat "$home/data/capability-scout/last-sweep")" = "$anchor_before" ] \
+    || fail "foreign mark changed the anchor"
+  [ "$(cat "$home/data/capability-scout/claim/metadata")" = "$claim_before" ] \
+    || fail "foreign mark changed the claim"
+  pass "fm-capability-scout.sh: mark requires its task owner and preserves foreign state"
+}
+
+test_release_requires_the_claim_owner() {
+  local home claim_before out rc
+  home=$(new_home release-owner)
+  FM_HOME="$home" "$SCOUT" claim --task owner-review --now 1705276800 >/dev/null 2>&1 \
+    || fail "claim should succeed before owner checks"
+  claim_before=$(cat "$home/data/capability-scout/claim/metadata")
+
+  out=$(FM_HOME="$home" "$SCOUT" release --now 1705276801 2>&1); rc=$?
+  expect_code 2 "$rc" "release without the live claim task must be refused (got: $out)"
+  [ "$(cat "$home/data/capability-scout/claim/metadata")" = "$claim_before" ] \
+    || fail "release without the live claim task changed the claim"
+  out=$(FM_HOME="$home" "$SCOUT" release --task other-review --now 1705276801 2>&1); rc=$?
+  expect_code 2 "$rc" "release by a foreign task must be refused (got: $out)"
+  [ "$(cat "$home/data/capability-scout/claim/metadata")" = "$claim_before" ] \
+    || fail "foreign release changed the claim"
+
+  out=$(FM_HOME="$home" "$SCOUT" release --now 1705276802 2>&1); rc=$?
+  expect_code 2 "$rc" "release without a task must fail while a claim exists (got: $out)"
+  pass "fm-capability-scout.sh: release requires its task owner"
+}
+
+test_marked_month_refuses_a_late_claim() {
+  local home out rc anchor wrapper_dir pause resume real_mkdir claim_pid waited claim_rc claim_out
+  home=$(new_home mark-before-claim)
+  wrapper_dir="$TMP_ROOT/mark-before-claim-mkdir"
+  mkdir -p "$wrapper_dir"
+  pause="$home/claim-mkdir-paused"
+  resume="$home/claim-mkdir-resume"
+  real_mkdir=$(command -v mkdir)
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'target=${!#}' \
+    'case "$target" in' \
+    '  */claim)' \
+    '    : > "$FM_TEST_CLAIM_PAUSE"' \
+    '    while [ ! -e "$FM_TEST_CLAIM_RESUME" ]; do sleep 0.01; done' \
+    '    ;;' \
+    'esac' \
+    'exec "$FM_TEST_REAL_MKDIR" "$@"' > "$wrapper_dir/mkdir"
+  chmod 700 "$wrapper_dir/mkdir"
+
+  (
+    set +e
+    PATH="$wrapper_dir:$PATH" FM_HOME="$home" \
+      FM_TEST_CLAIM_PAUSE="$pause" FM_TEST_CLAIM_RESUME="$resume" \
+      FM_TEST_REAL_MKDIR="$real_mkdir" \
+      "$SCOUT" claim --task competing-review --now 1705276800 >"$home/claim.out" 2>&1
+    printf '%s\n' "$?" > "$home/claim.rc"
+  ) &
+  claim_pid=$!
+  waited=0
+  while [ ! -e "$pause" ] && [ "$waited" -lt 500 ]; do
+    sleep 0.01
+    waited=$((waited + 1))
+  done
+  [ -e "$pause" ] || {
+    : > "$resume"
+    wait "$claim_pid" || true
+    fail "claim did not reach the pre-reservation pause"
+  }
+
+  out=$(FM_HOME="$home" "$SCOUT" mark --task manual-review --now 1705276800 2>&1); rc=$?
+  expect_code 0 "$rc" "manual mark should complete before the paused claim resumes (got: $out)"
+  anchor=$(cat "$home/data/capability-scout/last-sweep")
+  : > "$resume"
+  wait "$claim_pid" || true
+  claim_rc=$(cat "$home/claim.rc")
+  claim_out=$(cat "$home/claim.out")
+  expect_code 2 "$claim_rc" "a claim losing to the completed manual mark must be refused (got: $claim_out)"
+  assert_contains "$claim_out" "no longer due" "late claim refusal must identify the consumed month"
+  [ "$(cat "$home/data/capability-scout/last-sweep")" = "$anchor" ] \
+    || fail "a refused late claim changed the anchor"
+  assert_absent "$home/data/capability-scout/claim" \
+    "a refused late claim must not leave a reservation"
+  pass "fm-capability-scout.sh: a completed manual mark wins over a paused competing claim"
+}
+
 test_claim_cleanup_preflights_unexpected_contents() {
   local home out rc claim_dir
   home=$(new_home claim-cleanup)
@@ -202,26 +310,32 @@ test_claim_cleanup_preflights_unexpected_contents() {
   pass "fm-capability-scout.sh: claim cleanup preflights unexpected contents"
 }
 
-test_release_clears_failed_claim_and_is_noop_without_one() {
+test_release_clears_unstarted_dispatch_claim_and_is_noop_without_one() {
   local home out rc
   home=$(new_home release-claim)
-  FM_HOME="$home" "$SCOUT" claim --task failed-review --now 1705276800 >/dev/null 2>&1 \
+  FM_HOME="$home" "$SCOUT" claim --task unstarted-review --now 1705276800 >/dev/null 2>&1 \
     || fail "claim should succeed before release"
-  out=$(FM_HOME="$home" "$SCOUT" release --task failed-review --now 1705276801 2>&1); rc=$?
-  expect_code 0 "$rc" "release should clear a failed-dispatch claim (got: $out)"
+  out=$(FM_HOME="$home" "$SCOUT" release --task unstarted-review --now 1705276801 2>&1); rc=$?
+  expect_code 0 "$rc" "release should clear a claim whose dispatch never started (got: $out)"
   assert_absent "$home/data/capability-scout/claim" "release must clear the claim"
-  out=$(FM_HOME="$home" "$SCOUT" release --task failed-review --now 1705276802 2>&1); rc=$?
+  out=$(FM_HOME="$home" "$SCOUT" release --task unstarted-review --now 1705276802 2>&1); rc=$?
   expect_code 0 "$rc" "release without a claim must be a no-op (got: $out)"
-  assert_contains "$out" "no capability scout claim to release" "release no-op must be reported"
+  [ -z "$out" ] || fail "release without a claim must be silent (got: $out)"
+
+  home=$(new_home release-empty)
+  out=$(FM_HOME="$home" "$SCOUT" release --now 1705276802 2>&1); rc=$?
+  expect_code 0 "$rc" "release without a claim must remain a no-op on an empty home (got: $out)"
+  [ -z "$out" ] || fail "release without a claim on an empty home must be silent (got: $out)"
+  assert_absent "$home/data/capability-scout" \
+    "release without a claim must not create cadence state"
 
   home=$(new_home release-corrupt-anchor)
   mkdir -p "$home/data/capability-scout"
   printf 'last_epoch=corrupt\n' > "$home/data/capability-scout/last-sweep"
-  out=$(FM_HOME="$home" "$SCOUT" release --task failed-review --now 1705276802 2>&1); rc=$?
+  out=$(FM_HOME="$home" "$SCOUT" release --task unstarted-review --now 1705276802 2>&1); rc=$?
   expect_code 0 "$rc" "release without a claim must ignore corrupt anchor contents (got: $out)"
-  assert_contains "$out" "no capability scout claim to release" \
-    "release with a corrupt anchor and no claim must remain a no-op"
-  pass "fm-capability-scout.sh: release clears a failed claim and is a no-op without one"
+  [ -z "$out" ] || fail "release with a corrupt anchor and no claim must be silent (got: $out)"
+  pass "fm-capability-scout.sh: release clears an unstarted dispatch claim and is a no-op without one"
 }
 
 test_leading_zero_epoch_is_normalized() {
@@ -489,6 +603,23 @@ test_invalid_last_date_is_refused() {
   pass "fm-capability-scout.sh: malformed and mismatched dates are refused and preserved"
 }
 
+test_anchor_task_is_required_and_validated() {
+  local home anchor out rc
+  home=$(new_home anchor-task)
+  anchor="$home/data/capability-scout/last-sweep"
+  mkdir -p "$(dirname "$anchor")"
+  printf 'last_epoch=1705276800\nlast_date=2024-01-15\n' > "$anchor"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1705276801 2>&1); rc=$?
+  expect_code 2 "$rc" "an anchor without a task must be refused (got: $out)"
+  assert_contains "$out" "task" "missing anchor task refusal must identify the task"
+
+  printf 'last_epoch=1705276800\nlast_date=2024-01-15\ntask=bad task\n' > "$anchor"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1705276801 2>&1); rc=$?
+  expect_code 2 "$rc" "an anchor with an invalid task must be refused (got: $out)"
+  assert_contains "$out" "task" "invalid anchor task refusal must identify the task"
+  pass "fm-capability-scout.sh: anchor tasks are required and validated"
+}
+
 test_argument_validation() {
   local home out rc
   home=$(new_home args)
@@ -505,6 +636,7 @@ test_argument_validation() {
   out=$(FM_HOME="$home" "$SCOUT" --help 2>&1); rc=$?
   expect_code 0 "$rc" "--help must exit 0 (got: $out)"
   assert_contains "$out" "claim --task <id>" "help must document claim syntax"
+  assert_contains "$out" "mark --task <id>" "help must document mark syntax"
   assert_contains "$out" "release [--task <id>]" "help must document release syntax"
   assert_contains "$out" "claim --task <review-id> -> dispatch" "help must document the claim transition"
   pass "fm-capability-scout.sh: arguments are validated"
@@ -518,8 +650,11 @@ test_simultaneous_first_claims_have_one_winner
 test_stale_claim_is_due_and_can_be_retaken
 test_pending_claim_mtime_controls_expiry_and_recovery
 test_mark_converts_and_clears_claim
+test_mark_requires_the_claim_owner_and_a_task
+test_release_requires_the_claim_owner
+test_marked_month_refuses_a_late_claim
 test_claim_cleanup_preflights_unexpected_contents
-test_release_clears_failed_claim_and_is_noop_without_one
+test_release_clears_unstarted_dispatch_claim_and_is_noop_without_one
 test_leading_zero_epoch_is_normalized
 test_december_to_january_is_due
 test_weekly_checks_across_several_months
@@ -533,4 +668,5 @@ test_claim_path_symlink_and_non_directory_are_refused
 test_empty_anchor_is_refused
 test_missing_epoch_anchor_is_refused
 test_invalid_last_date_is_refused
+test_anchor_task_is_required_and_validated
 test_argument_validation

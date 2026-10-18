@@ -12,7 +12,7 @@
 # Usage:
 #   fm-capability-scout.sh due [--now <epoch>]
 #   fm-capability-scout.sh claim --task <id> [--now <epoch>]
-#   fm-capability-scout.sh mark [--task <id>] [--now <epoch>]
+#   fm-capability-scout.sh mark --task <id> [--now <epoch>]
 #   fm-capability-scout.sh release [--task <id>] [--now <epoch>]
 #
 #   due     prints CAPABILITY_SCOUT_DUE: true and exits 0 when no anchor exists
@@ -23,14 +23,15 @@
 #           or unsafe state.
 #   claim   atomically reserves the due monthly dispatch for --task <id>.
 #           A fresh claim is refused; a claim at least 24 hours old may be retaken.
-#   mark    records the sweep anchor after the scout session is dispatched,
-#           so a failed session still consumes that month's single session budget.
-#           It then clears the claim; --task records the dispatched task id.
-#   release clears a claim after a failed dispatch and succeeds as a no-op when
-#           no claim exists. If supplied, --task must identify the current claim.
+#   mark    records the sweep anchor once dispatch starts, so a failed session
+#           still consumes that month's single session budget. It then clears the
+#           claim owned by --task, which is required for every mark.
+#   release clears a claim only when dispatch never started and succeeds as a
+#           no-op when no claim exists. When a claim exists, --task is required
+#           and must identify the current claim.
 #
-# Workflow: claim --task <review-id> -> dispatch -> mark --task <review-id> or
-# release --task <review-id>.
+# Workflow: claim --task <review-id> -> dispatch -> mark --task <review-id>.
+# If dispatch never starts, use claim --task <review-id> -> release --task <review-id>.
 #
 # --now <epoch> is a deterministic-test and replay override only; it must be
 # plain digits. The claim metadata and anchor are key=value text written under
@@ -50,6 +51,7 @@ CLAIM_META="$CLAIM_DIR/metadata"
 
 LAST_EPOCH=''
 LAST_DATE=''
+LAST_TASK=''
 CLAIM_PRESENT=false
 CLAIM_STATE=none
 CLAIM_EPOCH=''
@@ -226,6 +228,7 @@ read_claim() {
 read_anchor() {
   LAST_EPOCH=''
   LAST_DATE=''
+  LAST_TASK=''
   validate_paths
   [ -e "$ANCHOR" ] || return 0
   local line key val canonical_date
@@ -242,6 +245,7 @@ read_anchor() {
     case "$key" in
       last_epoch) LAST_EPOCH=$val ;;
       last_date) LAST_DATE=$val ;;
+      task) LAST_TASK=$val ;;
     esac
   done < "$ANCHOR"
   is_digits "$LAST_EPOCH" || die "corrupt anchor $ANCHOR: last_epoch is not plain digits"
@@ -253,6 +257,10 @@ read_anchor() {
     die "corrupt anchor $ANCHOR: last_epoch is not a valid epoch"
   fi
   [ "$LAST_DATE" = "$canonical_date" ] || die "corrupt anchor $ANCHOR: last_date does not match last_epoch"
+  [ -n "$LAST_TASK" ] || die "corrupt anchor $ANCHOR: task is missing"
+  case "$LAST_TASK" in
+    *[!A-Za-z0-9._-]*) die "corrupt anchor $ANCHOR: task is not a plain task id" ;;
+  esac
 }
 
 claim_is_stale() {
@@ -366,6 +374,7 @@ clear_claim_dir() {
 
 clear_current_claim_if_matches() {
   local expected_epoch=$1 expected_date=$2 expected_task=$3
+  validate_task "$expected_task" "claim task"
   validate_paths
   [ -e "$CLAIM_DIR" ] || return 0
   read_claim
@@ -384,7 +393,6 @@ create_claim() {
   validate_paths
   if mkdir -- "$CLAIM_DIR"; then
     write_claim_metadata "$CLAIM_DIR" "$now" "$claim_date" "$task"
-    printf 'claimed capability scout dispatch: %s task=%s\n' "$claim_date" "$task"
     return 0
   fi
   return 1
@@ -442,7 +450,6 @@ retake_stale_claim() {
   if mkdir -- "$CLAIM_DIR"; then
     write_claim_metadata "$CLAIM_DIR" "$now" "$claim_date" "$task"
     clear_claim_dir "$stale_dir"
-    printf 'claimed capability scout dispatch: %s task=%s (stale claim retaken)\n' "$claim_date" "$task"
     return 0
   fi
 
@@ -461,6 +468,21 @@ retake_stale_claim() {
   fi
   clear_claim_dir "$stale_dir"
   return 1
+}
+
+report_claim_success() {
+  local now=$1 now_date=$2 task=$3 suffix=$4
+  read_anchor
+  read_claim
+  if [ "$CLAIM_STATE" != ready ] || [ "$CLAIM_EPOCH" != "$now" ] || \
+    [ "$CLAIM_DATE" != "$now_date" ] || [ "$CLAIM_TASK" != "$task" ]; then
+    die "capability scout claim changed during due revalidation"
+  fi
+  if ! cadence_is_due "$now_date"; then
+    clear_current_claim_if_matches "$now" "$now_date" "$task"
+    die "capability scout dispatch is no longer due in the current UTC month"
+  fi
+  printf 'claimed capability scout dispatch: %s task=%s%s\n' "$now_date" "$task" "$suffix"
 }
 
 cmd_due() {
@@ -502,11 +524,11 @@ cmd_due() {
 cmd_claim() {
   local now=$1 task=$2 now_date
   validate_task "$task" "--task"
-  read_anchor
-  read_claim
   if ! now_date=$(epoch_to_date "$now" 2>/dev/null); then
     die "current epoch is not a valid UTC date"
   fi
+  read_anchor
+  read_claim
   if ! cadence_is_due "$now_date"; then
     die "capability scout dispatch is not due in the current UTC month"
   fi
@@ -518,19 +540,28 @@ cmd_claim() {
       die "a fresh capability scout claim already exists for task $CLAIM_TASK"
     fi
     if retake_stale_claim "$now" "$now_date" "$task"; then
+      report_claim_success "$now" "$now_date" "$task" ' (stale claim retaken)'
       return 0
     fi
     read_anchor
     read_claim
+    if ! cadence_is_due "$now_date"; then
+      die "capability scout dispatch is not due in the current UTC month"
+    fi
   fi
   if create_claim "$now" "$now_date" "$task"; then
+    report_claim_success "$now" "$now_date" "$task" ''
     return 0
   fi
   read_anchor
   read_claim
+  if ! cadence_is_due "$now_date"; then
+    die "capability scout dispatch is not due in the current UTC month"
+  fi
   if [ "$CLAIM_STATE" = pending ] || [ "$CLAIM_STATE" = ready ]; then
     if claim_is_stale "$now"; then
       if retake_stale_claim "$now" "$now_date" "$task"; then
+        report_claim_success "$now" "$now_date" "$task" ' (stale claim retaken)'
         return 0
       fi
     elif [ "$CLAIM_STATE" = pending ]; then
@@ -540,28 +571,16 @@ cmd_claim() {
     fi
   fi
   if create_claim "$now" "$now_date" "$task"; then
+    report_claim_success "$now" "$now_date" "$task" ''
     return 0
   fi
   die "capability scout claim changed during reservation"
 }
 
-cmd_mark() {
-  local now=$1 task=$2 mark_date
-  if [ -n "$task" ]; then
-    case "$task" in
-      *[!A-Za-z0-9._-]*) die "--task must be a plain task id (letters, digits, dot, dash, underscore)" ;;
-    esac
-  fi
-  if ! mark_date=$(epoch_to_date "$now" 2>/dev/null); then
-    die "mark epoch is not a valid epoch"
-  fi
-  read_anchor
-  read_claim
-  [ "$CLAIM_STATE" != pending ] || die "claim metadata is incomplete: $CLAIM_META"
-  local claim_present=$CLAIM_PRESENT claim_epoch=$CLAIM_EPOCH claim_date=$CLAIM_DATE claim_task=$CLAIM_TASK
+write_anchor() {
+  local now=$1 mark_date=$2 task=$3 tmp
   mkdir -p "$SCOUT_DIR" || die "cannot create $SCOUT_DIR"
   validate_paths
-  local tmp
   tmp=$(mktemp "$SCOUT_DIR/.last-sweep.XXXXXX") || die "cannot create a temporary anchor in $SCOUT_DIR"
   chmod 600 "$tmp"
   {
@@ -570,9 +589,52 @@ cmd_mark() {
     printf 'task=%s\n' "$task"
   } > "$tmp"
   mv -f -- "$tmp" "$ANCHOR" || die "cannot write $ANCHOR"
-  if [ "$claim_present" = true ]; then
-    clear_current_claim_if_matches "$claim_epoch" "$claim_date" "$claim_task"
+}
+
+cmd_mark() {
+  local now=$1 task=$2 mark_date
+  validate_task "$task" "--task"
+  if ! mark_date=$(epoch_to_date "$now" 2>/dev/null); then
+    die "mark epoch is not a valid epoch"
   fi
+  read_anchor
+  read_claim
+  [ "$CLAIM_STATE" != pending ] || die "claim metadata is incomplete: $CLAIM_META"
+  local claim_present=$CLAIM_PRESENT claim_epoch=$CLAIM_EPOCH claim_date=$CLAIM_DATE claim_task=$CLAIM_TASK
+  if [ "$claim_present" = false ]; then
+    if create_claim "$now" "$mark_date" "$task"; then
+      claim_present=true
+      claim_epoch=$now
+      claim_date=$mark_date
+      claim_task=$task
+      read_anchor
+      read_claim
+      [ "$CLAIM_STATE" = ready ] || die "claim changed during mark reservation"
+      [ "$CLAIM_EPOCH" = "$claim_epoch" ] || die "claim changed during mark reservation"
+      [ "$CLAIM_DATE" = "$claim_date" ] || die "claim changed during mark reservation"
+      [ "$CLAIM_TASK" = "$claim_task" ] || die "claim changed during mark reservation"
+    else
+      read_anchor
+      read_claim
+      [ "$CLAIM_STATE" != pending ] || die "claim metadata is incomplete: $CLAIM_META"
+      if [ "$CLAIM_PRESENT" = false ]; then
+        if ! create_claim "$now" "$mark_date" "$task"; then
+          die "capability scout claim changed during mark reservation"
+        fi
+      fi
+      [ "$CLAIM_STATE" = ready ] || read_claim
+      [ "$CLAIM_STATE" = ready ] || die "claim metadata is incomplete: $CLAIM_META"
+      claim_present=true
+      claim_epoch=$CLAIM_EPOCH
+      claim_date=$CLAIM_DATE
+      claim_task=$CLAIM_TASK
+    fi
+  fi
+  if [ "$task" != "$claim_task" ]; then
+    die "claim belongs to task $claim_task, not $task"
+  fi
+  write_anchor "$now" "$mark_date" "$task"
+  clear_current_claim_if_matches "$claim_epoch" "$claim_date" "$claim_task"
   printf 'marked capability scout sweep: %s\n' "$mark_date"
 }
 
@@ -583,13 +645,17 @@ cmd_release() {
       *[!A-Za-z0-9._-]*) die "--task must be a plain task id (letters, digits, dot, dash, underscore)" ;;
     esac
   fi
+  validate_paths
+  if [ ! -e "$CLAIM_DIR" ]; then
+    return 0
+  fi
   read_claim
   if [ "$CLAIM_PRESENT" = false ]; then
-    printf 'no capability scout claim to release\n'
     return 0
   fi
   [ "$CLAIM_STATE" != pending ] || die "claim metadata is incomplete: $CLAIM_META"
-  if [ -n "$task" ] && [ "$task" != "$CLAIM_TASK" ]; then
+  [ -n "$task" ] || die "--task is required when a capability scout claim exists"
+  if [ "$task" != "$CLAIM_TASK" ]; then
     die "claim belongs to task $CLAIM_TASK, not $task"
   fi
   clear_current_claim_if_matches "$CLAIM_EPOCH" "$CLAIM_DATE" "$CLAIM_TASK"
