@@ -11,7 +11,8 @@ This skill owns the procedure; `bin/fm-capability-scout.sh` owns the cadence dat
 ## Cadence
 
 The scout rides the first weekly review of each month as one bounded session; there is no separate scheduler.
-The weekly review runs `bin/fm-capability-scout.sh due`, which prints `CAPABILITY_SCOUT_DUE: true` and exits 0 when 28 days have passed since the last sweep, and prints `false` with exit 1 otherwise.
+The weekly review runs `bin/fm-capability-scout.sh due`, which prints `CAPABILITY_SCOUT_DUE: true` and exits 0 when no anchor exists or its validated UTC date is in a different UTC calendar month than the current date, and prints `false` with exit 1 when the anchor is in the current UTC calendar month.
+The reported `next_due` is always the first day of the next UTC calendar month.
 When the line is true, dispatch exactly one scout session on the configured `agy` scout profile, bounded to about 15-20 minutes, and record it with `bin/fm-capability-scout.sh mark --task <task-id>` immediately after dispatch, so a failed session still consumes that month's single-session budget instead of re-triggering every week.
 Never open a second session for the same month, and never build a scheduler, watcher, or standing service around this.
 
@@ -27,6 +28,7 @@ Claims without verifiable receipts stay unverified and are discarded.
 
 Every candidate passes the security gate first, using SkillSpector (`~/.local/bin/skillspector`) with static analysis (`--no-llm`) and the report archived under the task's data directory.
 Apply the scanner's own recommendation: SAFE proceeds to trial; CAUTION (score 0-45) needs manual clearance confirming `metadata.has_executable_scripts: false` and that every hit is documentation, a regex pattern, or a benign instruction, plus a filed baseline; DO_NOT_INSTALL (above 45, critical severity, YARA hits, prompt injection, or force-push and remote-execution instructions) is blocked wholesale as files.
+A `DO_NOT_INSTALL` candidate is never executed as fleet tooling.
 When the blocked files carry a valuable idea, re-implement only the idea in our own words and discard the files.
 
 A trialed candidate then faces the durable-learning bar:
@@ -39,7 +41,7 @@ Maintenance versus yield - external binaries, packages, tokens, daemons, or ongo
 - Adopt an agent procedure as a skill under this repo's `.agents/skills/` with a load trigger in its description, and register the surface in `docs/documentation-audiences.json`.
 - Adopt a worker-facing rule by distilling it into the existing owner (`bin/fm-brief.sh`, `bin/fm-dod-lib.sh`, or the relevant skill), never as a second full copy.
 - Adopt an operator fact into the classified prose owner for its audience.
-- Reject with a permanent note: date, version, finding, and reason, appended to `data/capability-scout/rejections.md`, so later sweeps do not re-evaluate it.
+- Reject with a permanent note in the committed repo record `.agents/skills/capability-scout/references/rejections.md` and mirror it to the private home record `data/capability-scout/rejections.md`; each note has the candidate name, version or revision, exact finding and scores, date, and reason, so later sweeps do not re-evaluate it.
 
 ## Boundaries
 

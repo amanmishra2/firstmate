@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # fm-capability-scout.sh - cadence mechanics for the monthly capability scout.
 #
-# Single owner of the 28-day due test that lets the capability scout ride the
-# first weekly review of each month with no daemon, cron job, or platform
-# project. The scout PROCEDURE (wave size, security gate, durable-learning bar,
+# Single owner of the one-session-per-UTC-calendar-month due test that lets the
+# capability scout ride the first weekly review of each month with no daemon,
+# cron job, or platform project. The scout PROCEDURE (wave size, security gate, durable-learning bar,
 # store targets, rejection log) is owned by
 # .agents/skills/capability-scout/SKILL.md; this script owns only the date
 # arithmetic and its durable anchor under
@@ -13,11 +13,10 @@
 #   fm-capability-scout.sh due [--now <epoch>]
 #   fm-capability-scout.sh mark [--task <id>] [--now <epoch>]
 #
-#   due     prints CAPABILITY_SCOUT_DUE: true and exits 0 when the cadence
-#           interval has elapsed since the last mark, otherwise prints
-#           false and exits 1, so a weekly review can branch on it directly.
-#           Exit 2 is a real error for a corrupt or unsafe anchor; an absent
-#           anchor is first-run due=true and exits 0.
+#   due     prints CAPABILITY_SCOUT_DUE: true and exits 0 when no anchor exists
+#           or its validated UTC date is in another UTC calendar month, otherwise
+#           prints false and exits 1, so a weekly review can branch on it
+#           directly. Exit 2 is a real error for a corrupt or unsafe anchor.
 #   mark    records the sweep anchor after the scout session is dispatched,
 #           so a failed session still consumes that month's single session
 #           budget instead of re-triggering every week. --task records the
@@ -34,8 +33,6 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
-CADENCE_DAYS=28
-CADENCE_SECONDS=$((CADENCE_DAYS * 86400))
 SCOUT_DIR="$DATA/capability-scout"
 ANCHOR="$SCOUT_DIR/last-sweep"
 
@@ -77,6 +74,36 @@ normalize_epoch() {
   [ -n "$epoch" ] || epoch=0
   epoch_to_date "$epoch" >/dev/null 2>&1 || return 1
   printf '%s\n' "$epoch"
+}
+
+utc_month() {
+  printf '%s\n' "${1%-*}"
+}
+
+next_month_start() {
+  local date=$1 year month next_month
+  year=${date%%-*}
+  month=${date#*-}
+  month=${month%%-*}
+  case "$month" in
+    01) next_month=02 ;;
+    02) next_month=03 ;;
+    03) next_month=04 ;;
+    04) next_month=05 ;;
+    05) next_month=06 ;;
+    06) next_month=07 ;;
+    07) next_month=08 ;;
+    08) next_month=09 ;;
+    09) next_month=10 ;;
+    10) next_month=11 ;;
+    11) next_month=12 ;;
+    12)
+      year=$(printf '%04d' "$((10#$year + 1))")
+      next_month=01
+      ;;
+    *) return 1 ;;
+  esac
+  printf '%s-%s-01\n' "$year" "$next_month"
 }
 
 read_anchor() {
@@ -133,23 +160,18 @@ resolve_now() {
 }
 
 cmd_due() {
-  local now=$1 due next_from next_due
+  local now=$1 due now_date next_due
   read_anchor
-  if [ -z "$LAST_EPOCH" ]; then
+  if ! now_date=$(epoch_to_date "$now" 2>/dev/null); then
+    die "current epoch is not a valid UTC date"
+  fi
+  if [ -z "$LAST_DATE" ] || [ "$(utc_month "$LAST_DATE")" != "$(utc_month "$now_date")" ]; then
     due=true
-    next_from=$now
-  elif [ $((now - LAST_EPOCH)) -ge "$CADENCE_SECONDS" ]; then
-    due=true
-    next_from=$((LAST_EPOCH + CADENCE_SECONDS))
   else
     due=false
-    next_from=$((LAST_EPOCH + CADENCE_SECONDS))
   fi
-  if ! next_from=$(normalize_epoch "$next_from"); then
-    die "next due epoch is not a valid epoch"
-  fi
-  if ! next_due=$(epoch_to_date "$next_from" 2>/dev/null); then
-    die "next due epoch is not a valid epoch"
+  if ! next_due=$(next_month_start "$now_date"); then
+    die "current epoch is not a valid UTC month"
   fi
   printf 'CAPABILITY_SCOUT_DUE: %s\n' "$due"
   if [ -n "$LAST_DATE" ]; then

@@ -137,6 +137,10 @@
       "audience": "maintainer-verification"
     },
     {
+      "path": ".agents/skills/capability-scout/references/rejections.md",
+      "audience": "maintainer-verification"
+    },
+    {
       "path": ".agents/skills/captain-hold-lifecycle/SKILL.md",
       "audience": "agent-runtime"
     },

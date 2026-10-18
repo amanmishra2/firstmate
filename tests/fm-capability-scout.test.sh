@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests for bin/fm-capability-scout.sh, the monthly capability scout's
-# cadence mechanics: the 28-day due test, its durable anchor, and the fail-loud
+# cadence mechanics: one UTC calendar month per due session, its durable anchor,
+# and the fail-loud
 # handling of a damaged anchor. The scout procedure itself is owned by the
 # skill and is not exercised here.
 set -u
@@ -10,9 +11,6 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-capability-scout)
 SCOUT="$ROOT/bin/fm-capability-scout.sh"
-DAY=86400
-CADENCE=$((28 * DAY))
-
 new_home() {  # <name> -> prints a fresh home path
   local home="$TMP_ROOT/$1"
   mkdir -p "$home/data"
@@ -22,35 +20,35 @@ new_home() {  # <name> -> prints a fresh home path
 test_absent_anchor_is_due() {
   local home out rc
   home=$(new_home absent)
-  out=$(FM_HOME="$home" "$SCOUT" due 2>&1); rc=$?
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1705276800 2>&1); rc=$?
   expect_code 0 "$rc" "due on an absent anchor must exit 0 (got: $out)"
   assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" "due line missing on absent anchor"
   assert_contains "$out" "last_sweep=none" "absent anchor must report no prior sweep"
+  assert_contains "$out" "next_due=2024-02-01" "absent anchor must report the next UTC calendar month"
   pass "fm-capability-scout.sh: absent anchor is due"
 }
 
-test_mark_then_not_due_and_boundary() {
+test_same_month_is_not_due_and_next_month_is_due() {
   local home t out rc anchor
-  home=$(new_home mark)
-  t=1000000000
+  home=$(new_home monthly-boundary)
+  t=1705276800
   FM_HOME="$home" "$SCOUT" mark --now "$t" --task wave-1 >/dev/null 2>&1 \
     || fail "mark should succeed on a fresh home"
   anchor="$home/data/capability-scout/last-sweep"
   assert_grep "last_epoch=$t" "$anchor" "anchor must record the marked epoch"
-  assert_grep "last_date=2001-09-09" "$anchor" "anchor must record the canonical marked date"
+  assert_grep "last_date=2024-01-15" "$anchor" "anchor must record the canonical marked date"
   assert_grep "task=wave-1" "$anchor" "anchor must record the dispatched task id"
 
-  out=$(FM_HOME="$home" "$SCOUT" due --now "$((t + 27 * DAY))" 2>&1); rc=$?
-  expect_code 1 "$rc" "27 days after a mark is still within cadence (got: $out)"
-  assert_contains "$out" "CAPABILITY_SCOUT_DUE: false" "27 days must not be due"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1706659200 2>&1); rc=$?
+  expect_code 1 "$rc" "a same-month weekly check must not be due (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: false" "same-month check must not be due"
+  assert_contains "$out" "next_due=2024-02-01" "same-month check must point to the next month"
 
-  out=$(FM_HOME="$home" "$SCOUT" due --now "$((t + CADENCE - 1))" 2>&1); rc=$?
-  expect_code 1 "$rc" "one second before the interval is not due (got: $out)"
-
-  out=$(FM_HOME="$home" "$SCOUT" due --now "$((t + CADENCE))" 2>&1); rc=$?
-  expect_code 0 "$rc" "the interval boundary itself is due (got: $out)"
-  assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" "boundary check must report due"
-  pass "fm-capability-scout.sh: mark resets the cadence and the boundary is exact"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1706745600 2>&1); rc=$?
+  expect_code 0 "$rc" "the first check in the next month must be due (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" "next-month check must be due"
+  assert_contains "$out" "next_due=2024-03-01" "next-month check must point to the following month"
+  pass "fm-capability-scout.sh: same-month checks stay closed and the next month is due"
 }
 
 test_leading_zero_epoch_is_normalized() {
@@ -61,10 +59,77 @@ test_leading_zero_epoch_is_normalized() {
   anchor="$home/data/capability-scout/last-sweep"
   assert_grep "last_epoch=1000000000" "$anchor" "mark must persist a canonical epoch"
   assert_no_grep "last_epoch=01000000000" "$anchor" "mark must not persist leading zeroes"
-  out=$(FM_HOME="$home" "$SCOUT" due --now 1002419200 2>&1); rc=$?
-  expect_code 0 "$rc" "a canonical boundary after a leading-zero mark must be due (got: $out)"
-  assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" "leading-zero epoch must preserve the cadence boundary"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1000000001 2>&1); rc=$?
+  expect_code 1 "$rc" "a same-month check after a leading-zero mark must not be due (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: false" "leading-zero epoch must preserve the anchor month"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1001894400 2>&1); rc=$?
+  expect_code 0 "$rc" "the next month after a leading-zero mark must be due (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: true" "leading-zero epoch must preserve the monthly boundary"
   pass "fm-capability-scout.sh: leading-zero epochs are normalized"
+}
+
+test_december_to_january_is_due() {
+  local home out rc
+  home=$(new_home december-january)
+  FM_HOME="$home" "$SCOUT" mark --now 1735689540 --task wave-december >/dev/null 2>&1 \
+    || fail "December mark should succeed"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1735689540 2>&1); rc=$?
+  expect_code 1 "$rc" "a second December check must not be due (got: $out)"
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: false" "December must allow only one due session"
+  assert_contains "$out" "next_due=2025-01-01" "December must point to January 1"
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1735689600 2>&1); rc=$?
+  expect_code 0 "$rc" "January must be due after a December mark (got: $out)"
+  assert_contains "$out" "last_sweep=2024-12-31" "December mark must retain its UTC date"
+  assert_contains "$out" "next_due=2025-02-01" "January due output must point to February 1"
+  pass "fm-capability-scout.sh: December-to-January rollover is due"
+}
+
+weekly_check() {
+  local home=$1 epoch=$2 expected=$3 next_due=$4 out rc
+  out=$(FM_HOME="$home" "$SCOUT" due --now "$epoch" 2>&1); rc=$?
+  if [ "$expected" = true ]; then
+    expect_code 0 "$rc" "weekly check at $epoch should be due (got: $out)"
+  else
+    expect_code 1 "$rc" "weekly check at $epoch should not be due (got: $out)"
+  fi
+  assert_contains "$out" "CAPABILITY_SCOUT_DUE: $expected" "weekly check at $epoch returned the wrong due state"
+  assert_contains "$out" "next_due=$next_due" "weekly check at $epoch returned the wrong next month"
+}
+
+test_weekly_checks_across_several_months() {
+  local home
+  home=$(new_home weekly-months)
+  FM_HOME="$home" "$SCOUT" mark --now 1788220800 --task wave-september >/dev/null 2>&1 \
+    || fail "September mark should succeed"
+
+  weekly_check "$home" 1788825600 false 2026-10-01
+  weekly_check "$home" 1789430400 false 2026-10-01
+  weekly_check "$home" 1790035200 false 2026-10-01
+  weekly_check "$home" 1790640000 false 2026-10-01
+  weekly_check "$home" 1791244800 true 2026-11-01
+  FM_HOME="$home" "$SCOUT" mark --now 1791244800 --task wave-october >/dev/null 2>&1 \
+    || fail "October mark should succeed"
+
+  weekly_check "$home" 1791849600 false 2026-11-01
+  weekly_check "$home" 1792454400 false 2026-11-01
+  weekly_check "$home" 1793059200 false 2026-11-01
+  weekly_check "$home" 1793664000 true 2026-12-01
+  FM_HOME="$home" "$SCOUT" mark --now 1793664000 --task wave-november >/dev/null 2>&1 \
+    || fail "November mark should succeed"
+
+  weekly_check "$home" 1794268800 false 2026-12-01
+  weekly_check "$home" 1794873600 false 2026-12-01
+  weekly_check "$home" 1795478400 false 2026-12-01
+  weekly_check "$home" 1796083200 true 2027-01-01
+  FM_HOME="$home" "$SCOUT" mark --now 1796083200 --task wave-december >/dev/null 2>&1 \
+    || fail "December mark should succeed"
+
+  weekly_check "$home" 1796688000 false 2027-01-01
+  weekly_check "$home" 1797292800 false 2027-01-01
+  weekly_check "$home" 1797897600 false 2027-01-01
+  weekly_check "$home" 1798502400 false 2027-01-01
+  weekly_check "$home" 1799107200 true 2027-02-01
+  pass "fm-capability-scout.sh: weekly Tuesday checks allow one due session across several UTC months"
 }
 
 test_out_of_range_now_is_refused() {
@@ -233,8 +298,10 @@ test_argument_validation() {
 }
 
 test_absent_anchor_is_due
-test_mark_then_not_due_and_boundary
+test_same_month_is_not_due_and_next_month_is_due
 test_leading_zero_epoch_is_normalized
+test_december_to_january_is_due
+test_weekly_checks_across_several_months
 test_out_of_range_now_is_refused
 test_out_of_range_stored_epoch_is_refused
 test_corrupt_anchor_fails_loud
