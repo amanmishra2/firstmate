@@ -27,7 +27,7 @@ CONSULT="$ROOT/bin/fm-agy-consult.sh"
 TMP_ROOT=$(fm_test_tmproot fm-agy-consult)
 
 make_consult_stubs() {  # <case-dir> -> echoes fakebin path
-  local dir=$1 fb="$1/fakebin"
+  local dir=$1 fb="$1/fakebin" node_path
   mkdir -p "$fb" "$dir/work" "$dir/home/data"
   mkdir -p "$dir/home/.gemini/antigravity-cli"
   printf '{"trustedWorkspaces":["%s/work"]}\n' "$dir" \
@@ -61,6 +61,17 @@ case "\${1:-}" in
 esac
 SH
   chmod +x "$fb/date"
+
+  node_path=$(command -v node) || fail "node is required for agy consultation tests"
+  cat > "$fb/node" <<SH
+#!/usr/bin/env bash
+if [ -f "$dir/node.block" ]; then
+  : > "$dir/node.ready"
+  while [ ! -f "$dir/node.release" ]; do /bin/sleep 0.01; done
+fi
+exec "$node_path" "\$@"
+SH
+  chmod +x "$fb/node"
 
   cat > "$fb/tmux" <<SH
 #!/usr/bin/env bash
@@ -317,6 +328,99 @@ EOF
   [ "$(file_mode "$artifact")" = 600 ] \
     || fail "consultation transcript must have mode 0600"
   pass "fm-agy-consult.sh: keeps consultation output owner-only"
+}
+
+test_precreated_temp_symlink_cannot_capture_transcript() {
+  local dir fb output_dir target artifact temp_link consult_pid attempt rc
+  dir="$TMP_ROOT/case-temp-symlink"
+  fb=$(make_consult_stubs "$dir")
+  output_dir="$dir/home/data/agy-reviews"
+  target="$dir/open-file.txt"
+  artifact="$output_dir/2026-10-18-temp-link.txt"
+  mkdir -p "$output_dir"
+  chmod 0777 "$output_dir"
+  printf 'sentinel\n' > "$target"
+  touch "$dir/node.block"
+  cat > "$dir/capture.1" <<'EOF'
+>
+? for shortcuts
+EOF
+  cat > "$dir/capture.2" <<'EOF'
+> Private question
+  Private answer.
+>
+? for shortcuts
+EOF
+
+  HOME="$dir/home" FM_ROOT_OVERRIDE="$dir/home" FM_HOME="$dir/home" \
+    FM_DATA_OVERRIDE="$dir/home/data" PATH="$fb:$PATH" "$CONSULT" \
+    --dir "$dir/work" --date 2026-10-18 --topic temp-link \
+    --policy prompt-as-is --settle-polls 1 --quiet --prompt "Private question" \
+    > "$dir/stdout.txt" 2> "$dir/stderr.txt" &
+  consult_pid=$!
+  attempt=0
+  while [ ! -f "$dir/node.ready" ] && [ "$attempt" -lt 200 ]; do
+    sleep 0.01
+    attempt=$(( attempt + 1 ))
+  done
+  if [ ! -f "$dir/node.ready" ]; then
+    touch "$dir/node.release"
+    wait "$consult_pid" 2>/dev/null || true
+    fail "consultation did not reach the trust-store preflight barrier"
+  fi
+  temp_link="$output_dir/.2026-10-18-temp-link.txt.tmp.$consult_pid"
+  ln -s "$target" "$temp_link"
+  touch "$dir/node.release"
+  rc=0
+  wait "$consult_pid" || rc=$?
+  [ "$rc" -eq 0 ] || fail "consultation should ignore a precreated legacy temp-path symlink"
+  [ "$(cat "$target")" = sentinel ] \
+    || fail "private transcript data must not be written through a precreated temp symlink"
+  [ -f "$artifact" ] && [ ! -L "$artifact" ] \
+    || fail "the saved artifact must be a regular file, not the attacker-controlled symlink"
+  assert_contains "$(cat "$artifact")" "Private answer." "the answer must be saved through the exclusive temp file"
+  pass "fm-agy-consult.sh: creates transcript temps without following preexisting symlinks"
+}
+
+test_symlinked_output_paths_are_refused() {
+  local dir target output_dir artifact rc out
+
+  dir="$TMP_ROOT/case-output-dir-symlink"
+  make_consult_stubs "$dir" >/dev/null
+  target="$dir/shared-target"
+  mkdir -p "$target"
+  chmod 0755 "$target"
+  ln -s "$target" "$dir/home/data/agy-reviews"
+  rc=0
+  out=$(run_consult "$dir" --date 2026-10-18 --topic output-dir-link \
+    --policy prompt-as-is --quiet --prompt "Question" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a symlinked output directory must be refused"
+  assert_contains "$out" "output directory '$dir/home/data/agy-reviews' must not be a symlink" \
+    "output-directory symlink refusal must identify the unsafe path"
+  [ "$(file_mode "$target")" = 755 ] \
+    || fail "refusing the symlinked output directory must not chmod its target"
+  grep -q 'new-session\|send-keys' "$dir/tmux.log" \
+    && fail "a symlinked output directory must be refused before launching or sending"
+
+  dir="$TMP_ROOT/case-output-file-symlink"
+  make_consult_stubs "$dir" >/dev/null
+  output_dir="$dir/home/data/agy-reviews"
+  target="$dir/open-artifact.txt"
+  artifact="$output_dir/2026-10-18-output-link.txt"
+  mkdir -p "$output_dir"
+  printf 'sentinel\n' > "$target"
+  ln -s "$target" "$artifact"
+  rc=0
+  out=$(run_consult "$dir" --date 2026-10-18 --topic output-link \
+    --policy prompt-as-is --quiet --prompt "Question" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a symlinked artifact path must be refused"
+  assert_contains "$out" "output file '$artifact' must not be a symlink" \
+    "artifact symlink refusal must identify the unsafe path"
+  [ -L "$artifact" ] && [ "$(cat "$target")" = sentinel ] \
+    || fail "refusing the symlinked artifact must leave its target unchanged"
+  grep -q 'new-session\|send-keys' "$dir/tmux.log" \
+    && fail "a symlinked artifact must be refused before launching or sending"
+  pass "fm-agy-consult.sh: refuses symlinked output directories and artifacts"
 }
 
 test_fresh_launch_waits_for_ready_composer_and_preserves_answer_lines() {
@@ -965,6 +1069,8 @@ test_unframed_markdown_rule_is_preserved
 test_polling_honors_timeout_deadlines
 test_reused_session_does_not_require_agy_on_path
 test_transcript_output_permissions_are_owner_only
+test_precreated_temp_symlink_cannot_capture_transcript
+test_symlinked_output_paths_are_refused
 test_session_reuse_and_restart_options_are_removed
 test_trust_dialog_is_refused_without_enter
 test_untrusted_target_and_live_reuse_directory_are_refused

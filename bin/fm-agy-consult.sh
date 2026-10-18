@@ -612,10 +612,14 @@ else
     || refuse_untrusted_directory "$PANE_DIR_REAL"
 fi
 
+[ ! -L "$OUTPUT_DIR" ] || die "output directory '$OUTPUT_DIR' must not be a symlink"
 (umask 077; mkdir -p -- "$OUTPUT_DIR") || die "could not create output directory '$OUTPUT_DIR'"
+[ ! -L "$OUTPUT_DIR" ] || die "output directory '$OUTPUT_DIR' must not be a symlink"
 OUTPUT_DIR_REAL=$(cd -P -- "$OUTPUT_DIR" 2>/dev/null && pwd -P) || die "output directory '$OUTPUT_DIR' is not accessible"
+[ ! -L "$OUTPUT_DIR_REAL" ] || die "output directory '$OUTPUT_DIR_REAL' must not be a symlink"
 chmod 0700 "$OUTPUT_DIR_REAL" || die "could not restrict output directory permissions for '$OUTPUT_DIR_REAL'"
 OUT_FILE="$OUTPUT_DIR_REAL/${DATE_STR}-${TOPIC}.txt"
+[ ! -L "$OUT_FILE" ] || die "output file '$OUT_FILE' must not be a symlink"
 
 if [ "$SESSION_REUSED" -eq 0 ]; then
   command -v agy >/dev/null 2>&1 || die "agy executable not found on PATH"
@@ -744,9 +748,17 @@ TURN_CAPTURE=$(extract_current_turn "$SETTLED_PANE" "$FINAL_PROMPT" "$PRE_CAPTUR
   || die "could not isolate the submitted prompt and answer for session '$SESSION'"
 DEDUPED=$(dedupe_capture "$TURN_CAPTURE"; printf '\034')
 DEDUPED=${DEDUPED%$'\034'}
-TMP_OUT="$OUTPUT_DIR_REAL/.${DATE_STR}-${TOPIC}.txt.tmp.$$"
-if ! (umask 077; : > "$TMP_OUT") || ! chmod 0600 "$TMP_OUT" \
-  || ! printf '%s' "$DEDUPED" > "$TMP_OUT" || ! mv -f -- "$TMP_OUT" "$OUT_FILE"; then
+TMP_OUT=$(umask 077; mktemp "$OUTPUT_DIR_REAL/.${DATE_STR}-${TOPIC}.txt.tmp.XXXXXX") \
+  || die "could not create a private temporary consultation log in '$OUTPUT_DIR_REAL'"
+if ! chmod 0600 "$TMP_OUT" || ! printf '%s' "$DEDUPED" > "$TMP_OUT"; then
+  rm -f -- "$TMP_OUT" 2>/dev/null || true
+  die "could not write consultation log '$OUT_FILE'"
+fi
+if [ -L "$OUT_FILE" ]; then
+  rm -f -- "$TMP_OUT" 2>/dev/null || true
+  die "output file '$OUT_FILE' became a symlink; refusing to replace it"
+fi
+if ! mv -f -- "$TMP_OUT" "$OUT_FILE"; then
   rm -f -- "$TMP_OUT" 2>/dev/null || true
   die "could not write consultation log '$OUT_FILE'"
 fi
