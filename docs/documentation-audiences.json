@@ -603,6 +603,10 @@
     {
       "path": ".agents/skills/validation-supervision/SKILL.md",
       "audience": "agent-runtime"
+    },
+    {
+      "path": "tests/playwright/README.md",
+      "audience": "maintainer-verification"
     }
   ]
 }
