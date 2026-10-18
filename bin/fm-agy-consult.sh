@@ -22,9 +22,6 @@
 #                                   (default: current working directory).
 #   -s, --session <name>            Named tmux session to start or reuse
 #                                   (default: agy).
-#   --fresh, --restart              Kill any existing <session> first and launch a
-#                                   clean agy session. Use when switching --model
-#                                   or --dir on an existing session name.
 #   -m, --model <id>                Pass --model <id> to agy when launching a
 #                                   session. Verified model IDs:
 #                                     gemini-3.8-flash-high
@@ -57,53 +54,51 @@
 #                                   or FM_AGY_CONSULT_SETTLE_POLLS).
 #   --date <YYYY-MM-DD>             Date prefix override for the output filename
 #                                   (default: today, or FM_AGY_CONSULT_DATE).
-#   --output-dir <dir>              Output directory override (default:
-#                                   ${FM_DATA_OVERRIDE:-$FM_HOME/data}/agy-reviews).
 #   -q, --quiet                     Print only the written log path on stdout.
 #   -h, --help                      Print this usage and mechanics reference.
 #
 # Mechanics and permission caveats:
 #   1. Session launch and reuse:
-#      When <session> does not exist (or after --fresh kills it), the helper runs:
+#      Before launch or reuse, <dir> and the live pane directory must already be
+#      listed in ${FM_AGY_SETTINGS_FILE:-$HOME/.gemini/antigravity-cli/settings.json}
+#      under trustedWorkspaces. Untrusted directories are refused; pre-register a
+#      linked task worktree with bin/fm-agy-trust.sh or launch agy manually once.
+#      When <session> does not exist, the helper runs:
 #        tmux new-session -d -s <session> -c <dir> 'agy [--model <id>] [--effort <level>]'
-#      When <session> already exists without --fresh, the helper reuses it after
-#      verifying the pane is not already mid-turn ('esc to cancel'). Because
-#      in-session model switching in tmux and cross-session model binding are
-#      unverified, pass --fresh when changing --model or --dir.
+#      When <session> already exists, the helper reuses it after verifying its
+#      pane directory is trusted, it is not already mid-turn, and its idle
+#      composer is ready. It never kills or restarts an existing session.
 #   2. Single-line prompt delivery:
 #      Newlines, carriage returns, and tabs are collapsed to single spaces before
 #      calling `tmux send-keys -t <session> -l <prompt>` followed by
-#      `tmux send-keys -t <session> Enter`, preventing multi-line paste splits in
-#      agy's composer.
+#      `tmux send-keys -t <session> Enter`. On a fresh launch, it waits for the
+#      ready idle composer before sending and then requires pane evidence that
+#      the prompt landed before accepting any idle settle.
 #   3. Folder-trust caveat:
-#      On first launch in an unseen directory, agy presents "Do you trust the
-#      contents of this project?" with "Yes, I trust this folder" preselected.
-#      This helper sends one Enter to accept that initial folder-trust dialog so
-#      the consultation runs in <dir> rather than agy's scratch directory.
-#      Accepting folder trust records <dir> in
-#      ~/.gemini/antigravity-cli/settings.json (trustedWorkspaces) and grants agy
-#      workspace permission to read, edit, and execute files in that folder -
-#      folder trust is NOT a read-only sandbox.
+#      This helper never answers "Do you trust the contents of this project?".
+#      A dialog appearing despite the trust-store preflight is refused without
+#      sending Enter. Workspace trust permits agy to read, edit, and execute
+#      files in that folder; it is not a read-only sandbox.
 #   4. Per-command approval caveat:
 #      This helper is a firstmate-side consultation tool, not an autonomous
 #      worker spawn: it never passes --dangerously-skip-permissions and never
-#      auto-approves tool or shell-command permission prompts beyond the initial
-#      folder-trust Enter. Inside a trusted workspace, agy's file-reading and
-#      search tools run without modal prompts, whereas shell commands or file
+#      auto-approves tool or shell-command permission prompts. Inside a trusted
+#      workspace, agy's file-reading and search tools run without modal prompts,
+#      whereas shell commands or file
 #      mutations trigger interactive per-command approval dialogs in the TUI.
 #      The default `read-only` policy instructs agy not to modify files or run
 #      state-changing commands so research consults do not wedge on approval
 #      dialogs. If a turn still parks on a per-command approval prompt instead of
 #      returning to the idle `? for shortcuts` footer, the helper does not answer
 #      it and fails closed when the wait budget expires.
-#   5. Settle detection and deduplication:
+#   5. Settle detection and output:
 #      During a turn, agy pins `esc to cancel` in the status row and replaces it
 #      with `? for shortcuts` when the turn completes. The helper polls
 #      `tmux capture-pane -p -t <session> -S -<lines>` until `esc to cancel`
 #      clears to `? for shortcuts` (or until --settle-polls consecutive identical
-#      idle captures appear after the prompt lands), strips transient braille
-#      spinner lines, deduplicates redraw noise with `awk '!seen[$0]++'`, and
-#      writes the output atomically to <output-dir>/<date>-<topic>.txt.
+#      idle captures appear after the prompt lands). It keeps only the current
+#      turn from its submitted prompt, strips spinner and footer chrome, preserves
+#      repeated answer lines, and writes atomically to <data>/agy-reviews.
 set -u
 unset CDPATH
 
@@ -168,7 +163,10 @@ pane_tail_lines() {
 }
 
 pane_shows_trust_dialog() {
-  printf '%s\n' "$1" | grep -Fq 'Do you trust the contents of this project?'
+  if pane_is_busy "$1" || pane_is_idle "$1"; then
+    return 1
+  fi
+  pane_tail_lines "$1" | grep -Fq 'Do you trust the contents of this project?'
 }
 
 pane_is_busy() {
@@ -184,6 +182,10 @@ pane_is_idle() {
 
 pane_has_empty_composer() {
   pane_tail_lines "$1" | grep -Eq '^[[:space:]]*>[[:space:]]*$'
+}
+
+pane_is_ready() {
+  pane_is_idle "$1" && pane_has_empty_composer "$1"
 }
 
 pane_conflicts_with_model() {  # <pane> <requested-model>
@@ -213,13 +215,76 @@ send_literal_prompt() {  # <session> <prompt>
 dedupe_capture() {
   printf '%s\n' "$1" | awk '
     {
-      sub(/\r$/, "")
+      gsub(/\r/, "")
     }
     /^[[:space:]]*(⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|⣾|⣽|⣻|⢿|⡿|⣟|⣯|⣷)([[:space:]]|$)/ {
       next
     }
-    !seen[$0]++
+    /^[[:space:]]*(esc to cancel|\? for shortcuts)([[:space:]].*)?$/ { next }
+    /^[[:space:]]*>[[:space:]]*$/ { next }
+    /^[[:space:]]*●[[:space:]]+(Explored|Searched|Read|Listed|Opened|Found)[[:space:]]/ {
+      if (previous_tool == $0) next
+      previous_tool = $0
+      print
+      next
+    }
+    { previous_tool = ""; print }
   '
+}
+
+find_turn_start() {  # <capture> <final-prompt> <pre-capture>
+  printf '%s\n' "$1" | CURRENT_PROMPT="$2" PRE_CAPTURE="$3" awk '
+    function compact(text) {
+      gsub(/[[:space:]]/, "", text)
+      return text
+    }
+    function occurrences(text, needle,   rest, at, count) {
+      if (needle == "") return 0
+      rest = text
+      count = 0
+      while ((at = index(rest, needle)) > 0) {
+        count++
+        rest = substr(rest, at + length(needle))
+      }
+      return count
+    }
+    BEGIN {
+      needle = ">" compact(ENVIRON["CURRENT_PROMPT"])
+      baseline_count = occurrences(compact(ENVIRON["PRE_CAPTURE"]), needle)
+    }
+    {
+      lines[NR] = $0
+      normalized = compact($0)
+      starts[NR] = length(current) + 1
+      current = current normalized
+      ends[NR] = length(current)
+    }
+    END {
+      if (needle == ">") exit 1
+      target = baseline_count + 1
+      count = 0
+      for (pos = 1; pos <= length(current) - length(needle) + 1; pos++) {
+        if (substr(current, pos, length(needle)) == needle) {
+          count++
+          if (count == target) {
+            for (line = 1; line <= NR; line++) {
+              if (starts[line] <= pos && pos <= ends[line]) {
+                print line
+                exit 0
+              }
+            }
+          }
+        }
+      }
+      exit 1
+    }
+  '
+}
+
+extract_current_turn() {  # <capture> <final-prompt> <pre-capture>
+  local start
+  start=$(find_turn_start "$1" "$2" "$3") || return 1
+  printf '%s\n' "$1" | tail -n +"$start"
 }
 
 TOPIC=""
@@ -228,7 +293,6 @@ PROMPT_SOURCE=""
 PROMPT_FILE=""
 TARGET_DIR="$PWD"
 SESSION="agy"
-FRESH=0
 MODEL=""
 EFFORT=""
 POLICY="read-only"
@@ -237,7 +301,7 @@ TIMEOUT="${FM_AGY_CONSULT_TIMEOUT:-300}"
 POLL_INTERVAL="${FM_AGY_CONSULT_POLL_INTERVAL:-2}"
 SETTLE_POLLS="${FM_AGY_CONSULT_SETTLE_POLLS:-2}"
 DATE_STR="${FM_AGY_CONSULT_DATE:-}"
-OUTPUT_DIR="${FM_AGY_REVIEWS_DIR:-$DATA_DIR/agy-reviews}"
+OUTPUT_DIR="$DATA_DIR/agy-reviews"
 QUIET=0
 POSITIONAL_PROMPT=()
 
@@ -298,10 +362,6 @@ while [ "$#" -gt 0 ]; do
       ;;
     --session=*)
       SESSION=${1#--session=}
-      shift
-      ;;
-    --fresh | --restart)
-      FRESH=1
       shift
       ;;
     -m | --model)
@@ -376,15 +436,6 @@ while [ "$#" -gt 0 ]; do
       DATE_STR=${1#--date=}
       shift
       ;;
-    --output-dir)
-      [ "$#" -ge 2 ] || die_usage "--output-dir requires a directory path"
-      OUTPUT_DIR=$2
-      shift 2
-      ;;
-    --output-dir=*)
-      OUTPUT_DIR=${1#--output-dir=}
-      shift
-      ;;
     -q | --quiet)
       QUIET=1
       shift
@@ -420,8 +471,8 @@ esac
 
 [ -n "$TOPIC" ] || die_usage "--topic <slug> is required"
 TOPIC=${TOPIC%.txt}
-case "$TOPIC" in
-  "$DATE_STR"-*) TOPIC=${TOPIC#"$DATE_STR"-} ;;
+case "${TOPIC:0:11}" in
+  [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-) TOPIC=${TOPIC:11} ;;
 esac
 case "$TOPIC" in
   '' | .* | -* | *..* | */* | *[!A-Za-z0-9._-]*)
@@ -449,9 +500,9 @@ if [ -n "$EFFORT" ]; then
 fi
 
 case "$POLICY" in
-  read-only | prompt-as-is | none) ;;
+  read-only | prompt-as-is) ;;
   *)
-    die "unsupported permission policy '$POLICY'; supported policies are 'read-only' (default) and 'prompt-as-is' (no auto-approval beyond initial folder trust)"
+    die "unsupported permission policy '$POLICY'; supported policies are 'read-only' (default) and 'prompt-as-is'"
     ;;
 esac
 
@@ -491,21 +542,53 @@ TARGET_DIR_REAL=$(cd -P -- "$TARGET_DIR" 2>/dev/null && pwd -P) || true
 
 command -v tmux >/dev/null 2>&1 || die "tmux executable not found on PATH"
 command -v agy >/dev/null 2>&1 || die "agy executable not found on PATH"
+command -v node >/dev/null 2>&1 || die "node executable is required to verify the agy workspace trust store"
+[ -n "${HOME:-}" ] || [ -n "${FM_AGY_SETTINGS_FILE:-}" ] \
+  || die "HOME is not set, so the agy workspace trust store cannot be located"
+
+AGY_SETTINGS_FILE="${FM_AGY_SETTINGS_FILE:-${HOME:-}/.gemini/antigravity-cli/settings.json}"
+agy_directory_is_trusted() {  # <directory>...
+  node - "$AGY_SETTINGS_FILE" "$@" <<'NODE'
+const fs = require("node:fs");
+const [store, ...directories] = process.argv.slice(2);
+try {
+  const settings = JSON.parse(fs.readFileSync(store, "utf8"));
+  if (settings === null || typeof settings !== "object" || Array.isArray(settings)) {
+    process.exit(1);
+  }
+  const trusted = settings.trustedWorkspaces;
+  if (!Array.isArray(trusted) || !directories.every((directory) => trusted.includes(directory))) {
+    process.exit(1);
+  }
+} catch {
+  process.exit(1);
+}
+NODE
+}
+
+refuse_untrusted_directory() {
+  die "agy workspace '$1' is not listed in '$AGY_SETTINGS_FILE' trustedWorkspaces; trust a linked task worktree with bin/fm-agy-trust.sh or launch agy manually once, then retry"
+}
+
+agy_directory_is_trusted "$TARGET_DIR_REAL" || refuse_untrusted_directory "$TARGET_DIR_REAL"
+
+SESSION_REUSED=1
+if ! tmux has-session -t "$SESSION" 2>/dev/null; then
+  SESSION_REUSED=0
+else
+  PANE_DIR=$(tmux display-message -p -t "$SESSION" '#{pane_current_path}' 2>/dev/null) \
+    || die "could not read the working directory of tmux session '$SESSION'"
+  PANE_DIR_REAL=$(cd -P -- "$PANE_DIR" 2>/dev/null && pwd -P) \
+    || die "live pane directory '$PANE_DIR' for tmux session '$SESSION' is not accessible"
+  agy_directory_is_trusted "$PANE_DIR" "$PANE_DIR_REAL" \
+    || refuse_untrusted_directory "$PANE_DIR_REAL"
+fi
 
 mkdir -p -- "$OUTPUT_DIR" || die "could not create output directory '$OUTPUT_DIR'"
 OUTPUT_DIR_REAL=$(cd -P -- "$OUTPUT_DIR" 2>/dev/null && pwd -P) || die "output directory '$OUTPUT_DIR' is not accessible"
 OUT_FILE="$OUTPUT_DIR_REAL/${DATE_STR}-${TOPIC}.txt"
 
-if [ "$FRESH" -eq 1 ]; then
-  if tmux has-session -t "$SESSION" 2>/dev/null; then
-    tmux kill-session -t "$SESSION" >/dev/null 2>&1 || die "could not kill existing tmux session '$SESSION'"
-  fi
-fi
-
-TRUST_ANSWERED=0
-SESSION_REUSED=1
-if ! tmux has-session -t "$SESSION" 2>/dev/null; then
-  SESSION_REUSED=0
+if [ "$SESSION_REUSED" -eq 0 ]; then
   AGY_LAUNCH_CMD="agy"
   if [ -n "$MODEL" ]; then
     AGY_LAUNCH_CMD="$AGY_LAUNCH_CMD --model $MODEL"
@@ -517,23 +600,37 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
     || die "failed to start tmux session '$SESSION' in '$TARGET_DIR_REAL'"
 fi
 
-PRE_CAPTURE=$(tmux capture-pane -p -t "$SESSION" -S -"$LINES" 2>/dev/null) \
-  || die "failed to capture tmux session '$SESSION'"
-
-if pane_shows_trust_dialog "$PRE_CAPTURE"; then
-  tmux send-keys -t "$SESSION" Enter || die "failed to accept folder-trust dialog in tmux session '$SESSION'"
-  TRUST_ANSWERED=1
-  sleep "$POLL_INTERVAL"
+PRE_CAPTURE=""
+READY_PANE=""
+READY_START=$(date +%s)
+READY_POLLS=0
+READY_MAX_POLLS=$(( TIMEOUT / POLL_INTERVAL ))
+[ "$READY_MAX_POLLS" -ge 1 ] || READY_MAX_POLLS=1
+while [ "$READY_POLLS" -lt "$READY_MAX_POLLS" ]; do
   PRE_CAPTURE=$(tmux capture-pane -p -t "$SESSION" -S -"$LINES" 2>/dev/null) \
-    || die "failed to capture tmux session '$SESSION' after folder-trust Enter"
-fi
-
-if pane_is_busy "$PRE_CAPTURE"; then
-  die "tmux session '$SESSION' is already busy (esc to cancel); wait for the active turn to finish or pass --fresh"
-fi
+    || die "failed to capture tmux session '$SESSION'"
+  if pane_shows_trust_dialog "$PRE_CAPTURE"; then
+    die "agy session '$SESSION' displayed a folder-trust dialog for '$TARGET_DIR_REAL'; refusing to answer it. Trust a linked task worktree with bin/fm-agy-trust.sh or launch agy manually once, then retry"
+  fi
+  if [ "$SESSION_REUSED" -eq 1 ] && pane_is_busy "$PRE_CAPTURE"; then
+    die "tmux session '$SESSION' is already busy (esc to cancel); wait for the active turn to finish or use a different --session"
+  fi
+  if pane_is_ready "$PRE_CAPTURE"; then
+    READY_PANE="$PRE_CAPTURE"
+    break
+  fi
+  sleep "$POLL_INTERVAL"
+  READY_POLLS=$(( READY_POLLS + 1 ))
+  READY_NOW=$(date +%s)
+  if [ $(( READY_NOW - READY_START )) -ge "$TIMEOUT" ]; then
+    break
+  fi
+done
+[ -n "$READY_PANE" ] || die "agy session '$SESSION' did not reach the ready idle composer within ${TIMEOUT}s"
+PRE_CAPTURE="$READY_PANE"
 
 if [ "$SESSION_REUSED" -eq 1 ] && [ -n "$MODEL" ] && pane_conflicts_with_model "$PRE_CAPTURE" "$MODEL"; then
-  die "existing tmux session '$SESSION' is running a different model than requested '$MODEL'; pass --fresh to restart the session"
+  die "existing tmux session '$SESSION' is running a different model than requested '$MODEL'; use a different --session"
 fi
 
 send_literal_prompt "$SESSION" "$FINAL_PROMPT" \
@@ -550,6 +647,7 @@ IDLE_STABLE=0
 PREV_IDLE_PANE=""
 SETTLED_PANE=""
 LAST_PANE="$PRE_CAPTURE"
+PROMPT_LANDED=0
 
 while [ "$POLL_COUNT" -lt "$MAX_POLLS" ]; do
   sleep "$POLL_INTERVAL"
@@ -559,12 +657,23 @@ while [ "$POLL_COUNT" -lt "$MAX_POLLS" ]; do
     || die "lost tmux session '$SESSION' while waiting for consultation reply"
   LAST_PANE="$PANE"
 
-  if [ "$TRUST_ANSWERED" -eq 0 ] && pane_shows_trust_dialog "$PANE"; then
-    tmux send-keys -t "$SESSION" Enter || die "failed to accept folder-trust dialog in tmux session '$SESSION'"
-    TRUST_ANSWERED=1
-    IDLE_STABLE=0
-    PREV_IDLE_PANE=""
-    continue
+  if pane_shows_trust_dialog "$PANE"; then
+    die "agy session '$SESSION' displayed a folder-trust dialog for '$TARGET_DIR_REAL'; refusing to answer it. Trust a linked task worktree with bin/fm-agy-trust.sh or launch agy manually once, then retry"
+  fi
+
+  if [ "$PROMPT_LANDED" -eq 0 ]; then
+    if find_turn_start "$PANE" "$FINAL_PROMPT" "$PRE_CAPTURE" >/dev/null; then
+      PROMPT_LANDED=1
+    else
+      if pane_shows_command_approval "$PANE"; then
+        die "agy consultation in session '$SESSION' parked on a per-command approval prompt before the submitted prompt appeared in the pane (helper never auto-approves command or edit permissions; inspect tmux session '$SESSION')"
+      fi
+      NOW_EPOCH=$(date +%s)
+      if [ $(( NOW_EPOCH - START_EPOCH )) -ge "$TIMEOUT" ]; then
+        break
+      fi
+      continue
+    fi
   fi
 
   if pane_is_busy "$PANE"; then
@@ -600,15 +709,21 @@ while [ "$POLL_COUNT" -lt "$MAX_POLLS" ]; do
 done
 
 if [ -z "$SETTLED_PANE" ]; then
+  if [ "$PROMPT_LANDED" -eq 0 ]; then
+    die "submitted prompt never appeared in the pane for session '$SESSION'"
+  fi
   if pane_shows_command_approval "$LAST_PANE"; then
     die "agy consultation in session '$SESSION' parked on a per-command approval prompt (helper never auto-approves command or edit permissions; inspect tmux session '$SESSION')"
   fi
   die "agy consultation in session '$SESSION' did not settle within ${TIMEOUT}s (inspect tmux session '$SESSION')"
 fi
 
-DEDUPED=$(dedupe_capture "$SETTLED_PANE")
+TURN_CAPTURE=$(extract_current_turn "$SETTLED_PANE" "$FINAL_PROMPT" "$PRE_CAPTURE") \
+  || die "could not isolate the submitted prompt and answer for session '$SESSION'"
+DEDUPED=$(dedupe_capture "$TURN_CAPTURE"; printf '\034')
+DEDUPED=${DEDUPED%$'\034'}
 TMP_OUT="$OUTPUT_DIR_REAL/.${DATE_STR}-${TOPIC}.txt.tmp.$$"
-if ! printf '%s\n' "$DEDUPED" > "$TMP_OUT" || ! mv -f -- "$TMP_OUT" "$OUT_FILE"; then
+if ! printf '%s' "$DEDUPED" > "$TMP_OUT" || ! mv -f -- "$TMP_OUT" "$OUT_FILE"; then
   rm -f -- "$TMP_OUT" 2>/dev/null || true
   die "could not write consultation log '$OUT_FILE'"
 fi
@@ -616,5 +731,6 @@ fi
 if [ "$QUIET" -eq 1 ]; then
   printf '%s\n' "$OUT_FILE"
 else
-  printf 'saved: %s\n%s\n' "$OUT_FILE" "$DEDUPED"
+  printf 'saved: %s\n' "$OUT_FILE"
+  printf '%s' "$DEDUPED"
 fi
