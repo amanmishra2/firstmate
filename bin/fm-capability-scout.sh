@@ -82,6 +82,10 @@ normalize_epoch() {
 read_anchor() {
   LAST_EPOCH=''
   LAST_DATE=''
+  [ ! -L "$SCOUT_DIR" ] || die "refusing symlinked data directory $SCOUT_DIR"
+  if [ -e "$SCOUT_DIR" ] && [ ! -d "$SCOUT_DIR" ]; then
+    die "data directory is not a directory: $SCOUT_DIR"
+  fi
   [ ! -L "$ANCHOR" ] || die "refusing symlinked anchor $ANCHOR"
   [ -e "$ANCHOR" ] || return 0
   [ -f "$ANCHOR" ] || die "anchor is not a regular file: $ANCHOR"
@@ -167,9 +171,8 @@ cmd_mark() {
   if ! mark_date=$(epoch_to_date "$now" 2>/dev/null); then
     die "mark epoch is not a valid epoch"
   fi
-  [ ! -L "$SCOUT_DIR" ] || die "refusing symlinked data directory $SCOUT_DIR"
-  mkdir -p "$SCOUT_DIR" || die "cannot create $SCOUT_DIR"
   read_anchor
+  mkdir -p "$SCOUT_DIR" || die "cannot create $SCOUT_DIR"
   local tmp
   tmp=$(mktemp "$SCOUT_DIR/.last-sweep.XXXXXX") || die "cannot create a temporary anchor in $SCOUT_DIR"
   chmod 600 "$tmp"

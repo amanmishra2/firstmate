@@ -129,6 +129,40 @@ test_symlinked_anchor_is_refused() {
   pass "fm-capability-scout.sh: a symlinked anchor is refused"
 }
 
+test_symlinked_scout_dir_is_refused() {
+  local home out rc scout_dir target_dir anchor before
+  home=$(new_home symlinked-dir)
+  scout_dir="$home/data/capability-scout"
+  target_dir="$TMP_ROOT/symlinked-dir-target"
+  mkdir -p "$target_dir"
+  anchor="$target_dir/last-sweep"
+  printf 'last_epoch=1000000000\nlast_date=2001-09-09\ntask=wave-recent\n' > "$anchor"
+  before=$(cat "$anchor")
+  ln -s "$target_dir" "$scout_dir"
+
+  out=$(FM_HOME="$home" "$SCOUT" due --now 1000000001 2>&1); rc=$?
+  expect_code 2 "$rc" "due must reject a symlinked scout directory (got: $out)"
+  out=$(FM_HOME="$home" "$SCOUT" mark --now 1000000001 --task wave-rejected 2>&1); rc=$?
+  expect_code 2 "$rc" "mark must reject a symlinked scout directory (got: $out)"
+  [ "$(cat "$anchor")" = "$before" ] || fail "mark changed the symlink target anchor"
+  pass "fm-capability-scout.sh: a symlinked scout directory is refused"
+}
+
+test_non_directory_scout_path_is_refused() {
+  local home out rc scout_dir before
+  home=$(new_home non-directory)
+  scout_dir="$home/data/capability-scout"
+  printf 'scout-directory-sentinel\n' > "$scout_dir"
+  before=$(cat "$scout_dir")
+
+  out=$(FM_HOME="$home" "$SCOUT" due 2>&1); rc=$?
+  expect_code 2 "$rc" "due must reject a non-directory scout path (got: $out)"
+  out=$(FM_HOME="$home" "$SCOUT" mark --now 1000000000 --task wave-rejected 2>&1); rc=$?
+  expect_code 2 "$rc" "mark must reject a non-directory scout path (got: $out)"
+  [ "$(cat "$scout_dir")" = "$before" ] || fail "mark changed the non-directory scout path"
+  pass "fm-capability-scout.sh: a non-directory scout path is refused"
+}
+
 test_empty_anchor_is_refused() {
   local home anchor before out rc
   home=$(new_home empty)
@@ -205,6 +239,8 @@ test_out_of_range_now_is_refused
 test_out_of_range_stored_epoch_is_refused
 test_corrupt_anchor_fails_loud
 test_symlinked_anchor_is_refused
+test_symlinked_scout_dir_is_refused
+test_non_directory_scout_path_is_refused
 test_empty_anchor_is_refused
 test_missing_epoch_anchor_is_refused
 test_invalid_last_date_is_refused
