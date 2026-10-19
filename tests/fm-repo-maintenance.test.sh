@@ -116,7 +116,7 @@ SQL
     printf '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":5000,"input_tokens":5000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":8000,"input_tokens":8000},"last_token_usage":{"input_tokens":3000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.750Z","type":"response_item","payload":{"type":"function_call","call_id":"write-fail","name":"write","arguments":"{}"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:02.800Z","type":"response_item","payload":{"type":"function_call_output","id":"output-write-fail","call_id":"write-fail","output":{"success":false}}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:02.800Z","type":"response_item","payload":{"type":"function_call_output","id":"output-write-fail","call_id":"write-fail","output":"write failed"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.900Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-write-fail","name":"write","output":"failed"}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.000Z","type":"turn_context","payload":{"turn_id":"t2"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.500Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-string","name":"exec_command","arguments":"{\\"cmd\\":\\"printf changed > src/one.py\\"}"}}\n'
@@ -124,6 +124,7 @@ SQL
     printf '{"timestamp":"2026-10-18T10:00:03.875Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-array","name":"exec_command","arguments":"{}"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.937Z","type":"response_item","payload":{"type":"function_call_output","id":"output-exec-array","call_id":"exec-array","output":[{"type":"text","text":"command completed"}]}}\n'
     printf '{"timestamp":"2026-10-18T10:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"patch-success","name":"apply_patch","arguments":"{}"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:04.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FileChange","id":"patch-success","changes":{},"status":"completed"}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call_output","id":"output-patch-success","call_id":"patch-success","output":[{"type":"input_text","text":"command completed"}]}}\n'
     printf '{"timestamp":"2026-10-18T10:00:04.750Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-patch-success","name":"apply_patch","output":"command completed"}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":10000,"input_tokens":10000}}}}\n'
@@ -714,8 +715,8 @@ test_completed_cohort_uses_completion_time_for_all_rollouts() {
     '{"timestamp":"2026-10-18T10:00:03.500Z","type":"turn_context","payload":{"turn_id":"old-b-turn"}}' \
     '{"timestamp":"2026-10-18T10:00:04.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":800,"input_tokens":800}}}}' \
     '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call","call_id":"old-b-edit","name":"write","arguments":"{}"}}' \
-    '{"timestamp":"2026-10-18T10:00:04.750Z","type":"response_item","payload":{"type":"function_call_output","id":"output-old-b-edit","call_id":"old-b-edit","output":{"success":true}}}' \
-    '{"timestamp":"2026-10-18T10:00:04.875Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-old-b-edit","name":"write","output":"edited"}}}' \
+    '{"timestamp":"2026-10-18T10:00:04.750Z","type":"response_item","payload":{"type":"function_call_output","id":"output-old-b-edit","call_id":"old-b-edit","output":[{"type":"input_text","text":"edit attempted"}]}}' \
+    '{"timestamp":"2026-10-18T10:00:04.875Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-old-b-edit","name":"write","output":"edit attempted"}}}' \
     '{"timestamp":"2026-10-18T10:00:04.900Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":1600,"input_tokens":1600}}}}' \
     > "$completed_old"
   printf '%s\n' \
@@ -764,6 +765,37 @@ test_completed_cohort_uses_completion_time_for_all_rollouts() {
   assert_not_contains "$out" '"tokens_total":200' "out-of-window task spans are omitted"
   assert_not_contains "$out" "cdx_in_progress" "unfinished rollout identifiers are not persisted"
   pass "codex eligibility uses task completion time and mines all completed rollouts"
+}
+
+test_mine_codex_first_edit_requires_positive_outcome() {
+  local lab codex_dir rollout out status=0
+  lab=$(make_lab codex-positive-edit)
+  codex_dir="$lab/home/positive-codex"
+  mkdir -p "$codex_dir"
+  rollout="$codex_dir/rollout-positive-edit.jsonl"
+  printf '%s\n' \
+    "{\"timestamp\":\"2026-10-18T15:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_positive_edit\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\"}}" \
+    '{"timestamp":"2026-10-18T15:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"positive-edit"}}' \
+    '{"timestamp":"2026-10-18T15:00:01.000Z","type":"turn_context","payload":{"turn_id":"edit-turn-1"}}' \
+    '{"timestamp":"2026-10-18T15:00:01.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
+    '{"timestamp":"2026-10-18T15:00:02.000Z","type":"event_msg","payload":{"type":"item_started","item":{"type":"DynamicToolCall","id":"write-failed","tool":"write","arguments":{},"status":"in_progress"}}}' \
+    '{"timestamp":"2026-10-18T15:00:02.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"DynamicToolCall","id":"write-failed","tool":"write","arguments":{},"status":"failed","success":false}}}' \
+    '{"timestamp":"2026-10-18T15:00:03.000Z","type":"turn_context","payload":{"turn_id":"edit-turn-2"}}' \
+    '{"timestamp":"2026-10-18T15:00:03.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":200,"input_tokens":200}}}}' \
+    '{"timestamp":"2026-10-18T15:00:04.000Z","type":"event_msg","payload":{"type":"item_started","item":{"type":"DynamicToolCall","id":"write-success","tool":"write","arguments":{},"status":"in_progress"}}}' \
+    '{"timestamp":"2026-10-18T15:00:04.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"DynamicToolCall","id":"write-success","tool":"write","arguments":{},"status":"completed","success":true}}}' \
+    '{"timestamp":"2026-10-18T15:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":300,"input_tokens":300}}}}' \
+    '{"timestamp":"2026-10-18T15:00:06.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"positive-edit"}}' \
+    > "$rollout"
+  lab_env "$lab"
+  FM_RM_OPENCODE_DB="$lab/home/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" \
+    "$TOOL" mine --now 1792400300 >/dev/null || status=$?
+  expect_code 0 "$status" "positive Codex edit outcome mining succeeds"
+  out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
+  assert_equals "2" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .first_edit_turn')" "a failed write does not hide a later successful write"
+  assert_equals "200" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_exploration')" "exploration tokens stop at the successful write"
+  assert_equals "300" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_total')" "the completed task remains in the cohort"
+  pass "Codex first-edit timing requires positive outcomes"
 }
 
 test_mine_marks_codex_find_failures_unreadable() {
@@ -916,6 +948,7 @@ test_mine_marks_opencode_processing_failures_unreadable
 test_mine_marks_codex_projection_failures_unreadable
 test_mine_marks_malformed_candidates_unreadable
 test_completed_cohort_uses_completion_time_for_all_rollouts
+test_mine_codex_first_edit_requires_positive_outcome
 test_mine_marks_codex_find_failures_unreadable
 test_artifact_writers_fail_before_success_messages
 test_sweep_writes_report_and_refuses_overwrite

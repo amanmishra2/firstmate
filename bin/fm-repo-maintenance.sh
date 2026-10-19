@@ -26,6 +26,8 @@ LIB_DIR="$SCRIPT_DIR/lib"
 . "$LIB_DIR/fm-repo-maintenance-common.sh"
 # shellcheck source=bin/lib/fm-repo-maintenance-mine.sh
 . "$LIB_DIR/fm-repo-maintenance-mine.sh"
+# shellcheck source=bin/lib/fm-repo-maintenance-mine-codex.sh
+. "$LIB_DIR/fm-repo-maintenance-mine-codex.sh"
 # shellcheck source=bin/lib/fm-repo-maintenance-rank.sh
 . "$LIB_DIR/fm-repo-maintenance-rank.sh"
 # shellcheck source=bin/lib/fm-repo-maintenance-structure.sh

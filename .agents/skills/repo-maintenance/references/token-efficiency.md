@@ -50,7 +50,7 @@ Every source reports one status (`mined`, `empty`, `absent`, `sqlite3-missing`, 
 When a source is absent or unreadable, say so in the report and in any captain-facing summary; never describe a partial dataset as the week's read picture.
 A rising `skipped_empty` is normal, while a rising `skipped_error` means the store shape changed or candidate metadata was malformed and the adapter needs attention.
 
-File coverage is intentionally narrow: only successful tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing likewise recognizes named edit tools only after successful outcomes (OpenCode edit/write/patch/apply_patch; Codex apply_patch/write), pairing each Codex call and output by their identifiers and requiring its completed output item.
+File coverage is intentionally narrow: only successful tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing recognizes named edit tools only after a positive outcome (OpenCode edit/write/patch/apply_patch; Codex `FileChange` status `completed` or a `DynamicToolCall` completion with `success: true`). Codex `FunctionCallOutput` bodies and their completed items carry no success signal, so they remain unknown and do not stop exploration-token accumulation.
 
 ## Weekly rhythm
 
