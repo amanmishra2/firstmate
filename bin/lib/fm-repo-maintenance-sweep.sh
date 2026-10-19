@@ -164,10 +164,11 @@ this section with the evidence-backed findings list (category, anchor, why it ma
 
 ## Phased slice plan (pending)
 
-Phase 1 remains pending until its three receipts are recorded: a green test suite, zero broken
-imports, and a measured token-consumption drop on subsequent tasks. Phase 2 requires those receipts
-and the remaining domain packages to meet the four-level depth, per-folder SUMMARY.md, and
-unexempted 500-line standards.
+This build delivered the initial Phase 1 slices and missing SUMMARY.md scaffolding. Phase 1
+completion remains gated on three pending receipts: a green test suite, zero broken imports, and a
+measured token-consumption drop on subsequent tasks. Phase 2 requires those receipts and the
+remaining domain packages to meet the four-level depth, per-folder SUMMARY.md, and unexempted
+500-line standards.
 
 ## Summary: DO FIRST / DO LATER / DO NOT DO (pending)
 

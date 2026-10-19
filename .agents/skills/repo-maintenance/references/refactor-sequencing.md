@@ -8,6 +8,7 @@ This reference owns when refactors run relative to feature work, how a slice is 
 - Slices run in dependency order, one seam per slice, each leaving the project's tests green.
 - A slice never mixes behavior change with code motion; behavior changes ship as their own tasks.
 - Cold paths, stable schemas, and grandfathered directories stay unrefactored even when large; the tri-state rules in [`audit-playbook.md`](audit-playbook.md) own that call.
+- Preserve migration history and public compatibility contracts unless their removal is separately proven and authorized; record deletion and compatibility risks in the report.
 
 ## Slice shape
 

@@ -54,5 +54,5 @@ File coverage is intentionally narrow: only successful tool-attributed named `re
 
 1. Run `mine` once at the weekly boundary, before the per-project sweeps, so every project ranks against the same window.
 2. Sweep each project and read its `fix next` list against the tri-state rules.
-3. File the week's items per the audit playbook's filing rule, then leave the rest of the ranking as the next week's candidate pool.
+3. File every confirmed finding and slice per the audit playbook's filing rule; use the top-three ranking to order the backlog, not to cap filing.
 4. Compare rankings week over week: a file that stays hot after its fix is evidence the fix missed the real seam.

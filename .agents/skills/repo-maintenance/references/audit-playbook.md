@@ -14,13 +14,15 @@ A completed report keeps the instrument sections as written and fills the three 
 2. **Phased slice plan** - the ordered refactor slices, each with scope, dependencies, and the exact verification command; sequencing rules are owned by [`refactor-sequencing.md`](refactor-sequencing.md).
 3. **Summary: DO FIRST / DO LATER / DO NOT DO** - the tri-state verdict over the findings.
 
+Keep confirmed findings distinct from candidates and support each with evidence. Group the plan by independent workstream, record deletion and compatibility risks, name measurable improvements, and give the exact commands run with their passing receipts. Record inherited baseline failures separately so they are not attributed to a proposed slice.
+
 ## Audit procedure
 
 1. Read the report's instrument sections first: the ranking, the structure findings, and the coverage line.
 2. Run the project's own tooling for the mechanical checks - its linter, its type checker, its test suite, and import or export checks - rather than inventing parallel analysis.
 3. Search for the finding categories with bounded commands (`git grep`, the project's dead-code tooling, duplicate-math spot checks around the hottest files); never run unbounded repository-wide sweeps.
 4. Confirm every finding with a concrete anchor and a one-line reproduction or reasoning; drop anything that cannot be anchored.
-5. Write the findings, the slice plan, and the verdict into the report, then file the top items per the filing rule below.
+5. Write the findings, slice plan, and verdict into the report, then file every confirmed finding and slice per the filing rule below. Use the hot-file ranking to prioritize; it does not cap reporting or filing.
 
 The audit is read-only: it never edits the project, opens a branch, or runs state-changing commands.
 Every fix ships later as its own task with the report as its evidence.
@@ -37,7 +39,6 @@ Prefer repeated friction across distinct tasks over a single observation; a one-
 
 ## Filing rule
 
-- File at most three new maintenance items per project per week.
 - One item per confirmed finding or slice, with the anchor and the verification command in the body:
   `bin/fm-tasks-axi.sh add --mint "<title>" --kind ship --repo <name> --body "<anchors, scope, verification>"`
 - Do not duplicate an item already in the backlog; extend its note instead.

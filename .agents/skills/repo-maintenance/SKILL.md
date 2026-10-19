@@ -21,6 +21,12 @@ Files under `references/` are resources of this skill, not additional catalogued
 - On an explicit captain request (`/repo-maintenance`): run the sweep now, or work from the latest reports.
 - On intake of a maintenance item in the backlog: scope it through `references/audit-playbook.md` before dispatch.
 
+## Operating mode
+
+- **Audit and plan:** confirm evidence, complete the report, and file confirmed findings and slices; do not implement them.
+- **Execute:** implement only work already authorized through the normal task lifecycle, using the report as evidence.
+- **Recurring:** before auditing, inspect existing plans and open maintenance PRs; continue or update that work instead of creating duplicates. Make no change when the audit finds no new high-confidence maintenance value.
+
 ## The weekly sweep
 
 1. Mine the week's session logs once, fleet-wide:
@@ -31,7 +37,7 @@ Files under `references/` are resources of this skill, not additional catalogued
    Each sweep writes `data/repo-maintenance/<project>/<date>/report.md` with the instrument sections complete and the qualitative sections pending.
    Re-running the same date refuses when its report already exists.
 3. Complete each report's pending sections through `references/audit-playbook.md`, which owns their contract.
-4. File the sweep's "fix next" items and any confirmed findings into the backlog; the audit playbook's filing rule owns the limits and the exact command.
+4. File confirmed findings and slices into the backlog using the audit playbook's filing rule and exact command; the top-three "fix next" files guide priority, not filing volume.
    Never dispatch from the sweep itself; implementation ships later through the normal task lifecycle, with the report as its evidence.
 
 ## Reference modules

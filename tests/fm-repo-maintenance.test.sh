@@ -722,6 +722,8 @@ test_sweep_writes_report_and_refuses_overwrite() {
   assert_contains "$(cat "$report")" 'src/one.py` (THI 3096' "the report names the fix-next file"
   assert_contains "$(cat "$report")" "## Structure audit (instrument)" "the report carries the structure audit"
   assert_contains "$(cat "$report")" "pending qualitative audit" "the qualitative sections are visibly pending"
+  assert_contains "$(cat "$report")" "This build delivered the initial Phase 1 slices" "the report records Phase 1 delivery"
+  assert_contains "$(cat "$report")" "three pending receipts: a green test suite, zero broken imports" "the report keeps the Phase 1 receipts pending"
   assert_not_contains "$(cat "$report")" "$lab" "the report contains no fixture absolute path"
   assert_not_contains "$(cat "$report")" "$HOME" "the report contains no host home path"
   original=$(cat "$report")

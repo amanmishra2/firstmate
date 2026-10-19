@@ -34,8 +34,7 @@ This reference owns the universal repository baseline: layout, folder depth, per
 
 ## Rollout
 
-1. Pilot one project by implementing its first slices, scaffolding missing `SUMMARY.md` files, and measuring subsequent task read cost.
-   Phase 1 remains pending until the test suite is green, zero broken imports are confirmed, and subsequent tasks show a measured token-consumption drop.
+1. This build delivered the pilot's initial Phase 1 slices and missing `SUMMARY.md` scaffolding. Phase 1 completion remains gated on three pending receipts: a green test suite, zero broken imports, and a measured token-consumption drop on subsequent tasks.
 2. Phase 2 may begin only after all three pilot receipts are recorded and the remaining domain packages meet the four-level depth bound, per-folder summary standard, and unexempted 500-line ceiling.
 3. A new repository is scaffolded to this standard from its first commit: `src/` layout, folder summaries, entrypoints, and the size ceiling.
 
