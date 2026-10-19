@@ -984,7 +984,7 @@ portable_serial_assignments() {
   done < <(
     list_portable_serial | awk -v fallback="$PORTABLE_SERIAL_DEFAULT_WEIGHT_MS" '
       NR == FNR { if (NF) { hint[$1] = $2 }; next }
-      NF { weight = ($1 in hint) ? hint[$1] : fallback; printf "%s\t%s\n", weight, $1 }
+      NF { weight = ($1 in hint) ? hint[$1] : fallback; printf "%s\t%s\n", weight, $0 }
     ' <(portable_serial_weight_hints) - | LC_ALL=C sort -t$'\t' -k1,1nr -k2,2
   )
 }
