@@ -79,6 +79,7 @@ rm_run_sweep() {
   rm_parse_sweep_args "$@"
   rm_require_jq
   rm_init_roots
+  rm_init_tmp_root || rm_die_fail "cannot create a temp dir"
   local root date outdir report metrics rank_json structure_json tmp_report fix
   root=$(rm_registered_project_root "$SWEEP_PROJECT" 2>/dev/null || true)
   [ -n "$root" ] || rm_die_refuse "unknown project (not in $(rm_sanitize_path "$DATA/projects.md") and not 'firstmate')"

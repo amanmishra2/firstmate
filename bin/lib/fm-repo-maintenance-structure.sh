@@ -106,7 +106,7 @@ rm_structure_json() {
   local over_total=0 exempt_total=0 depth_total=0 dir_total=0 missing_total=0 gap_total=0 overlong_total=0 invalid_total=0 summaries_seen=0
   name=${logical:-$(basename -- "$root")}
   exemptions="$RM_DATA/$name/exemptions.txt"
-  tmp=$(rm_new_tmp structure) || rm_die_fail "cannot create a temp dir"
+  rm_new_tmp structure tmp || rm_die_fail "cannot create a temp dir"
   git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
     || rm_die_refuse "not a git work tree: $(rm_sanitize_path "$root")"
   if ! git -C "$root" ls-files -z > "$tmp/files0"; then
@@ -145,8 +145,8 @@ rm_structure_json() {
   while IFS= read -r f; do
     case "$f" in
       src/*)
-        n=$(printf '%s' "$f" | awk -F/ '{ print NF }')
-        if [ "$n" -gt $((DEPTH_MAX_BELOW_SRC + 1)) ]; then
+        n=$(printf '%s' "$f" | awk -F/ '{ print NF - 2 }')
+        if [ "$n" -gt "$DEPTH_MAX_BELOW_SRC" ]; then
           depth_total=$((depth_total + 1))
           [ "$depth_total" -le "$max" ] && jq -cn --arg path "$f" '{path: $path}' >> "$tmp/depth.ndjson"
         fi
@@ -233,6 +233,7 @@ rm_structure_json() {
 rm_run_structure() {
   rm_parse_structure_args "$@"
   rm_require_jq
+  rm_init_tmp_root || rm_die_fail "cannot create a temp dir"
   local json
   json=$(rm_structure_json "$STRUCTURE_ROOT" "$STRUCTURE_MAX" "$STRUCTURE_LOGICAL_NAME") || exit $?
   if [ "$STRUCTURE_JSON" -eq 1 ]; then

@@ -49,7 +49,7 @@ rm_run_rank_json() {
   local metrics=$1 project=$2 top=$3
   local tmp scope path reads tasks rereads maxb root abs lines bytes tokens size_src nav prioritized folder
   local unresolved=0
-  tmp=$(rm_new_tmp rank) || rm_die_fail "cannot create a temp dir"
+  rm_new_tmp rank tmp || rm_die_fail "cannot create a temp dir"
   : > "$tmp/rows.ndjson"
   if ! jq -r '.files[]? | [.scope, .path, (.reads|tostring), (.tasks|tostring), (.reread_reads // 0 | tostring), (.max_payload_bytes // 0 | tostring)] | @tsv' \
     "$metrics" > "$tmp/input.tsv" 2>/dev/null; then
@@ -127,6 +127,7 @@ rm_run_rank() {
   rm_parse_rank_args "$@"
   rm_require_jq
   rm_init_roots
+  rm_init_tmp_root || rm_die_fail "cannot create a temp dir"
   local metrics rank_json unresolved fix
   metrics=${RANK_METRICS:-$(rm_latest_metrics || true)}
   [ -n "$metrics" ] || rm_die_fail "no metrics file found under $(rm_sanitize_path "$METRICS_DIR") (run mine first)"

@@ -305,7 +305,8 @@ rm_run_mine() {
   end=$now
   out="$METRICS_DIR/$(rm_epoch_to_date "$now").json"
 
-  tmp=$(rm_new_tmp mine) || rm_die_fail "cannot create a temp dir"
+  rm_init_tmp_root || rm_die_fail "cannot create a temp dir"
+  rm_new_tmp mine tmp || rm_die_fail "cannot create a temp dir"
   : > "$tmp/tasks.ndjson"
   : > "$tmp/reads.ndjson"
   : > "$tmp/coverage.ndjson"

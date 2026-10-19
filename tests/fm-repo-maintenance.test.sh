@@ -38,7 +38,7 @@ make_lab() {
   mkdir -p "$home/data/repo-maintenance/proj" "$home/.local/share/opencode" "$home/.codex/sessions" "$pool"
 
   # Project clone fixture.
-  mkdir -p "$proj/src/a/b/c/d" "$proj/bin" "$proj/docs"
+  mkdir -p "$proj/src/a/b/c/d/e" "$proj/bin" "$proj/docs"
   ( cd "$proj" && git init -q )
   printf '# proj\n\nSetup and validation for the fixture.\n' > "$proj/README.md"
   # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
@@ -46,6 +46,7 @@ make_lab() {
   i=1
   while [ "$i" -le 700 ]; do printf 'line %s\n' "$i"; i=$((i + 1)); done > "$proj/src/one.py"
   printf 'deep = 1\n' > "$proj/src/a/b/c/d/deep.py"
+  printf 'deeper = 1\n' > "$proj/src/a/b/c/d/e/deeper.py"
   i=1
   while [ "$i" -le 620 ]; do printf 'x %s\n' "$i"; i=$((i + 1)); done > "$proj/big2.py"
   i=1
@@ -148,9 +149,9 @@ test_structure_reports_ceiling_depth_and_summary_gaps() {
   assert_equals "1" "$(printf '%s' "$out" | jq -r '.files_over_ceiling.exempt')" "big2.py is exempted"
   assert_equals "src/one.py" "$(printf '%s' "$out" | jq -r '.files_over_ceiling.listed[0].path')" "the listed file is one.py"
   assert_equals "zz-malformed.py" "$(printf '%s' "$out" | jq -r '.files_over_ceiling.listed[1].path')" "the malformed exemption file is listed"
-  assert_equals "1" "$(printf '%s' "$out" | jq -r '.depth_violations.total')" "the 5-level path under src/ violates the depth bound"
-  assert_equals "src/a/b/c/d/deep.py" "$(printf '%s' "$out" | jq -r '.depth_violations.listed[0].path')" "the depth violation is the deep file"
-  assert_equals "4" "$(printf '%s' "$out" | jq -r '.dirs_missing_summary.total')" "every tracked ancestor without SUMMARY.md is reported"
+  assert_equals "1" "$(printf '%s' "$out" | jq -r '.depth_violations.total')" "five directories below src/ violate the depth bound"
+  assert_equals "src/a/b/c/d/e/deeper.py" "$(printf '%s' "$out" | jq -r '.depth_violations.listed[0].path')" "the five-level path is the depth violation"
+  assert_equals "5" "$(printf '%s' "$out" | jq -r '.dirs_missing_summary.total')" "every tracked ancestor without SUMMARY.md is reported"
   assert_equals "bin/tool.sh" "$(printf '%s' "$out" | jq -r '.summary_gaps.listed[0].file')" "bin/tool.sh is not listed by its summary"
   assert_equals "1" "$(printf '%s' "$out" | jq -r '.summary_over_limit.total')" "docs/SUMMARY.md exceeds 30 lines"
   assert_equals "1" "$(printf '%s' "$out" | jq -r '.summary_invalid.total')" "invalid summary shape is reported"
@@ -236,7 +237,7 @@ test_mine_extracts_read_metrics_from_opencode() {
 }
 
 test_mine_resolves_file_paths_when_realpath_fails() {
-  local lab fakebin metrics
+  local lab fakebin metrics no_realpath_path
   lab=$(make_lab mine-realpath-fallback)
   fakebin="$lab/fake-bin"
   mkdir -p "$fakebin"
@@ -245,11 +246,37 @@ test_mine_resolves_file_paths_when_realpath_fails() {
   lab_env "$lab"
   PATH="$fakebin:$PATH" FM_HOME="$lab/home" \
     "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed when realpath failed"
+  no_realpath_path=$(fm_test_base_path_sans "$PATH" realpath) || fail "could not build PATH without realpath"
+  if PATH="$no_realpath_path" command -v realpath >/dev/null 2>&1; then
+    fail "realpath remained available in the missing-command fixture"
+  fi
+  PATH="$no_realpath_path" FM_HOME="$lab/home" \
+    "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed when realpath was absent"
   metrics="$lab/home/data/repo-maintenance/metrics/2026-10-19.json"
 
   assert_equals "3" "$(jq -r '.files[] | select(.path=="src/one.py") | .reads' "$metrics")" "existing files remain classifiable through their physical parent"
   assert_equals "projects/proj" "$(jq -r '.files[] | select(.path=="src/one.py") | .scope' "$metrics")" "the fallback retains project scope"
-  pass "mine resolves regular file paths when realpath fails"
+  pass "mine resolves regular file paths when realpath fails or is absent"
+}
+
+test_mine_cleanup_preserves_paths_with_spaces() {
+  local lab metrics
+  lab=$(make_lab mine-cleanup-spaces)
+  mkdir -p "$lab/tmp" "$lab/tmp area"
+  printf 'keep\n' > "$lab/tmp/sentinel"
+  lab_env "$lab"
+  TMPDIR="$lab/tmp area" FM_HOME="$lab/home" \
+    "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed with a TMPDIR containing spaces"
+  metrics="$lab/home/data/repo-maintenance/metrics/2026-10-19.json"
+  TMPDIR="$lab/tmp area" FM_HOME="$lab/home" \
+    "$TOOL" rank --metrics "$metrics" --project proj --json >/dev/null || fail "rank failed with a TMPDIR containing spaces"
+  TMPDIR="$lab/tmp area" FM_HOME="$lab/home" \
+    "$TOOL" structure "$lab/home/projects/proj" --json >/dev/null || fail "structure failed with a TMPDIR containing spaces"
+  TMPDIR="$lab/tmp area" FM_HOME="$lab/home" \
+    "$TOOL" sweep proj --date 2026-10-19 >/dev/null || fail "sweep failed with a TMPDIR containing spaces"
+
+  assert_equals "keep" "$(cat "$lab/tmp/sentinel")" "cleanup preserves the path before the space across every command"
+  pass "repo-maintenance cleanup preserves paths with spaces"
 }
 
 test_mine_never_records_raw_paths_or_content() {
@@ -645,6 +672,7 @@ test_structure_is_read_only_and_refuses_non_git
 test_structure_requires_routing_table_and_ignores_malformed_exemptions
 test_mine_extracts_read_metrics_from_opencode
 test_mine_resolves_file_paths_when_realpath_fails
+test_mine_cleanup_preserves_paths_with_spaces
 test_mine_never_records_raw_paths_or_content
 test_mine_codex_session_metrics
 test_mine_reports_absent_sources

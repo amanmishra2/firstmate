@@ -19,21 +19,25 @@ export METRICS_DIR="$RM_DATA/metrics" SOFT_CEILING_LINES=500 SUMMARY_MAX_LINES=3
   DEPTH_MAX_BELOW_SRC=4 DEFAULT_WINDOW_DAYS=7 DEFAULT_MAX_SESSIONS=250 \
   DEFAULT_TOP=10 DEFAULT_MAX_FINDINGS=30
 
-RM_CLEANUP_DIRS=""
+RM_CLEANUP_ROOT=""
 rm_cleanup_all() {
-  local d
-  for d in $RM_CLEANUP_DIRS; do
-    [ -n "$d" ] && rm -rf -- "$d"
-  done
-  RM_CLEANUP_DIRS=""
+  local root=$RM_CLEANUP_ROOT
+  RM_CLEANUP_ROOT=""
+  [ -n "$root" ] && rm -rf -- "$root"
 }
 trap rm_cleanup_all EXIT INT TERM HUP
 
+rm_init_tmp_root() {
+  [ -n "$RM_CLEANUP_ROOT" ] && return 0
+  RM_CLEANUP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/fm-repo-maintenance.XXXXXX") || return 1
+  export RM_CLEANUP_ROOT
+}
+
 rm_new_tmp() {
-  local d
-  d=$(mktemp -d "${TMPDIR:-/tmp}/fm-repo-maintenance-$1.XXXXXX") || return 1
-  RM_CLEANUP_DIRS="$RM_CLEANUP_DIRS $d"
-  printf '%s\n' "$d"
+  local name=$1 outvar=$2 d
+  [ -n "$RM_CLEANUP_ROOT" ] || return 1
+  d=$(mktemp -d "$RM_CLEANUP_ROOT/$name.XXXXXX") || return 1
+  printf -v "$outvar" '%s' "$d"
 }
 
 rm_die_usage() {
@@ -75,7 +79,7 @@ rm_file_mtime() {
 # Return the physical path when the path or its parent exists. A missing final
 # component is retained after its physical parent is resolved.
 rm_physical_path() {
-  local input=$1 parent base physical suffix=""
+  local input=$1 parent base physical="" suffix=""
   case "$input" in
     /*) ;;
     *) return 1 ;;
