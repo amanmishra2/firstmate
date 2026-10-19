@@ -82,11 +82,11 @@ INSERT INTO session_v2 VALUES ('ses_d', 'p', 'old-work', '$pool', 1792400150000)
 INSERT INTO session_v2 VALUES ('ses_unicode', 'p', 'unicode-work', '$pool', 1792400250000);
 INSERT INTO session_v2 VALUES ('ses_shell', 'p', 'shell-only', '$pool', 1792400260000);
 INSERT INTO session_message VALUES ('a1', 'ses_a', 'assistant', 1, 1792399900000,
- '{"tokens":{"input":1000,"output":100,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"$(printf 'p%.0s' $(seq 1 400))"}]}}]}');
+ '{"tokens":{"input":1000,"output":100,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"$(printf 'p%.0s' $(seq 1 400))"}]}},{"type":"tool","name":"edit","state":{"status":"error","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"edit failed"}]}}]}');
 INSERT INTO session_message VALUES ('a2', 'ses_a', 'assistant', 2, 1792399910000,
  '{"tokens":{"input":2000,"output":100,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"$(printf 'p%.0s' $(seq 1 410))"}]}}]}');
 INSERT INTO session_message VALUES ('a3', 'ses_a', 'assistant', 3, 1792399920000,
- '{"tokens":{"input":3000,"output":100,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"$(printf 'p%.0s' $(seq 1 420))"}]}},{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/README.md"},"content":[{"type":"text","text":"short"}]}}]}');
+ '{"tokens":{"input":3000,"output":100,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"$(printf 'p%.0s' $(seq 1 420))"}]}},{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/README.md"},"content":[{"type":"text","text":"short"}]}},{"type":"tool","name":"read","state":{"status":"error","input":{"path":"$pool/src/missing.py"},"content":[{"type":"text","text":"file not found"}]}}]}');
 INSERT INTO session_message VALUES ('a4', 'ses_a', 'assistant', 4, 1792399930000,
  '{"tokens":{"input":4000,"output":100,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"edit","state":{"status":"completed","input":{"path":"$pool/src/one.py"}}}]}');
 INSERT INTO session_message VALUES ('a0', 'ses_a', 'user', 0, 1792399890000, '{"text":"secret prompt text"}');
@@ -108,9 +108,12 @@ SQL
     printf '{"timestamp":"2026-10-18T10:00:01.000Z","type":"turn_context","payload":{"turn_id":"t1"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":5000,"input_tokens":5000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":8000,"input_tokens":8000},"last_token_usage":{"input_tokens":3000}}}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:02.750Z","type":"response_item","payload":{"type":"function_call","call_id":"write-fail","name":"write","arguments":"{}"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:02.800Z","type":"response_item","payload":{"type":"function_call_output","call_id":"write-fail","output":{"success":false}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.000Z","type":"turn_context","payload":{"turn_id":"t2"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.500Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\\"cmd\\":\\"printf changed > src/one.py\\"}"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:04.000Z","type":"response_item","payload":{"type":"function_call","name":"apply_patch","arguments":"{}"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"patch-success","name":"apply_patch","arguments":"{}"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call_output","call_id":"patch-success","output":{"success":true}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":10000,"input_tokens":10000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:06.000Z","type":"turn_context","payload":{"turn_id":"t3"}}\n'
   } > "$home/.codex/sessions/rollout-2026-10-18T10-00-00-fixture.jsonl"
@@ -223,6 +226,7 @@ test_mine_extracts_read_metrics_from_opencode() {
   assert_equals "1" "$(jq -r '.files[] | select(.path=="src/one.py") | .three_plus_read_tasks' "$metrics")" "one task read one.py three times"
   assert_equals "420" "$(jq -r '.files[] | select(.path=="src/one.py") | .max_payload_bytes' "$metrics")" "the largest observed payload wins"
   assert_equals "projects/proj" "$(jq -r '.files[] | select(.path=="src/one.py") | .scope' "$metrics")" "the pool worktree maps to the project scope"
+  assert_equals "0" "$(jq -r '[.files[] | select(.path=="src/missing.py")] | length' "$metrics")" "a failed read creates no file row or stale-size fallback"
 
   assert_equals "1" "$(jq -r '.external.reads' "$metrics")" "the out-of-scope read is counted"
   assert_equals "1" "$(jq -r '.external.tasks' "$metrics")" "the out-of-scope task is counted"
@@ -234,6 +238,38 @@ test_mine_extracts_read_metrics_from_opencode() {
   assert_not_contains "$(cat "$metrics")" '"id"' "task identifiers are not persisted"
   assert_not_contains "$(cat "$metrics")" 'curious-proj' "task slugs are not persisted"
   pass "mine extracts opencode read, edit, and token aggregates"
+}
+
+test_mine_keeps_distinct_home_and_code_roots_aligned() {
+  local lab code metrics rank
+  lab=$(make_lab mine-separate-roots)
+  code="$lab/code"
+  mkdir -p "$code"
+  printf 'code one\ncode two\ncode three\n' > "$code/README.md"
+  printf 'home one\nhome two\n' > "$lab/home/README.md"
+  sqlite3 "$lab/home/.local/share/opencode/opencode.db" <<SQL
+INSERT INTO session_v2 VALUES ('ses_code_root', 'p', 'code-root', '$code', 1792400270000);
+INSERT INTO session_v2 VALUES ('ses_home_root', 'p', 'home-root', '$lab/home', 1792400280000);
+INSERT INTO session_message VALUES ('code_read', 'ses_code_root', 'assistant', 1, 1792400270000,
+ '{"tokens":{"input":100,"output":10,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$code/README.md"},"content":[{"type":"text","text":"code"}]}}]}');
+INSERT INTO session_message VALUES ('home_read', 'ses_home_root', 'assistant', 1, 1792400280000,
+ '{"tokens":{"input":100,"output":10,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$lab/home/README.md"},"content":[{"type":"text","text":"home"}] }},{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$lab/home"},"content":[{"type":"text","text":"directory"}]}}]}');
+SQL
+  lab_env "$lab"
+  metrics="$lab/home/data/repo-maintenance/metrics/2026-10-19.json"
+  FM_HOME="$lab/home" FM_ROOT_OVERRIDE="$code" \
+    "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed with distinct home and code roots"
+  rank=$(FM_HOME="$lab/home" FM_ROOT_OVERRIDE="$code" \
+    "$TOOL" rank --metrics "$metrics" --json) || fail "rank failed with distinct home and code roots"
+
+  assert_equals "firstmate" "$(jq -r '.files[] | select(.path=="README.md" and .scope=="firstmate") | .scope' "$metrics")" "code-root reads use firstmate scope"
+  assert_equals "home" "$(jq -r '.files[] | select(.path=="README.md" and .scope=="home") | .scope' "$metrics")" "other home reads retain home scope"
+  assert_equals "3" "$(printf '%s' "$rank" | jq -r '.files[] | select(.scope=="firstmate" and .path=="README.md") | .lines')" "firstmate ranking reads the code-root file"
+  assert_equals "2" "$(printf '%s' "$rank" | jq -r '.files[] | select(.scope=="home" and .path=="README.md") | .lines')" "home ranking reads the home-root file"
+  assert_equals "2" "$(jq -r '.external.reads' "$metrics")" "an exact home-root read is external and failed reads are omitted"
+  assert_not_contains "$(cat "$metrics")" "$lab" "neither split-root paths nor the exact home root are persisted"
+  assert_equals "<FIRSTMATE>" "$(jq -r '.roots[] | select(.=="<FIRSTMATE>")' "$metrics")" "the separate code root is represented by a sanitized label"
+  pass "mine and rank keep split physical roots aligned"
 }
 
 test_mine_resolves_file_paths_when_realpath_fails() {
@@ -671,6 +707,7 @@ test_structure_reports_ceiling_depth_and_summary_gaps
 test_structure_is_read_only_and_refuses_non_git
 test_structure_requires_routing_table_and_ignores_malformed_exemptions
 test_mine_extracts_read_metrics_from_opencode
+test_mine_keeps_distinct_home_and_code_roots_aligned
 test_mine_resolves_file_paths_when_realpath_fails
 test_mine_cleanup_preserves_paths_with_spaces
 test_mine_never_records_raw_paths_or_content

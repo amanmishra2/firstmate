@@ -121,12 +121,14 @@ rm_path_under() {
 
 RM_APPROVED_HOME=""
 RM_OPERATOR_HOME=""
+RM_CODE_ROOT=""
 RM_EXTRA_ROOTS=()
 
 rm_init_roots() {
-  local root_list=${FM_RM_SESSION_ROOTS:-$FM_HOME:$HOME/.treehouse} r canonical
+  local root_list="$FM_HOME:$FM_ROOT:${FM_RM_SESSION_ROOTS:-$HOME/.treehouse}" r canonical
   RM_APPROVED_HOME=$(rm_physical_dir "$FM_HOME" 2>/dev/null || true)
   RM_OPERATOR_HOME=$(rm_physical_dir "$HOME" 2>/dev/null || true)
+  RM_CODE_ROOT=$(rm_physical_dir "$FM_ROOT" 2>/dev/null || true)
   RM_EXTRA_ROOTS=()
   while IFS= read -r r; do
     [ -n "$r" ] || continue
@@ -149,6 +151,12 @@ rm_sanitize_path() {
   local input=$1 physical root rel
   physical=$(rm_physical_path "$input" 2>/dev/null || true)
   [ -n "$physical" ] || { printf '<EXTERNAL>\n'; return 0; }
+  if [ -n "$RM_CODE_ROOT" ] && [ "$RM_CODE_ROOT" != "$RM_APPROVED_HOME" ] \
+    && rm_path_under "$physical" "$RM_CODE_ROOT"; then
+    rel=${physical#"$RM_CODE_ROOT"}
+    printf '<FIRSTMATE>%s\n' "$rel"
+    return 0
+  fi
   if [ -n "$RM_APPROVED_HOME" ] && rm_path_under "$physical" "$RM_APPROVED_HOME"; then
     rel=${physical#"$RM_APPROVED_HOME"}
     printf '<HOME>%s\n' "$rel"
@@ -169,7 +177,7 @@ rm_sanitize_path() {
   printf '<EXTERNAL>\n'
 }
 
-# Print scope and repository-relative path for a named read. Relative tool
+# Print scope and root-relative path for a named read. Relative tool
 # paths are resolved from the session cwd; symlink escapes are rejected.
 rm_classify_file() {
   local raw=$1 cwd=$2 candidate physical rel project root parts
@@ -179,6 +187,11 @@ rm_classify_file() {
   esac
   physical=$(rm_physical_path "$candidate" 2>/dev/null || true)
   [ -n "$physical" ] || return 1
+  [ -z "$RM_APPROVED_HOME" ] || [ "$physical" != "$RM_APPROVED_HOME" ] || return 1
+  [ -z "$RM_CODE_ROOT" ] || [ "$physical" != "$RM_CODE_ROOT" ] || return 1
+  for root in "${RM_EXTRA_ROOTS[@]+${RM_EXTRA_ROOTS[@]}}"; do
+    [ "$physical" != "$root" ] || return 1
+  done
 
   if [ -n "$RM_APPROVED_HOME" ] && rm_path_under "$physical" "$RM_APPROVED_HOME"; then
     rel=${physical#"$RM_APPROVED_HOME"/}
@@ -191,12 +204,26 @@ rm_classify_file() {
         printf 'projects/%s\t%s\n' "$project" "$rel"
         return 0
         ;;
-      ''|*/) return 1 ;;
-      *) printf 'firstmate\t%s\n' "$rel"; return 0 ;;
+      projects/*) return 1 ;;
     esac
   fi
 
+  if [ -n "$RM_CODE_ROOT" ] && rm_path_under "$physical" "$RM_CODE_ROOT"; then
+    rel=${physical#"$RM_CODE_ROOT"/}
+    [ -n "$rel" ] || return 1
+    printf 'firstmate\t%s\n' "$rel"
+    return 0
+  fi
+
+  if [ -n "$RM_APPROVED_HOME" ] && rm_path_under "$physical" "$RM_APPROVED_HOME"; then
+    rel=${physical#"$RM_APPROVED_HOME"/}
+    [ -n "$rel" ] || return 1
+    printf 'home\t%s\n' "$rel"
+    return 0
+  fi
+
   for root in "${RM_EXTRA_ROOTS[@]+${RM_EXTRA_ROOTS[@]}}"; do
+    [ "$root" != "$RM_CODE_ROOT" ] || continue
     if rm_path_under "$physical" "$root"; then
       rel=${physical#"$root"/}
       IFS=/ read -r -a parts <<< "$rel"
@@ -234,6 +261,9 @@ rm_scope_root() {
   case "$scope" in
     firstmate)
       rm_physical_dir "$FM_ROOT" 2>/dev/null || return 1
+      ;;
+    home)
+      rm_physical_dir "$FM_HOME" 2>/dev/null || return 1
       ;;
     projects/*)
       project=${scope#projects/}

@@ -34,7 +34,7 @@ def total_tokens:
   ((.ti // 0) + (.to_ // 0) + (.tr // 0) + (.tcr // 0) + (.tcw // 0));
 def input_tokens: (.ti // 0);
 def is_edit:
-  (.ptype == "tool" and
+  (.ptype == "tool" and .tool_status == "completed" and
    (.pname == "edit" or .pname == "write" or .pname == "patch" or .pname == "apply_patch"));
 '
 
@@ -45,7 +45,7 @@ OPENCODE_SESSION_BODY='
    | (.[$k] // {tokens: ($r | total_tokens), input: ($r | input_tokens), edit: false, reads: {}}) as $cur
    | .[$k] = ($cur
        | .edit = (.edit or ($r | is_edit))
-       | if ($r.ptype == "tool" and $r.pname == "read" and ($r.fpath // "") != "") then
+       | if ($r.ptype == "tool" and $r.tool_status == "completed" and $r.pname == "read" and ($r.fpath // "") != "") then
            .reads[$r.fpath] = ((.reads[$r.fpath] // 0) + 1)
          else . end)
  ))
@@ -83,7 +83,7 @@ EOF
     else
       jq -cn --argjson join "$task_key" '{external: true, join: $join}' >> "$RM_MINE_TMP/reads.ndjson"
     fi
-  done < <(printf '%s' "$rows" | jq -r '.[] | select(.ptype == "tool" and .pname == "read" and (.fpath // "") != "") | [.fpath, (.outlen // 0)] | @tsv' 2>/dev/null)
+  done < <(printf '%s' "$rows" | jq -r '.[] | select(.ptype == "tool" and .tool_status == "completed" and .pname == "read" and (.fpath // "") != "") | [.fpath, (.outlen // 0)] | @tsv' 2>/dev/null)
 }
 
 rm_mine_opencode() {
@@ -150,8 +150,11 @@ rm_mine_opencode() {
               json_extract(m.data,'\$.tokens.cache.write') AS tcw,
               json_extract(p.value,'\$.type') AS ptype,
               json_extract(p.value,'\$.name') AS pname,
+              json_extract(p.value,'\$.state.status') AS tool_status,
               json_extract(p.value,'\$.state.input.path') AS fpath,
-              length(CAST(json_extract(p.value,'\$.state.content[0].text') AS BLOB)) AS outlen
+              CASE WHEN json_extract(p.value,'\$.state.status') = 'completed'
+                THEN length(CAST(json_extract(p.value,'\$.state.content[0].text') AS BLOB))
+                ELSE 0 END AS outlen
        FROM session_message m
        LEFT JOIN json_each(m.data,'\$.content') p ON true
        WHERE m.session_id = '$id_sql' AND m.type = 'assistant'
@@ -196,16 +199,22 @@ rm_mine_codex_reduced() {
                // .payload.info.last_token_usage.prompt_tokens
                // null)}
     elif (.type == "response_item" and .payload.type == "function_call") then
-      {t: "call", name: (.payload.name // "")}
+      {t: "call", id: (.payload.call_id // ""), name: (.payload.name // "")}
+    elif (.type == "response_item" and .payload.type == "function_call_output") then
+      {t: "result", id: (.payload.call_id // ""), success: (.payload.output.success // false)}
     else empty end'
 }
 
 rm_mine_codex_metrics() {
   jq -s '
-    (reduce .[] as $e ({turns: 0, edit_at: null, total_last: 0, input_before: 0};
+    (reduce .[] as $e ({turns: 0, edit_at: null, total_last: 0, input_before: 0, edit_calls: {}};
        if $e.t == "turn" then .turns += 1
-       elif ($e.t == "call" and ($e.name == "apply_patch" or $e.name == "write") and .edit_at == null) then
-         .edit_at = (if .turns > 0 then .turns else 1 end)
+       elif ($e.t == "call" and ($e.name == "apply_patch" or $e.name == "write") and .edit_at == null and $e.id != "") then
+         .edit_calls[$e.id] = (if .turns > 0 then .turns else 1 end)
+       elif $e.t == "result" then
+         .edit_at = (if .edit_at == null and $e.success == true and .edit_calls[$e.id] != null
+                     then .edit_calls[$e.id] else .edit_at end)
+         | .edit_calls |= del(.[$e.id])
        elif $e.t == "tok" then
          .total_last = ($e.total // .total_last)
          | if .edit_at == null and $e.input != null then .input_before = $e.input else . end
@@ -316,8 +325,11 @@ rm_run_mine() {
   cov=$(rm_mine_codex "$tmp" "$start" "$end" "$MINE_MAX") || rm_die_fail "codex mining failed"
   printf '%s\n' "$cov" >> "$tmp/coverage.ndjson"
   coverage=$(jq -sc '.' "$tmp/coverage.ndjson") || rm_die_fail "cannot compose source coverage"
-  roots_json=$(jq -cn --argjson pools "$(printf '%s\n' "${RM_EXTRA_ROOTS[@]+${RM_EXTRA_ROOTS[@]}}" | jq -Rsc 'split("\n") | map(select(length > 0))')" \
-    '["<HOME>"] + ($pools | map("<POOL>"))') || rm_die_fail "cannot compose root labels"
+  roots_json=$(jq -cn --arg home "$RM_APPROVED_HOME" --arg code "$RM_CODE_ROOT" \
+    --argjson pools "$(printf '%s\n' "${RM_EXTRA_ROOTS[@]+${RM_EXTRA_ROOTS[@]}}" | jq -Rsc 'split("\n") | map(select(length > 0))')" \
+    '["<HOME>"] + (if $code != "" and $code != $home then ["<FIRSTMATE>"] else [] end) +
+     ([$pools[] | select(. != $code and . != $home)] | map("<POOL>"))') \
+    || rm_die_fail "cannot compose root labels"
 
   if ! mkdir -p -- "$(dirname -- "$out")"; then
     rm_die_fail "cannot create metrics directory"

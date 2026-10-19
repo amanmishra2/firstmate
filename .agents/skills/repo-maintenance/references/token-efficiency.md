@@ -9,8 +9,8 @@ The mechanics - flags, environment seams, paths, and output schemas - live in th
 
 - `files_read` / `unique_files` - total and distinct named file-read events (files opened).
 - `reread_reads` - repeat read events after the first read of each file in one task; `three_plus_read_files` is a separate count of files read at least three times.
-- `tokens_total` / `tokens_exploration` - the session's total usage counter, and prompt/input tokens before the first named edit. Output, reasoning, cache, and total usage counters do not enter `tokens_exploration`.
-- `first_edit_turn` / `turns` - the turn index where the first edit lands, and the task's turn count (time to first edit).
+- `tokens_total` / `tokens_exploration` - the session's total usage counter, and prompt/input tokens before the first successful named edit. Output, reasoning, cache, and total usage counters do not enter `tokens_exploration`.
+- `first_edit_turn` / `turns` - the turn index where the first named edit succeeds, and the task's turn count (time to first edit).
 - `dir` - the task's working directory as a sanitized label.
 
 A session counts only when its working directory is under the home, a project clone, or a configured pool root, so personal and foreign sessions never enter the aggregates.
@@ -37,8 +37,8 @@ Read the ranking as a work queue, not a verdict: a hot file that is cold, stable
 Outputs are aggregates only, and the guard is enforced at extraction time:
 
 - Prompts, diffs, message text, tool output, and file contents are never copied into outputs; only counts, sizes, and sanitized paths are.
-- Paths under the home or pool roots are stored as a scope plus repo-relative path, for example `projects/<name>/src/module.py`; the absolute forms never appear.
-- Local prefixes are sanitized to `<HOME>` and `<POOL>` labels; every other path is counted in the `external` bucket with no path recorded. Physical containment is checked after resolving symlinks, and traversal or unknown absolute paths become `<EXTERNAL>`.
+- Project paths, code-root paths, and other paths under the approved home are stored relative to their matching scope; the absolute forms never appear.
+- Local prefixes are sanitized to `<HOME>`, `<FIRSTMATE>`, and `<POOL>` labels; every other path is counted in the `external` bucket with no path recorded. Physical containment is checked after resolving symlinks, and traversal, exact roots, or unknown absolute paths become `<EXTERNAL>`.
 - Coverage records what was scanned, what was skipped, and why, so a partial run is never presented as a complete week.
 
 ## Coverage honesty
@@ -47,7 +47,7 @@ Every source reports one status (`mined`, `empty`, `absent`, `sqlite3-missing`, 
 When a source is absent or unreadable, say so in the report and in any captain-facing summary; never describe a partial dataset as the week's read picture.
 A rising `skipped_empty` is normal (sessions updated inside the window whose messages are older), while a rising `skipped_error` means the store shape changed or candidate metadata was malformed and the adapter needs attention. Codex eligibility uses rollout file modification time, ordered newest first before the cap.
 
-File coverage is intentionally narrow: only tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing likewise recognizes named edit tools only (OpenCode edit/write/patch/apply_patch; Codex apply_patch/write).
+File coverage is intentionally narrow: only successful tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing likewise recognizes named edit tools only after successful outcomes (OpenCode edit/write/patch/apply_patch; Codex apply_patch/write).
 
 ## Weekly rhythm
 
