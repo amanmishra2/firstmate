@@ -124,7 +124,7 @@ EOF
 - First edit timing includes only named edit tools (`edit`, `write`, `patch`, `apply_patch` for OpenCode; `apply_patch`, `write` for Codex). Shell-mediated edits are excluded.
 EOF
     jq -r --argjson lines "$SOFT_CEILING_LINES" '
-      "- Structure totals: files over \($lines) lines \(.files_over_ceiling.total) (exempt \(.files_over_ceiling.exempt)); depth violations \(.depth_violations.total); dirs missing SUMMARY.md \(.dirs_missing_summary.total) of \(.dirs_missing_summary.dirs); summary gaps \(.summary_gaps.total); invalid summaries \(.summary_invalid.total); over-long summaries \(.summary_over_limit.total); entrypoints ok=\(.entrypoints.ok)"' <<<"$structure_json" 2>/dev/null
+      "- Structure totals: files over \($lines) lines \(.files_over_ceiling.total) (exempt \(.files_over_ceiling.exempt)); depth violations \(.depth_violations.total); dirs missing SUMMARY.md \(.dirs_missing_summary.total) of \(.dirs_missing_summary.dirs); summary gaps \(.summary_gaps.total); invalid summaries \(.summary_invalid.total); root orphan files \(.root_orphans.total); over-long summaries \(.summary_over_limit.total); entrypoints ok=\(.entrypoints.ok)"' <<<"$structure_json" 2>/dev/null
     printf '\n'
 
     printf '## Token heat ranking (instrument)\n\n'
@@ -151,6 +151,8 @@ EOF
       (.summary_gaps.listed[] | "  - `\(.file)` not in `\(.summary)`"),
       "- Invalid SUMMARY.md shapes: \(.summary_invalid.total)",
       (.summary_invalid.listed[] | "  - `\(.summary)` (\(.reasons | join(", ")))"),
+      "- Root orphan files: \(.root_orphans.total)",
+      (.root_orphans.listed[] | "  - `\(.file)`"),
       "- Summaries over \(.summary_over_limit.max_lines) lines: \(.summary_over_limit.total)",
       (.summary_over_limit.listed[] | "  - `\(.summary)` (\(.lines) lines)"),
       "- Entrypoints: README.md=\(.entrypoints.readme) AGENTS.md=\(.entrypoints.agents) routing_ok=\(.entrypoints.routing_ok) ok=\(.entrypoints.ok)"'

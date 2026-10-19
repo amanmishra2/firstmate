@@ -11,10 +11,10 @@ This reference owns the universal repository baseline: layout, folder depth, per
 ## Per-folder navigation
 
 - Every subdirectory carries a `SUMMARY.md`, at most 30 lines:
-  - A heading with the subsystem name.
-  - A `Role:` line with the single-sentence subsystem charter.
-- A table of every file in the folder: `` | `file.py` | responsibility | key exported symbols | ``. Related files may share one row when each filename is an exact backticked entry in the File cell.
-- A tracked file counts as listed when its basename is an exact File cell entry in its folder's `SUMMARY.md`; substring lookalikes do not count, and the audit reports every file that is not.
+  - A substantive heading with the subsystem name.
+  - A substantive `Role:` line with the single-sentence subsystem charter.
+  - A table of every direct file in the folder: `` | `file.py` | responsibility | key exported symbols | ``. File and Responsibility cells are substantive; use `-` in Key Exported Symbols when a file exports none. Related files may share one row when each filename is an exact backticked entry in the File cell.
+- A tracked file counts as listed when its basename is an exact File cell entry in its direct folder's `SUMMARY.md`; nested descendants do not satisfy an ancestor summary, substring lookalikes do not count, and the audit reports every file that is not.
 - Write summaries from the code, not from guesses: open each file's public surface, name its responsibility in one phrase, and list its exports.
   Update the summary in the same change that adds, removes, or renames a file.
 
@@ -28,9 +28,10 @@ This reference owns the universal repository baseline: layout, folder depth, per
 
 ## Entrypoints and discoverability
 
-- Root `README.md`: what the project is, how to set it up, and how to validate it.
-- Root `AGENTS.md`: the task routing table mapping task to domain files to tests. `CLAUDE.md` alone does not satisfy this entrypoint.
-- Zero orphan files: every tracked file is reachable from its folder's `SUMMARY.md` and the root entrypoints.
+- Root `README.md`: a heading and substantive body describing what the project is, how to set it up, and how to validate it.
+- Root `AGENTS.md`: the task routing table mapping task to domain files to tests, with each Files and Tests cell pointing to a real tracked file. `CLAUDE.md` alone does not satisfy this entrypoint.
+- Root-level tracked files other than the root entrypoints are accounted for only when a valid root route reaches them; otherwise the audit reports them as orphan files.
+- Zero orphan files: every tracked file is reachable from its direct folder's `SUMMARY.md` or the root entrypoints.
 
 ## Rollout
 

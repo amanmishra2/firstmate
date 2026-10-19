@@ -38,11 +38,11 @@ make_lab() {
   mkdir -p "$home/data/repo-maintenance/proj" "$home/.local/share/opencode" "$home/.codex/sessions" "$pool"
 
   # Project clone fixture.
-  mkdir -p "$proj/src/a/b/c/d/e" "$proj/bin" "$proj/docs"
+  mkdir -p "$proj/src/a/b/c/d/e" "$proj/bin" "$proj/docs" "$proj/tests"
   ( cd "$proj" && git init -q )
   printf '# proj\n\nSetup and validation for the fixture.\n' > "$proj/README.md"
   # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
-  printf '# proj agents\n\n| Task | Domain | Files | Tests |\n| --- | --- | --- | --- |\n| maintain fixture | tooling | `bin/` | `tests/` |\n' > "$proj/AGENTS.md"
+  printf '# proj agents\n\n| Task | Domain | Files | Tests |\n| --- | --- | --- | --- |\n| maintain fixture | tooling | `bin/tool.sh` | `tests/fixture.test.sh` |\n' > "$proj/AGENTS.md"
   i=1
   while [ "$i" -le 700 ]; do printf 'line %s\n' "$i"; i=$((i + 1)); done > "$proj/src/one.py"
   printf 'deep = 1\n' > "$proj/src/a/b/c/d/deep.py"
@@ -52,6 +52,9 @@ make_lab() {
   i=1
   while [ "$i" -le 620 ]; do printf 'z %s\n' "$i"; i=$((i + 1)); done > "$proj/zz-malformed.py"
   printf '#!/usr/bin/env bash\necho tool\n' > "$proj/bin/tool.sh"
+  printf '#!/usr/bin/env bash\nprintf "fixture test\\n"\n' > "$proj/tests/fixture.test.sh"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
+  printf '# tests\n\nRole: fixture validation tests.\n\n| File | Responsibility | Key Exported Symbols |\n| --- | --- | --- |\n| `fixture.test.sh` | fixture checks | - |\n' > "$proj/tests/SUMMARY.md"
   printf 'unicode fixture\n' > "$proj/src/unicode.txt"
   # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
   printf '# bin\n\nRole: fixture tooling.\n\n| File | Responsibility | Key Exported Symbols |\n| --- | --- | --- |\n| `other.sh` | fixture | - |\n' > "$proj/bin/SUMMARY.md"
@@ -167,6 +170,7 @@ test_structure_reports_ceiling_depth_and_summary_gaps() {
   assert_equals "1" "$(printf '%s' "$out" | jq -r '.summary_invalid.total')" "invalid summary shape is reported"
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.routing_ok')" "AGENTS.md has a concrete routing row"
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.ok')" "root entrypoints and routing are valid"
+  assert_contains "$(printf '%s' "$out" | jq -r '.root_orphans.listed[].file')" "big2.py" "root-level tracked files are audited"
   pass "structure reports ceiling, depth, and SUMMARY findings with exemptions honored"
 }
 
@@ -222,7 +226,7 @@ test_structure_is_read_only_and_refuses_non_git() {
 }
 
 test_structure_requires_routing_table_and_ignores_malformed_exemptions() {
-  local lab proj out
+  local lab proj out human
   lab=$(make_lab structure-routing)
   lab_env "$lab"
   proj="$lab/home/projects/proj"
@@ -238,12 +242,45 @@ test_structure_requires_routing_table_and_ignores_malformed_exemptions() {
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.agents')" "an empty AGENTS.md is still detected"
   assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.agents_valid')" "an empty AGENTS.md is invalid"
   assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.ok')" "an empty AGENTS.md cannot produce a clean result"
+  printf '# one line\n' > "$proj/README.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for one-line README"
+  assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.readme_valid')" "a one-line README is invalid"
+  printf '# proj\n\nSetup and validation for the fixture.\n' > "$proj/README.md"
   printf '# malformed routing\n' > "$proj/AGENTS.md"
   out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for malformed AGENTS.md"
-  assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.agents_valid')" "a nonempty AGENTS.md is detected"
+  assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.agents_valid')" "a one-line AGENTS.md route is invalid"
   assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.routing_ok')" "a malformed AGENTS.md has no routing table"
   assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.ok')" "a malformed AGENTS.md cannot produce a clean result"
-  pass "structure requires a routing table and ignores malformed exemptions"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
+  printf '# proj agents\n\n| Task | Domain | Files | Tests |\n| --- | --- | --- | --- |\n| todo | todo | `missing.py` | `missing-test.sh` |\n' > "$proj/AGENTS.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for placeholder routing"
+  assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.routing_ok')" "placeholder task and domain cells with missing targets are invalid"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
+  printf '# proj agents\n\n| Task | Domain | Files | Tests |\n| --- | --- | --- | --- |\n| maintain fixture | tooling | `bin/tool.sh` plus missing.py | `tests/fixture.test.sh` |\n' > "$proj/AGENTS.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for mixed routing targets"
+  assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.routing_ok')" "a valid target plus stray missing path is invalid"
+  printf '# proj agents\n\n| Task | Domain | Files | Tests |\n| --- | --- | --- | --- |\n| maintain fixture | tooling | `bin/tool.sh` | `tests/fixture.test.sh` |\n' > "$proj/AGENTS.md"
+  printf 'orphan = 1\n' > "$proj/orphan.py"
+  ( cd "$proj" && git add AGENTS.md orphan.py && git commit -qm 'add root orphan fixture' )
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for root orphan"
+  assert_contains "$(printf '%s' "$out" | jq -r '.root_orphans.listed[].file')" "orphan.py" "unlisted tracked root files are reported"
+  human=$($TOOL structure "$proj") || fail "human structure output failed for root orphan"
+  assert_contains "$human" "root orphan files:" "human structure output reports root orphan totals"
+  assert_contains "$human" "  orphan.py" "human structure output lists root orphan paths"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
+  printf '# TODO - fill this in\n\nRole: fixture sources.\n\n| File | Responsibility | Key Exported Symbols |\n| --- | --- | --- |\n| `one.py` | fixture logic | - |\n' > "$proj/src/SUMMARY.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for placeholder summary heading"
+  assert_contains "$(printf '%s' "$out" | jq -r '.summary_invalid.listed[].summary')" "src/SUMMARY.md" "placeholder summary headings are invalid"
+  assert_contains "$(printf '%s' "$out" | jq -r '.summary_gaps.listed[] | select(.summary == "src/SUMMARY.md") | .file')" "src/one.py" "invalid summaries do not silently pass child files"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
+  printf '# src\n\nRole: TODO - fill this in.\n\n| File | Responsibility | Key Exported Symbols |\n| --- | --- | --- |\n| `one.py` | fixture logic | - |\n' > "$proj/src/SUMMARY.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for placeholder summary role"
+  assert_contains "$(printf '%s' "$out" | jq -r '.summary_invalid.listed[].summary')" "src/SUMMARY.md" "placeholder summary roles are invalid"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
+  printf '# src\n\nRole: fixture sources.\n\n| File | Responsibility | Key Exported Symbols |\n| --- | --- | --- |\n| `one.py` | fixture logic | TODO - fill this in |\n' > "$proj/src/SUMMARY.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for placeholder summary exports"
+  assert_contains "$(printf '%s' "$out" | jq -r '.summary_invalid.listed[].summary')" "src/SUMMARY.md" "placeholder summary exports are invalid"
+  pass "structure validates entrypoint content, routing targets, and root orphans"
 }
 
 test_mine_extracts_read_metrics_from_opencode() {
@@ -523,14 +560,23 @@ test_rank_zeroes_thi_for_distinct_single_reads_and_rejects_traversal() {
 {"files":[
   {"scope":"projects/proj","path":"README.md","reads":3,"tasks":3,"reread_reads":0,"max_payload_bytes":12},
   {"scope":"projects/proj","path":"../README.md","reads":1,"tasks":1,"reread_reads":1,"max_payload_bytes":12},
-  {"scope":"projects/proj","path":"escape.txt","reads":1,"tasks":1,"reread_reads":1,"max_payload_bytes":12}
+  {"scope":"projects/proj","path":"escape.txt","reads":1,"tasks":1,"reread_reads":1,"max_payload_bytes":12},
+  {"scope":"projects/proj","path":"bin/tool.sh","reads":1,"tasks":1,"reread_reads":0,"max_payload_bytes":12},
+  {"scope":"projects/proj","path":"src/stale.py","reads":1,"tasks":1,"reread_reads":0,"max_payload_bytes":12},
+  {"scope":"projects/proj","path":"src/unicode.txt","reads":1,"tasks":1,"reread_reads":0,"max_payload_bytes":12},
+  {"scope":"projects/proj","path":"zz-malformed.py","reads":1,"tasks":1,"reread_reads":0,"max_payload_bytes":12}
 ]}
 JSON
   rank=$(PATH="$fakebin:$PATH" FM_HOME="$lab/home" "$TOOL" rank --metrics "$metrics" --project proj --json) || fail "rank exited nonzero"
   assert_equals "0" "$(printf '%s' "$rank" | jq -r '.files[0].thi')" "one read in each distinct task has zero THI"
   assert_equals "2" "$(printf '%s' "$rank" | jq -r '.unresolved')" "traversal and symlink escape rows are unresolved"
-  assert_equals "1" "$(printf '%s' "$rank" | jq -r '.files | length')" "traversal rows never reach ranking output"
-  pass "rank zeroes single reads and rejects traversal"
+  assert_equals "5" "$(printf '%s' "$rank" | jq -r '.files | length')" "resolvable rows reach ranking output"
+  assert_equals "true" "$(printf '%s' "$rank" | jq -r '.files[] | select(.path=="README.md") | .nav')" "a valid root entrypoint is navigable"
+  assert_equals "false" "$(printf '%s' "$rank" | jq -r '.files[] | select(.path=="bin/tool.sh") | .nav')" "a nested route cannot bypass a missing summary entry"
+  assert_equals "false" "$(printf '%s' "$rank" | jq -r '.files[] | select(.path=="src/stale.py") | .nav')" "a stale path is not navigable"
+  assert_equals "false" "$(printf '%s' "$rank" | jq -r '.files[] | select(.path=="src/unicode.txt") | .nav')" "an unlisted direct child is not navigable"
+  assert_equals "false" "$(printf '%s' "$rank" | jq -r '.files[] | select(.path=="zz-malformed.py") | .nav')" "a slashless orphan is not navigable"
+  pass "rank consumes validated navigation for existing, stale, and orphan paths"
 }
 
 test_mine_marks_session_enumeration_failures_unreadable() {

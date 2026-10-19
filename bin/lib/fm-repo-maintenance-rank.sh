@@ -47,7 +47,7 @@ rm_latest_metrics() {
 
 rm_run_rank_json() {
   local metrics=$1 project=$2 top=$3
-  local tmp scope path reads tasks rereads maxb root abs lines bytes tokens size_src nav prioritized folder
+  local tmp scope path reads tasks rereads maxb root abs lines bytes tokens size_src nav prioritized
   local unresolved=0
   rm_new_tmp rank tmp || rm_die_fail "cannot create a temp dir"
   : > "$tmp/rows.ndjson"
@@ -83,17 +83,7 @@ rm_run_rank_json() {
       tokens=$(( (maxb + 3) / 4 ))
       size_src=observed
     fi
-    if [ "$lines" = null ]; then
-      nav=1
-    else
-      case "$path" in
-        */*)
-          folder=${path%/*}
-          if [ -f "$root/$folder/SUMMARY.md" ]; then nav=1; else nav=0; fi
-          ;;
-        *) nav=1 ;;
-      esac
-    fi
+    if rm_navigation_path_ok "$root" "$path"; then nav=1; else nav=0; fi
     prioritized=0
     if [ "$lines" != null ] && [ "$lines" -gt "$SOFT_CEILING_LINES" ]; then prioritized=1; fi
     [ "$nav" -eq 0 ] && prioritized=1
