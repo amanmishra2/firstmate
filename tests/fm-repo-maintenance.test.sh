@@ -116,16 +116,16 @@ SQL
     printf '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":5000,"input_tokens":5000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":8000,"input_tokens":8000},"last_token_usage":{"input_tokens":3000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.750Z","type":"response_item","payload":{"type":"function_call","call_id":"write-fail","name":"write","arguments":"{}"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:02.800Z","type":"response_item","payload":{"type":"function_call_output","call_id":"write-fail","output":{"success":false}}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:02.900Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"message","call_id":"write-fail","output":"not a completed function call"}}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:02.800Z","type":"response_item","payload":{"type":"function_call_output","id":"output-write-fail","call_id":"write-fail","output":{"success":false}}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:02.900Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-write-fail","name":"write","output":"failed"}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.000Z","type":"turn_context","payload":{"turn_id":"t2"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.500Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-string","name":"exec_command","arguments":"{\\"cmd\\":\\"printf changed > src/one.py\\"}"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:03.750Z","type":"response_item","payload":{"type":"function_call_output","call_id":"exec-string","output":"command completed"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:03.750Z","type":"response_item","payload":{"type":"function_call_output","id":"output-exec-string","call_id":"exec-string","output":"command completed"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.875Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-array","name":"exec_command","arguments":"{}"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:03.937Z","type":"response_item","payload":{"type":"function_call_output","call_id":"exec-array","output":[{"type":"text","text":"command completed"}]}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:03.937Z","type":"response_item","payload":{"type":"function_call_output","id":"output-exec-array","call_id":"exec-array","output":[{"type":"text","text":"command completed"}]}}\n'
     printf '{"timestamp":"2026-10-18T10:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"patch-success","name":"apply_patch","arguments":"{}"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call_output","call_id":"patch-success","output":"command completed"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:04.750Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"function_call_output","call_id":"patch-success","output":"command completed"}}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call_output","id":"output-patch-success","call_id":"patch-success","output":[{"type":"input_text","text":"command completed"}]}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:04.750Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-patch-success","name":"apply_patch","output":"command completed"}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":10000,"input_tokens":10000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:06.000Z","type":"turn_context","payload":{"turn_id":"t3"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:07.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"task-a"}}\n'
@@ -711,7 +711,12 @@ test_completed_cohort_uses_completion_time_for_all_rollouts() {
     '{"timestamp":"2026-10-18T10:00:01.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":900},"last_token_usage":{"input_tokens":200}}}}' \
     '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"old-a"}}' \
     '{"timestamp":"2026-10-18T10:00:03.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"old-b"}}' \
+    '{"timestamp":"2026-10-18T10:00:03.500Z","type":"turn_context","payload":{"turn_id":"old-b-turn"}}' \
     '{"timestamp":"2026-10-18T10:00:04.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":800,"input_tokens":800}}}}' \
+    '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call","call_id":"old-b-edit","name":"write","arguments":"{}"}}' \
+    '{"timestamp":"2026-10-18T10:00:04.750Z","type":"response_item","payload":{"type":"function_call_output","id":"output-old-b-edit","call_id":"old-b-edit","output":{"success":true}}}' \
+    '{"timestamp":"2026-10-18T10:00:04.875Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-old-b-edit","name":"write","output":"edited"}}}' \
+    '{"timestamp":"2026-10-18T10:00:04.900Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":1600,"input_tokens":1600}}}}' \
     > "$completed_old"
   printf '%s\n' \
     "{\"timestamp\":\"2026-10-18T11:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_completed_new\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T11:00:00.000Z\"}}" \
@@ -754,6 +759,7 @@ test_completed_cohort_uses_completion_time_for_all_rollouts() {
   assert_equals "100,111,222,900" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex") | .tokens_total] | sort | join(",")')" "completion time admits matching task spans"
   assert_equals "100:100,111:111,222:222,900:300" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex") | "\(.tokens_total):\(.tokens_exploration)"] | sort | join(",")')" "cumulative token snapshots become per-task deltas and fallback inputs accumulate"
   assert_equals "4" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex")] | length')" "multiple completed tasks produce separate rows"
+  assert_equals "900:0:null" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex" and .tokens_total==900) | "\(.tokens_total):\(.turns):\(.first_edit_turn // "null")"] | join(",")')" "unfinished task turns, tokens, and edits do not enter its completed sibling"
   assert_not_contains "$out" '"tokens_total":800' "unfinished task spans are omitted"
   assert_not_contains "$out" '"tokens_total":200' "out-of-window task spans are omitted"
   assert_not_contains "$out" "cdx_in_progress" "unfinished rollout identifiers are not persisted"

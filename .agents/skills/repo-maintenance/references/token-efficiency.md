@@ -14,8 +14,9 @@ The mechanics - flags, environment seams, paths, and output schemas - live in th
 - `dir` - the task's working directory as a sanitized label.
 
 A session counts only when its working directory is under the home, a project clone, or a configured pool root, so personal and foreign sessions never enter the aggregates.
-The weekly window selects completed work by completion time: OpenCode uses `time_idle` with `idle_outcome`, and Codex uses each paired `task_complete` event timestamp. Once a task span is selected, its events contribute, including turns before the window.
-Codex rollouts contribute one metric row for each completed task span: unfinished task spans are omitted, while codex reads files through the shell, which carries no structured file attribution, and the instrument never guesses paths out of command text.
+The weekly window selects completed work by completion time: OpenCode uses `time_idle` with `idle_outcome`, and Codex pairs each `task_started` with its matching `task_complete` and selects spans by that completion timestamp.
+Once a task span is selected, its events contribute, including turns before the window; later unfinished or out-of-window tasks in the same rollout cannot alter it.
+Codex reads files through the shell, which carries no structured file attribution, and the instrument never guesses paths out of command text.
 The OpenCode database and Codex sessions directory must resolve inside the physical `FM_HOME`; an external source override is skipped before enumeration and recorded only as `<EXTERNAL>` with status `outside-home`.
 
 ## Token Heat Index
@@ -49,7 +50,7 @@ Every source reports one status (`mined`, `empty`, `absent`, `sqlite3-missing`, 
 When a source is absent or unreadable, say so in the report and in any captain-facing summary; never describe a partial dataset as the week's read picture.
 A rising `skipped_empty` is normal, while a rising `skipped_error` means the store shape changed or candidate metadata was malformed and the adapter needs attention.
 
-File coverage is intentionally narrow: only successful tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing likewise recognizes named edit tools only after successful outcomes (OpenCode edit/write/patch/apply_patch; Codex apply_patch/write).
+File coverage is intentionally narrow: only successful tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing likewise recognizes named edit tools only after successful outcomes (OpenCode edit/write/patch/apply_patch; Codex apply_patch/write), pairing each Codex call and output by their identifiers and requiring its completed output item.
 
 ## Weekly rhythm
 

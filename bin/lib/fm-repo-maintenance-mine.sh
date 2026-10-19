@@ -225,6 +225,8 @@ rm_mine_codex_event_projection() {
       if type == "string" then . else "" end;
     def number_or_null:
       if type == "number" then . else null end;
+    def boolean_or_empty:
+      if type == "boolean" then tostring else "" end;
 
     inputs
     | (.payload | object_or_empty) as $payload
@@ -232,6 +234,7 @@ rm_mine_codex_event_projection() {
     | ($info.total_token_usage | object_or_empty) as $total
     | ($info.last_token_usage | object_or_empty) as $last
     | ($payload.item | object_or_empty) as $item
+    | ($payload.output | object_or_empty) as $output
     | if .type == "turn_context" then
       {kind: "turn", cwd: "", sid: "", id: "", name: "",
          total: null, input_cumulative: null, input_last: null, ts: ""}
@@ -240,6 +243,12 @@ rm_mine_codex_event_projection() {
          id: ($payload.call_id | scalar_id),
          name: ($payload.name | string_or_empty),
          total: null, input_cumulative: null, input_last: null, ts: ""}
+      elif .type == "response_item" and ($payload.type // "") == "function_call_output" then
+        {kind: "output", cwd: "", sid: "",
+         id: ($payload.call_id | scalar_id),
+         item_id: ($payload.id | scalar_id),
+         success: ($output.success | boolean_or_empty),
+         name: "", total: null, input_cumulative: null, input_last: null, ts: ""}
       elif .type == "event_msg" and ($payload.type // "") == "token_count" then
         {kind: "token", cwd: "", sid: "", id: "", name: "",
          total: ($total.total_tokens | number_or_null),
@@ -258,14 +267,14 @@ rm_mine_codex_event_projection() {
          total: null, input_cumulative: null, input_last: null,
          ts: (.timestamp | string_or_empty)}
       elif .type == "event_msg" and ($payload.type // "") == "item_completed"
-           and ($item.type // "") == "function_call_output" then
+           and ($item.type // "") == "FunctionCallOutput" then
         {kind: "item_completed", cwd: "", sid: "",
-         id: ($item.call_id | scalar_id), name: "",
+         id: ($item.id | scalar_id), name: "",
          total: null, input_cumulative: null, input_last: null, ts: ""}
       else
         empty
       end
-    | [.kind, .cwd, .sid, .id, .name,
+    | [.kind, .cwd, .sid, .id, .name, (.item_id // ""), (.success // ""),
        (if .total == null then "" else (.total | tostring) end),
        (if .input_cumulative == null then "" else (.input_cumulative | tostring) end),
        (if .input_last == null then "" else (.input_last | tostring) end), .ts]
@@ -275,7 +284,7 @@ rm_mine_codex_event_projection() {
 
 rm_mine_codex_rollout() {
   local file=$1 start=$2 end=$3 tasks_out=$4 events_out=$5 dir_label=$6
-  local line event kind cwd sid id name total input_cum input_last ts empty_field="__FM_RM_EMPTY__"
+  local line event kind cwd sid id name item_id success total input_cum input_last ts empty_field="__FM_RM_EMPTY__"
   local active=0 current_id="" turns=0 edit_at=""
   local rollout_total_last=0 rollout_input_cum_last=0
   local task_total_base=0 task_input_base=0 task_total_last=0
@@ -283,7 +292,8 @@ rm_mine_codex_rollout() {
   local edit_input_cum=0 edit_input_cum_seen=0 edit_input_fallback_sum=0
   local parse_error=0 rows=0 completion_epoch edit_json=""
   local total_delta=0 input_delta=0
-  local pending_ids=() pending_turns=() kept_ids=() kept_turns=()
+  local pending_ids=() pending_turns=() pending_item_ids=() pending_outcomes=()
+  local kept_ids=() kept_turns=() kept_item_ids=() kept_outcomes=()
   local pending_index=0 pending_j=0
 
   : > "$tasks_out" || return 1
@@ -294,13 +304,15 @@ rm_mine_codex_rollout() {
   fi
   while IFS= read -r line || [ -n "$line" ]; do
     event=$line
-    IFS=$'\t' read -r kind cwd sid id name total input_cum input_last ts <<EOF
+    IFS=$'\t' read -r kind cwd sid id name item_id success total input_cum input_last ts <<EOF
 $event
 EOF
     [ "$cwd" = "$empty_field" ] && cwd=""
     [ "$sid" = "$empty_field" ] && sid=""
     [ "$id" = "$empty_field" ] && id=""
     [ "$name" = "$empty_field" ] && name=""
+    [ "$item_id" = "$empty_field" ] && item_id=""
+    [ "$success" = "$empty_field" ] && success=""
     [ "$total" = "$empty_field" ] && total=""
     [ "$input_cum" = "$empty_field" ] && input_cum=""
     [ "$input_last" = "$empty_field" ] && input_last=""
@@ -323,6 +335,8 @@ EOF
         edit_input_fallback_sum=0
         pending_ids=()
         pending_turns=()
+        pending_item_ids=()
+        pending_outcomes=()
         if [ -z "$id" ]; then
           parse_error=1
           continue
@@ -373,16 +387,31 @@ EOF
             else
               pending_turns+=(1)
             fi
+            pending_item_ids+=("")
+            pending_outcomes+=("")
             ;;
         esac
+        ;;
+      output)
+        [ "$active" -eq 1 ] || continue
+        [ -n "$id" ] && [ -n "$item_id" ] || continue
+        pending_index=0
+        while [ "$pending_index" -lt "${#pending_ids[@]}" ]; do
+          if [ "${pending_ids[$pending_index]}" = "$id" ]; then
+            pending_item_ids[$pending_index]=$item_id
+            pending_outcomes[$pending_index]=$success
+            break
+          fi
+          pending_index=$((pending_index + 1))
+        done
         ;;
       item_completed)
         [ "$active" -eq 1 ] || continue
         [ -n "$id" ] || continue
         pending_index=0
         while [ "$pending_index" -lt "${#pending_ids[@]}" ]; do
-          if [ "${pending_ids[$pending_index]}" = "$id" ]; then
-            if [ -z "$edit_at" ]; then
+          if [ "${pending_item_ids[$pending_index]}" = "$id" ]; then
+            if [ "${pending_outcomes[$pending_index]}" != "false" ] && [ -z "$edit_at" ]; then
               edit_at=${pending_turns[$pending_index]}
               if [ "$task_input_cum_seen" -eq 1 ]; then
                 edit_input_cum=$task_input_cum_last
@@ -393,16 +422,29 @@ EOF
             fi
             kept_ids=()
             kept_turns=()
+            kept_item_ids=()
+            kept_outcomes=()
             pending_j=0
             while [ "$pending_j" -lt "${#pending_ids[@]}" ]; do
               if [ "$pending_j" -ne "$pending_index" ]; then
                 kept_ids+=("${pending_ids[$pending_j]}")
                 kept_turns+=("${pending_turns[$pending_j]}")
+                kept_item_ids+=("${pending_item_ids[$pending_j]}")
+                kept_outcomes+=("${pending_outcomes[$pending_j]}")
               fi
               pending_j=$((pending_j + 1))
             done
-            pending_ids=("${kept_ids[@]}")
-            pending_turns=("${kept_turns[@]}")
+            if [ "${#kept_ids[@]}" -gt 0 ]; then
+              pending_ids=("${kept_ids[@]}")
+              pending_turns=("${kept_turns[@]}")
+              pending_item_ids=("${kept_item_ids[@]}")
+              pending_outcomes=("${kept_outcomes[@]}")
+            else
+              pending_ids=()
+              pending_turns=()
+              pending_item_ids=()
+              pending_outcomes=()
+            fi
             break
           fi
           pending_index=$((pending_index + 1))
@@ -464,6 +506,8 @@ EOF
         edit_input_fallback_sum=0
         pending_ids=()
         pending_turns=()
+        pending_item_ids=()
+        pending_outcomes=()
         ;;
     esac
   done < "$events_out"
