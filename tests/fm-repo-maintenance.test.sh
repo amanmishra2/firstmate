@@ -853,9 +853,9 @@ test_mine_codex_first_edit_uses_completed_function_call_output() {
     '{"timestamp":"2026-10-18T15:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"positive-edit"}}' \
     '{"timestamp":"2026-10-18T15:00:01.000Z","type":"turn_context","payload":{"turn_id":"edit-turn-1"}}' \
     '{"timestamp":"2026-10-18T15:00:01.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
-    '{"timestamp":"2026-10-18T15:00:02.000Z","type":"response_item","payload":{"type":"function_call","call_id":"write-failed","name":"write","arguments":"{}"}}' \
-    '{"timestamp":"2026-10-18T15:00:02.125Z","type":"response_item","payload":{"type":"function_call_output","id":"output-write-failed","call_id":"write-failed","output":"Error: write was denied"}}' \
-    '{"timestamp":"2026-10-18T15:00:02.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-write-failed","output":"Error: write was denied"}}}' \
+    '{"timestamp":"2026-10-18T15:00:02.000Z","type":"response_item","payload":{"type":"function_call","call_id":"patch-failed","name":"apply_patch","arguments":"{}"}}' \
+    '{"timestamp":"2026-10-18T15:00:02.125Z","type":"response_item","payload":{"type":"function_call_output","id":"output-patch-failed","call_id":"patch-failed","output":"patch rejected: invalid context"}}' \
+    '{"timestamp":"2026-10-18T15:00:02.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-patch-failed","output":"patch rejected: invalid context"}}}' \
     '{"timestamp":"2026-10-18T15:00:03.000Z","type":"turn_context","payload":{"turn_id":"edit-turn-2"}}' \
     '{"timestamp":"2026-10-18T15:00:03.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":200,"input_tokens":200}}}}' \
     '{"timestamp":"2026-10-18T15:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"write-success","name":"write","arguments":"{}"}}' \
@@ -869,10 +869,10 @@ test_mine_codex_first_edit_uses_completed_function_call_output() {
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
   expect_code 0 "$status" "positive Codex edit outcome mining succeeds"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
-  assert_equals "2" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .first_edit_turn')" "a failed write does not hide a later successful write"
+  assert_equals "2" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .first_edit_turn')" "a rejected patch does not hide a later successful write"
   assert_equals "200" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_exploration')" "exploration tokens stop at the successful write"
   assert_equals "300" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_total')" "the completed task remains in the cohort"
-  assert_not_contains "$out" "Error: write was denied" "tool output text is not persisted in metrics"
+  assert_not_contains "$out" "patch rejected: invalid context" "tool output text is not persisted in metrics"
   pass "Codex first-edit timing recognizes completed function outputs"
 }
 

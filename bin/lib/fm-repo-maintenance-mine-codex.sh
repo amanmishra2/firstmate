@@ -37,7 +37,7 @@ rm_mine_codex_event_projection() {
       elif type == "object" then (.text | string_or_empty)
       else "" end;
     def output_has_error:
-      output_text | test("(^|[\r\n])[[:space:]]*(error|execution error|failed|failure)([[:space:]:]|$)"; "i");
+      output_text | test("(^|[\r\n])[[:space:]]*(error|execution error|failed|failure|patch[[:space:]]+rejected)([[:space:]:]|$)"; "i");
     def number_or_null:
       if type == "number" then . else null end;
 
