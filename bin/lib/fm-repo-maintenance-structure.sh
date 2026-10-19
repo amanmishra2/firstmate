@@ -38,53 +38,53 @@ rm_structure_text_is_meaningful() {
 }
 
 rm_entrypoint_valid() {
-  local file=$1
+  local file=$1 line first="" first_seen=0 meaningful_lines=0
   [ -s "$file" ] || return 1
-  awk '
-    function placeholder(line) {
-      line=tolower(line)
-      return line ~ /(^|[^[:alnum:]])(todo|tbd|tba|n[\/]?a|none|placeholder|pending|unknown|fill[[:space:]_-]*me|change[[:space:]_-]*me|fill[[:space:]]+this[[:space:]]+in)([^[:alnum:]]|$)/
-    }
-    function meaningful(line, compact) {
-      compact=tolower(line)
-      gsub(/[[:space:]`*_#|:.-]/, "", compact)
-      return compact != "" && compact !~ /^(todo|tbd|tba|na|none|placeholder|pending|unknown|fillme|changeme)$/ && compact ~ /[[:alnum:]]/ && !placeholder(line)
-    }
-    NF { if (lines == 0) first=$0; lines++; meaningful_lines += meaningful($0) }
-    END { exit(lines >= 2 && meaningful_lines >= 2 && first ~ /^#[[:space:]]/ ? 0 : 1) }
-  ' "$file" 2>/dev/null
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$first_seen" -eq 0 ]; then
+      first=$line
+      first_seen=1
+    fi
+    if rm_structure_text_is_meaningful "$line"; then
+      meaningful_lines=$((meaningful_lines + 1))
+    fi
+  done < "$file"
+  [ "$first_seen" -eq 1 ] && [[ "$first" =~ ^#[[:space:]] ]] && [ "$meaningful_lines" -ge 2 ]
 }
 
 rm_readme_valid() {
-  local file=$1
+  local file=$1 line heading section="other" description=0 setup_seen=0 setup_body=0 validation_seen=0 validation_body=0
   rm_entrypoint_valid "$file" || return 1
-  awk '
-    function placeholder(line) {
-      line=tolower(line)
-      return line ~ /(^|[^[:alnum:]])(todo|tbd|tba|n[\/]?a|none|placeholder|pending|unknown|fill[[:space:]_-]*me|change[[:space:]_-]*me|fill[[:space:]]+this[[:space:]]+in)([^[:alnum:]]|$)/
-    }
-    function meaningful(line, compact) {
-      compact=tolower(line)
-      gsub(/[[:space:]`*_#|:.-]/, "", compact)
-      return compact != "" && compact !~ /^(todo|tbd|tba|na|none|placeholder|pending|unknown|fillme|changeme)$/ && compact ~ /[[:alnum:]]/ && !placeholder(line)
-    }
-    function setup_content(line) {
-      line=tolower(line)
-      return line ~ /(^|[^[:alnum:]])(setup|install|usage|get[[:space:]-]*started)([^[:alnum:]]|$)/
-    }
-    function validation_content(line) {
-      line=tolower(line)
-      return line ~ /(^|[^[:alnum:]])(validat[[:alpha:]]*|test|check|lint|verif[[:alpha:]]*)([^[:alnum:]]|$)/
-    }
-    NF {
-      if (meaningful($0)) {
-        if ($0 !~ /^[[:space:]]*#/ && !setup_content($0) && !validation_content($0)) description=1
-      }
-      if (setup_content($0)) setup=1
-      if (validation_content($0)) validation=1
-    }
-    END { exit(description && setup && validation ? 0 : 1) }
-  ' "$file" 2>/dev/null
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ "$line" =~ ^[[:space:]]*#{1,6}[[:space:]]+(.+) ]]; then
+      heading=$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')
+      section=other
+      if [[ "$heading" =~ (^|[^[:alnum:]])(setup|install|usage|quick[[:space:]-]*start|get[[:space:]-]*started)([^[:alnum:]]|$) ]]; then
+        section=setup
+        setup_seen=1
+      elif [[ "$heading" =~ (^|[^[:alnum:]])(validat[[:alpha:]]*|test(s)?|check(s)?|lint|verif[[:alpha:]]*)([^[:alnum:]]|$) ]]; then
+        section=validation
+        validation_seen=1
+      elif [[ "$heading" =~ (^|[^[:alnum:]])contribut(e|ing|ions?)([^[:alnum:]]|$) ]]; then
+        section=contributing
+      fi
+      continue
+    fi
+    rm_structure_text_is_meaningful "$line" || continue
+    case "$section" in
+      setup) setup_body=1 ;;
+      validation) validation_body=1 ;;
+      contributing)
+        if printf '%s\n' "$line" | grep -Eiq '(^|[^[:alnum:]])(validat[[:alpha:]]*|test(s)?|check(s)?|lint|verif[[:alpha:]]*)([^[:alnum:]]|$)'; then
+          validation_seen=1
+          validation_body=1
+        fi
+        ;;
+      *) description=1 ;;
+    esac
+  done < "$file"
+  [ "$description" -eq 1 ] && [ "$setup_seen" -eq 1 ] && [ "$setup_body" -eq 1 ] && \
+    [ "$validation_seen" -eq 1 ] && [ "$validation_body" -eq 1 ]
 }
 
 rm_route_rows() {
@@ -330,12 +330,28 @@ rm_import_direction_scan() {
       }
       return clean
     }
-    function emit_target(target, clean, parts, count, layer) {
+    function emit_target(target, is_include, clean, parts, count, i, layer, seen_cli, seen_web, slash) {
       clean=cleaned_target(target)
       if (clean == "") return
-      count=split(clean, parts, /[\/:.]+/)
-      layer=parts[1]
-      if (layer == "cli" || layer == "web") print NR "\t" layer
+      if (is_include) {
+        slash=0
+        for (i=1; i<=length(clean); i++) if (substr(clean, i, 1) == "/") slash=i
+        if (!slash) return
+        clean=substr(clean, 1, slash - 1)
+        count=split(clean, parts, /\/+/)
+      } else {
+        count=split(clean, parts, /[\/:.]+/)
+      }
+      for (i=1; i<=count; i++) {
+        layer=parts[i]
+        if (layer == "cli" && !seen_cli) {
+          print NR "\tcli"
+          seen_cli=1
+        } else if (layer == "web" && !seen_web) {
+          print NR "\tweb"
+          seen_web=1
+        }
+      }
     }
     function outside_quotes(line, end, quote, escaped, i, ch) {
       quote=""
@@ -370,7 +386,7 @@ rm_import_direction_scan() {
       line=$0
       if (line ~ /^[[:space:]]*#[[:space:]]*include[[:space:]]*/) {
         sub(/^[[:space:]]*#[[:space:]]*include[[:space:]]*/, "", line)
-        emit_target(line)
+        emit_target(line, 1)
         next
       }
       sub(/[[:space:]]*\/\/.*/, "", line)
@@ -400,7 +416,7 @@ rm_import_direction_scan() {
         else if (i == 2) keyword="require"
         else keyword="include"
         target=keyword_target(line, keyword)
-        if (target != "") emit_target(target)
+        if (target != "") emit_target(target, keyword == "include")
       }
     }
   ' "$1"

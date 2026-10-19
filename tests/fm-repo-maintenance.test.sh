@@ -185,15 +185,15 @@ test_structure_checks_domain_import_direction() {
   lab=$(make_lab structure-import-direction)
   lab_env "$lab"
   proj="$lab/home/projects/proj"
-  printf 'from domain.utils import cli\nfrom cli.commands import run\nimport web.routes\nimport domain.cli\n# import web.fake\n// import cli.fake\nmessage = "use cli.fake"\n' > "$proj/src/one.py"
+  printf 'from domain.utils import cli\nfrom cli.commands import run\nimport web.routes\nimport domain.cli\nimport example.com/app/cli/commands\nuse crate::web::routes;\n# import web.fake\n// import cli.fake\nmessage = "use cli.fake"\n' > "$proj/src/one.py"
   mkdir -p "$proj/src/cli"
   printf 'from domain.service import execute\n' > "$proj/src/cli/runner.py"
   printf '#include <cli/runner.h>\n#include <domain/cli.h>\n' > "$proj/src/native.c"
   ( cd "$proj" && git add src/one.py src/cli/runner.py src/native.c && git commit -qm 'exercise import direction audit' )
   out=$("$TOOL" structure "$proj" --json) || fail "structure exited nonzero for import direction"
 
-  assert_equals "3" "$(printf '%s' "$out" | jq -r '.import_direction.total')" "only actual presentation module targets are reported"
-  assert_equals "cli,cli,web" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[].layer] | sort | join(",")')" "both presentation layers are checked"
+  assert_equals "6" "$(printf '%s' "$out" | jq -r '.import_direction.total')" "qualified and top-level presentation module targets are reported"
+  assert_equals "cli,cli,cli,cli,web,web" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[].layer] | sort | join(",")')" "both presentation layers are checked across qualified targets"
   assert_equals "0" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[] | select(.path=="src/cli/runner.py")] | length')" "presentation-to-domain imports are allowed"
   assert_equals "1" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[] | select(.path=="src/native.c" and .line==1 and .layer=="cli")] | length')" "C preprocessor includes are scanned"
   assert_equals "0" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[] | select(.path=="src/one.py" and .line==1)] | length')" "imported names do not become findings"
@@ -280,6 +280,12 @@ test_structure_requires_routing_table_and_ignores_malformed_exemptions() {
   printf '# proj\n\nA fixture project for structure checks.\n\n## Setup\n\nRun the fixture setup commands.\n\n## Validation\n\nRun the fixture tests.\n' > "$proj/README.md"
   out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for descriptive README"
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.readme_valid')" "a descriptive setup and validation README is valid"
+  printf '# proj\n\nA fixture project for structure checks.\n\n## Setup\n\nRun the fixture setup commands.\n\n## Validation\n\n' > "$proj/README.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for empty validation section"
+  assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.readme_valid')" "an empty validation section is invalid"
+  printf '# proj\n\nA fixture project for structure checks.\n\n## Setup\n\n## Validation\n\nRun the fixture tests.\n' > "$proj/README.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for empty setup section"
+  assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.readme_valid')" "an empty setup section is invalid"
   printf '# malformed routing\n' > "$proj/AGENTS.md"
   out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for malformed AGENTS.md"
   assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.agents_valid')" "a one-line AGENTS.md route is invalid"
@@ -847,8 +853,9 @@ test_mine_codex_first_edit_uses_completed_function_call_output() {
     '{"timestamp":"2026-10-18T15:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"positive-edit"}}' \
     '{"timestamp":"2026-10-18T15:00:01.000Z","type":"turn_context","payload":{"turn_id":"edit-turn-1"}}' \
     '{"timestamp":"2026-10-18T15:00:01.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
-    '{"timestamp":"2026-10-18T15:00:02.000Z","type":"event_msg","payload":{"type":"item_started","item":{"type":"DynamicToolCall","id":"write-failed","tool":"write","arguments":{},"status":"in_progress"}}}' \
-    '{"timestamp":"2026-10-18T15:00:02.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"DynamicToolCall","id":"write-failed","tool":"write","arguments":{},"status":"failed","success":false}}}' \
+    '{"timestamp":"2026-10-18T15:00:02.000Z","type":"response_item","payload":{"type":"function_call","call_id":"write-failed","name":"write","arguments":"{}"}}' \
+    '{"timestamp":"2026-10-18T15:00:02.125Z","type":"response_item","payload":{"type":"function_call_output","id":"output-write-failed","call_id":"write-failed","output":"Error: write was denied"}}' \
+    '{"timestamp":"2026-10-18T15:00:02.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-write-failed","output":"Error: write was denied"}}}' \
     '{"timestamp":"2026-10-18T15:00:03.000Z","type":"turn_context","payload":{"turn_id":"edit-turn-2"}}' \
     '{"timestamp":"2026-10-18T15:00:03.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":200,"input_tokens":200}}}}' \
     '{"timestamp":"2026-10-18T15:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"write-success","name":"write","arguments":"{}"}}' \
@@ -865,6 +872,7 @@ test_mine_codex_first_edit_uses_completed_function_call_output() {
   assert_equals "2" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .first_edit_turn')" "a failed write does not hide a later successful write"
   assert_equals "200" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_exploration')" "exploration tokens stop at the successful write"
   assert_equals "300" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_total')" "the completed task remains in the cohort"
+  assert_not_contains "$out" "Error: write was denied" "tool output text is not persisted in metrics"
   pass "Codex first-edit timing recognizes completed function outputs"
 }
 

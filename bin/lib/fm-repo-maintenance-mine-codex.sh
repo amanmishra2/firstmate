@@ -30,6 +30,14 @@ rm_mine_codex_event_projection() {
       else "" end;
     def string_or_empty:
       if type == "string" then . else "" end;
+    def output_text:
+      if type == "string" then .
+      elif type == "array" then
+        map(if type == "string" then . elif type == "object" then (.text | string_or_empty) else "" end) | join("\n")
+      elif type == "object" then (.text | string_or_empty)
+      else "" end;
+    def output_has_error:
+      output_text | test("(^|[\r\n])[[:space:]]*(error|execution error|failed|failure)([[:space:]:]|$)"; "i");
     def number_or_null:
       if type == "number" then . else null end;
 
@@ -90,7 +98,8 @@ rm_mine_codex_event_projection() {
       elif .type == "event_msg" and ($payload.type // "") == "item_completed"
            and ($item.type // "") == "FunctionCallOutput" then
         {kind: "item_completed", cwd: "", sid: "",
-         id: ($item.id | scalar_id), name: "", success: "true",
+         id: ($item.id | scalar_id), name: "",
+         success: (if (($item.output // "") | output_has_error) then "false" else "true" end),
          total: null, input_cumulative: null, input_last: null, ts: ""}
       else
         empty
