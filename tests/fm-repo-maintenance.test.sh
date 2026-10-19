@@ -117,7 +117,6 @@ SQL
     printf '{"timestamp":"2026-10-18T10:00:02.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":8000,"input_tokens":8000},"last_token_usage":{"input_tokens":3000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.750Z","type":"response_item","payload":{"type":"function_call","call_id":"write-fail","name":"write","arguments":"{}"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.800Z","type":"response_item","payload":{"type":"function_call_output","id":"output-write-fail","call_id":"write-fail","output":"write failed"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:02.900Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-write-fail","name":"write","output":"failed"}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.000Z","type":"turn_context","payload":{"turn_id":"t2"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.500Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-string","name":"exec_command","arguments":"{\\"cmd\\":\\"printf changed > src/one.py\\"}"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.750Z","type":"response_item","payload":{"type":"function_call_output","id":"output-exec-string","call_id":"exec-string","output":"command completed"}}\n'
@@ -176,6 +175,23 @@ test_structure_reports_ceiling_depth_and_summary_gaps() {
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.ok')" "root entrypoints and routing are valid"
   assert_contains "$(printf '%s' "$out" | jq -r '.root_orphans.listed[].file')" "big2.py" "root-level tracked files are audited"
   pass "structure reports ceiling, depth, and SUMMARY findings with exemptions honored"
+}
+
+test_structure_checks_domain_import_direction() {
+  local lab proj out
+  lab=$(make_lab structure-import-direction)
+  lab_env "$lab"
+  proj="$lab/home/projects/proj"
+  printf '\nfrom cli.commands import run\nimport web.routes\n' >> "$proj/src/one.py"
+  mkdir -p "$proj/src/cli"
+  printf 'from domain.service import execute\n' > "$proj/src/cli/runner.py"
+  ( cd "$proj" && git add src/one.py src/cli/runner.py && git commit -qm 'exercise import direction audit' )
+  out=$("$TOOL" structure "$proj" --json) || fail "structure exited nonzero for import direction"
+
+  assert_equals "2" "$(printf '%s' "$out" | jq -r '.import_direction.total')" "each domain-to-presentation import is reported"
+  assert_equals "cli,web" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[].layer] | sort | join(",")')" "both presentation layers are checked"
+  assert_equals "0" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[] | select(.path=="src/cli/runner.py")] | length')" "presentation-to-domain imports are allowed"
+  pass "structure checks domain-to-presentation imports"
 }
 
 test_structure_and_sweep_list_all_findings() {
@@ -347,9 +363,10 @@ SQL
     "$TOOL" rank --metrics "$metrics" --json) || fail "rank failed with distinct home and code roots"
 
   assert_equals "firstmate" "$(jq -r '.files[] | select(.path=="README.md" and .scope=="firstmate") | .scope' "$metrics")" "code-root reads use firstmate scope"
-  assert_equals "home" "$(jq -r '.files[] | select(.path=="README.md" and .scope=="home") | .scope' "$metrics")" "other home reads retain home scope"
+  assert_equals "home" "$(jq -r '.files[] | select(.path=="root" and .scope=="home") | .scope' "$metrics")" "other home reads use a root-area bucket"
   assert_equals "3" "$(printf '%s' "$rank" | jq -r '.files[] | select(.scope=="firstmate" and .path=="README.md") | .lines')" "firstmate ranking reads the code-root file"
-  assert_equals "2" "$(printf '%s' "$rank" | jq -r '.files[] | select(.scope=="home" and .path=="README.md") | .lines')" "home ranking reads the home-root file"
+  assert_equals "0" "$(printf '%s' "$rank" | jq -r '[.files[] | select(.scope=="home")] | length')" "home area aggregates are excluded from file ranking"
+  assert_equals "0" "$(printf '%s' "$rank" | jq -r '.unresolved')" "home area aggregates do not become unresolved files"
   assert_equals "2" "$(jq -r '.external.reads' "$metrics")" "an exact home-root read is external and failed reads are omitted"
   assert_not_contains "$(cat "$metrics")" "$lab" "neither split-root paths nor the exact home root are persisted"
   assert_equals "<FIRSTMATE>" "$(jq -r '.roots[] | select(.=="<FIRSTMATE>")' "$metrics")" "the separate code root is represented by a sanitized label"
@@ -407,10 +424,43 @@ test_mine_never_records_raw_paths_or_content() {
   assert_not_contains "$(cat "$metrics")" "$lab" "no fixture absolute path appears in the metrics"
   assert_not_contains "$(cat "$metrics")" "/tmp/outside" "no out-of-scope path appears in the metrics"
   assert_not_contains "$(cat "$metrics")" "secret prompt" "no prompt text appears in the metrics"
-  assert_contains "$(cat "$metrics")" "<HOME>/.local/share/opencode/opencode.db" "the source path is sanitized"
+  assert_contains "$(cat "$metrics")" "<HOME>/.local" "the source path is reduced to its home area"
   assert_contains "$(cat "$metrics")" "<POOL>/proj-abc123/1/proj" "the task directory is sanitized"
-  assert_contains "$(cat "$metrics")" "\"dir\": \"<HOME>/projects/proj\"" "the home clone directory is sanitized"
+  assert_contains "$(cat "$metrics")" "\"dir\": \"<HOME>/projects\"" "the home clone directory is reduced to its area"
+  assert_not_contains "$(cat "$metrics")" "<HOME>/projects/proj" "the home clone name is not persisted"
+  assert_not_contains "$(cat "$metrics")" "opencode.db" "the home source filename is not persisted"
   pass "mine stores sanitized paths and no prompt, path, or content payloads"
+}
+
+test_mine_aggregates_home_paths_by_area() {
+  local lab home metrics out rank
+  lab=$(make_lab mine-home-areas)
+  home="$lab/home"
+  mkdir -p "$home/data/private" "$home/state/session/private" "$home/config/private"
+  printf 'backlog payload\n' > "$home/data/private/backlog.json"
+  printf 'receipt payload\n' > "$home/data/private/receipt.json"
+  printf 'session payload\n' > "$home/state/session/private/session.json"
+  printf 'config payload\n' > "$home/config/private/agent.toml"
+  sqlite3 "$home/.local/share/opencode/opencode.db" <<SQL
+INSERT INTO session_message VALUES ('b2', 'ses_b', 'assistant', 2, 1792399990000,
+ '{"tokens":{"input":120,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$home/data/private/backlog.json"},"content":[{"type":"text","text":"private backlog"}]}},{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$home/data/private/receipt.json"},"content":[{"type":"text","text":"private receipt"}]}},{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$home/state/session/private/session.json"},"content":[{"type":"text","text":"private session"}]}},{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$home/config/private/agent.toml"},"content":[{"type":"text","text":"private config"}]}}]}');
+SQL
+  metrics=$(lab_mine "$lab")
+  out=$(cat "$metrics")
+  rank=$("$TOOL" rank --metrics "$metrics" --json) || fail "rank failed for home area aggregates"
+
+  assert_equals "2" "$(printf '%s' "$out" | jq -r '.files[] | select(.scope=="home" and .path=="data") | .reads')" "data reads aggregate across private files"
+  assert_equals "config,data,state" "$(printf '%s' "$out" | jq -r '[.files[] | select(.scope=="home") | .path] | sort | join(",")')" "home file rows retain only top-level areas"
+  assert_equals "<HOME>/.local" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="opencode") | .path')" "OpenCode coverage keeps only its home area"
+  assert_equals "<HOME>/.codex" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .path')" "Codex coverage keeps only its home area"
+  assert_equals "<HOME>/projects" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="opencode" and .dir=="<HOME>/projects") | .dir' | head -n 1)" "home task directories retain only the projects area"
+  assert_equals "3" "$(printf '%s' "$out" | jq -r '.files[] | select(.scope=="projects/proj" and .path=="src/one.py") | .reads')" "registered project files keep per-file detail"
+  assert_not_contains "$out" "backlog.json" "home file names are not persisted"
+  assert_not_contains "$out" "session.json" "home session paths are not persisted"
+  assert_not_contains "$out" "agent.toml" "home config paths are not persisted"
+  assert_equals "0" "$(printf '%s' "$rank" | jq -r '[.files[] | select(.scope=="home")] | length')" "rank skips home aggregate buckets"
+  assert_equals "0" "$(printf '%s' "$rank" | jq -r '.unresolved')" "home buckets are not treated as unresolved files"
+  pass "mine aggregates home paths without losing project detail"
 }
 
 test_mine_codex_session_metrics() {
@@ -767,7 +817,7 @@ test_completed_cohort_uses_completion_time_for_all_rollouts() {
   pass "codex eligibility uses task completion time and mines all completed rollouts"
 }
 
-test_mine_codex_first_edit_requires_positive_outcome() {
+test_mine_codex_first_edit_uses_completed_function_call_output() {
   local lab codex_dir rollout out status=0
   lab=$(make_lab codex-positive-edit)
   codex_dir="$lab/home/positive-codex"
@@ -782,8 +832,9 @@ test_mine_codex_first_edit_requires_positive_outcome() {
     '{"timestamp":"2026-10-18T15:00:02.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"DynamicToolCall","id":"write-failed","tool":"write","arguments":{},"status":"failed","success":false}}}' \
     '{"timestamp":"2026-10-18T15:00:03.000Z","type":"turn_context","payload":{"turn_id":"edit-turn-2"}}' \
     '{"timestamp":"2026-10-18T15:00:03.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":200,"input_tokens":200}}}}' \
-    '{"timestamp":"2026-10-18T15:00:04.000Z","type":"event_msg","payload":{"type":"item_started","item":{"type":"DynamicToolCall","id":"write-success","tool":"write","arguments":{},"status":"in_progress"}}}' \
-    '{"timestamp":"2026-10-18T15:00:04.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"DynamicToolCall","id":"write-success","tool":"write","arguments":{},"status":"completed","success":true}}}' \
+    '{"timestamp":"2026-10-18T15:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"write-success","name":"write","arguments":"{}"}}' \
+    '{"timestamp":"2026-10-18T15:00:04.125Z","type":"response_item","payload":{"type":"function_call_output","id":"output-write-success","call_id":"write-success","output":["completed"]}}' \
+    '{"timestamp":"2026-10-18T15:00:04.250Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"FunctionCallOutput","id":"output-write-success","output":["completed"]}}}' \
     '{"timestamp":"2026-10-18T15:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":300,"input_tokens":300}}}}' \
     '{"timestamp":"2026-10-18T15:00:06.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"positive-edit"}}' \
     > "$rollout"
@@ -795,7 +846,7 @@ test_mine_codex_first_edit_requires_positive_outcome() {
   assert_equals "2" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .first_edit_turn')" "a failed write does not hide a later successful write"
   assert_equals "200" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_exploration')" "exploration tokens stop at the successful write"
   assert_equals "300" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_total')" "the completed task remains in the cohort"
-  pass "Codex first-edit timing requires positive outcomes"
+  pass "Codex first-edit timing recognizes completed function outputs"
 }
 
 test_mine_marks_codex_find_failures_unreadable() {
@@ -927,6 +978,7 @@ SH
 }
 
 test_structure_reports_ceiling_depth_and_summary_gaps
+test_structure_checks_domain_import_direction
 test_structure_and_sweep_list_all_findings
 test_structure_is_read_only_and_refuses_non_git
 test_structure_requires_routing_table_and_ignores_malformed_exemptions
@@ -935,6 +987,7 @@ test_mine_keeps_distinct_home_and_code_roots_aligned
 test_mine_resolves_file_paths_when_realpath_fails
 test_mine_cleanup_preserves_paths_with_spaces
 test_mine_never_records_raw_paths_or_content
+test_mine_aggregates_home_paths_by_area
 test_mine_codex_session_metrics
 test_mine_reports_absent_sources
 test_mine_skips_external_stores
@@ -948,7 +1001,7 @@ test_mine_marks_opencode_processing_failures_unreadable
 test_mine_marks_codex_projection_failures_unreadable
 test_mine_marks_malformed_candidates_unreadable
 test_completed_cohort_uses_completion_time_for_all_rollouts
-test_mine_codex_first_edit_requires_positive_outcome
+test_mine_codex_first_edit_uses_completed_function_call_output
 test_mine_marks_codex_find_failures_unreadable
 test_artifact_writers_fail_before_success_messages
 test_sweep_writes_report_and_refuses_overwrite

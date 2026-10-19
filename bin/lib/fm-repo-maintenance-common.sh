@@ -226,6 +226,13 @@ rm_classify_file() {
   if [ -n "$RM_APPROVED_HOME" ] && rm_path_under "$physical" "$RM_APPROVED_HOME"; then
     rel=${physical#"$RM_APPROVED_HOME"/}
     [ -n "$rel" ] || return 1
+    if [[ "$rel" == */* ]]; then
+      rel=${rel%%/*}
+    elif [ -d "$physical" ]; then
+      :
+    else
+      rel=root
+    fi
     printf 'home\t%s\n' "$rel"
     return 0
   fi
@@ -245,6 +252,47 @@ rm_classify_file() {
     fi
   done
   return 1
+}
+
+rm_sanitize_home_area() {
+  local input=$1 physical rel area root
+  case "$input" in
+    '<EXTERNAL>'|'<POOL>'*|'<FIRSTMATE>'*) printf '%s\n' "$input"; return 0 ;;
+    '<HOME>'*)
+      rel=${input#'<HOME>'}
+      rel=${rel#/}
+      area=${rel%%/*}
+      [ -n "$rel" ] && [ "$rel" != "$area" ] || area=root
+      printf '<HOME>/%s\n' "$area"
+      return 0
+      ;;
+  esac
+  physical=$(rm_physical_path "$input" 2>/dev/null || true)
+  [ -n "$physical" ] || { rm_sanitize_path "$input"; return 0; }
+  if [ -n "$RM_CODE_ROOT" ] && [ "$RM_CODE_ROOT" != "$RM_APPROVED_HOME" ] \
+    && rm_path_under "$physical" "$RM_CODE_ROOT"; then
+    rm_sanitize_path "$physical"
+    return 0
+  fi
+  for root in "$RM_APPROVED_HOME" "$RM_OPERATOR_HOME"; do
+    [ -n "$root" ] || continue
+    if rm_path_under "$physical" "$root"; then
+      rel=${physical#"$root"}
+      rel=${rel#/}
+      if [ -z "$rel" ]; then
+        area=root
+      elif [[ "$rel" == */* ]]; then
+        area=${rel%%/*}
+      elif [ -d "$physical" ]; then
+        area=$rel
+      else
+        area=root
+      fi
+      printf '<HOME>/%s\n' "$area"
+      return 0
+    fi
+  done
+  rm_sanitize_path "$physical"
 }
 
 rm_root_matches() {

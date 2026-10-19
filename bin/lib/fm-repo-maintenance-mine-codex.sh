@@ -90,7 +90,7 @@ rm_mine_codex_event_projection() {
       elif .type == "event_msg" and ($payload.type // "") == "item_completed"
            and ($item.type // "") == "FunctionCallOutput" then
         {kind: "item_completed", cwd: "", sid: "",
-         id: ($item.id | scalar_id), name: "",
+         id: ($item.id | scalar_id), name: "", success: "true",
          total: null, input_cumulative: null, input_last: null, ts: ""}
       else
         empty
@@ -228,7 +228,7 @@ EOF
         [ -n "$id" ] || continue
         if [ "$kind" = "item_completed" ]; then
           completion_kind=item
-          completion_success=""
+          completion_success=$success
         else
           completion_kind=call
           completion_success=$success
@@ -407,7 +407,7 @@ EOF
         ;;
     esac
     case "$(rm_root_matches "$cwd")" in
-      1) dir_label=$(rm_sanitize_path "$cwd") ;;
+      1) dir_label=$(rm_sanitize_home_area "$cwd") ;;
       *)
         scope_skips=$((scope_skips + 1))
         continue

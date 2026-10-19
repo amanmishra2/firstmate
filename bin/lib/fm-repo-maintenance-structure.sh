@@ -279,8 +279,8 @@ rm_navigation_path_ok() {
 }
 
 rm_structure_json() {
-  local root=$1 logical=${2:-} name exemptions tmp f n d base slines root_target route_targets
-  local over_total=0 exempt_total=0 depth_total=0 dir_total=0 missing_total=0 gap_total=0 overlong_total=0 invalid_total=0 summaries_seen=0 root_orphan_total=0
+  local root=$1 logical=${2:-} name exemptions tmp f n d base slines root_target route_targets layer import_line
+  local over_total=0 exempt_total=0 depth_total=0 import_total=0 dir_total=0 missing_total=0 gap_total=0 overlong_total=0 invalid_total=0 summaries_seen=0 root_orphan_total=0
   name=${logical:-$(basename -- "$root")}
   exemptions="$RM_DATA/$name/exemptions.txt"
   rm_new_tmp structure tmp || rm_die_fail "cannot create a temp dir"
@@ -317,6 +317,7 @@ rm_structure_json() {
   done < "$tmp/files.txt"
 
   : > "$tmp/depth.ndjson"
+  : > "$tmp/import-direction.ndjson"
   while IFS= read -r f; do
     case "$f" in
       src/*)
@@ -325,6 +326,17 @@ rm_structure_json() {
           depth_total=$((depth_total + 1))
           jq -cn --arg path "$f" '{path: $path}' >> "$tmp/depth.ndjson"
         fi
+        case "$f" in src/cli/*|src/web/*) continue ;; esac
+        rm_is_code_file "$f" || continue
+        for layer in cli web; do
+          while IFS=: read -r import_line _; do
+            [ -n "$import_line" ] || continue
+            import_total=$((import_total + 1))
+            jq -cn --arg path "$f" --argjson line "$import_line" --arg layer "$layer" \
+              '{path: $path, line: $line, layer: $layer}' >> "$tmp/import-direction.ndjson"
+          done < <(grep -nE -- "(^|[[:space:]])(from|import|use|require|include)([[:space:]]+|[[:space:]]*\\()[^[:space:]]*(/|\\.|::)?${layer}(/|\\.|::|[[:space:]]|\\)|[\"']|$)" "$root/$f" 2>/dev/null \
+            | grep -vE '^[0-9]+:[[:space:]]*(#|//|/\*|\*)' || true)
+        done
         ;;
     esac
   done < "$tmp/files.txt"
@@ -398,6 +410,7 @@ rm_structure_json() {
     --argjson ceiling "$SOFT_CEILING_LINES" --argjson depth_max "$DEPTH_MAX_BELOW_SRC" --argjson summary_max "$SUMMARY_MAX_LINES" \
     --argjson over_total "$over_total" --slurpfile over "$tmp/over.ndjson" --argjson exempt_total "$exempt_total" \
     --argjson depth_total "$depth_total" --slurpfile depth "$tmp/depth.ndjson" \
+    --argjson import_total "$import_total" --slurpfile imports "$tmp/import-direction.ndjson" \
     --argjson dir_total "$dir_total" --argjson missing_total "$missing_total" --slurpfile missing "$tmp/missing.ndjson" \
     --argjson summaries_seen "$summaries_seen" --argjson gap_total "$gap_total" --slurpfile gaps "$tmp/gaps.ndjson" \
     --argjson overlong_total "$overlong_total" --slurpfile overlong "$tmp/overlong.ndjson" \
@@ -409,6 +422,7 @@ rm_structure_json() {
       ceiling_lines: $ceiling,
       files_over_ceiling: {total: $over_total, exempt: $exempt_total, listed: $over},
       depth_violations: {total: $depth_total, max_below_src: $depth_max, listed: $depth},
+      import_direction: {total: $import_total, listed: $imports},
       dirs_missing_summary: {total: $missing_total, dirs: $dir_total, listed: $missing},
       summary_gaps: {total: $gap_total, summaries_seen: $summaries_seen, listed: $gaps},
       summary_over_limit: {total: $overlong_total, max_lines: $summary_max, listed: $overlong},
@@ -435,6 +449,8 @@ rm_run_structure() {
     (.files_over_ceiling.listed[] | "  \(.lines)  \(.path)"),
     "src depth violations (> \(.depth_violations.max_below_src) below src/): \(.depth_violations.total)",
     (.depth_violations.listed[] | "  \(.path)"),
+    "domain imports of cli/ or web/: \(.import_direction.total)",
+    (.import_direction.listed[] | "  \(.path):\(.line) imports \(.layer)/"),
     "directories missing SUMMARY.md: \(.dirs_missing_summary.total) of \(.dirs_missing_summary.dirs)",
     (.dirs_missing_summary.listed[] | "  \(.dir)"),
     "files unlisted by their folder SUMMARY.md: \(.summary_gaps.total) (summaries seen: \(.summary_gaps.summaries_seen))",

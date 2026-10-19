@@ -57,6 +57,7 @@ rm_run_rank_json() {
   fi
   while IFS=$'\t' read -r scope path reads tasks rereads maxb; do
     [ -n "$scope" ] || continue
+    [ "$scope" != home ] || continue
     if [ -n "$project" ]; then
       case "$scope" in
         "projects/$project") ;;

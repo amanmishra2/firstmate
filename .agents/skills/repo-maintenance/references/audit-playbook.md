@@ -20,6 +20,7 @@ Keep confirmed findings distinct from candidates and support each with evidence.
 
 1. Read the report's instrument sections first: the ranking, the structure findings, and the coverage line.
 2. Run the project's own tooling for the mechanical checks - its linter, its type checker, its test suite, and import or export checks - rather than inventing parallel analysis.
+   The structure audit also rejects imports from domain modules under `src/` into the presentation layers `cli/` or `web/`; presentation code may depend on domain packages, but domain packages must not depend on presentation code.
 3. Search for the finding categories with bounded commands (`git grep`, the project's dead-code tooling, duplicate-math spot checks around the hottest files); never run unbounded repository-wide sweeps.
 4. Confirm every finding with a concrete anchor and a one-line reproduction or reasoning; drop anything that cannot be anchored.
 5. Write the findings, slice plan, and verdict into the report, then file every confirmed finding and slice per the filing rule below. Use the hot-file ranking to prioritize; it does not cap reporting or filing.

@@ -19,6 +19,7 @@ rm_parse_mine_args() {
 
 rm_coverage_json() {
   local source=$1 path=$2 status=$3 seen=$4 mined=$5 empty=$6 error=$7 scope=${8:-0}
+  path=$(rm_sanitize_home_area "$path")
   jq -cn --arg source "$source" --arg path "$path" --arg status "$status" \
     --argjson seen "$seen" --argjson mined "$mined" \
     --argjson empty "$empty" --argjson error "$error" --argjson scope "$scope" \
@@ -171,7 +172,7 @@ rm_mine_opencode() {
       continue
     fi
     [ -n "$rows" ] && [ "$rows" != "[]" ] || { empty_skips=$((empty_skips + 1)); continue; }
-    dir_label=$(rm_sanitize_path "$dir")
+    dir_label=$(rm_sanitize_home_area "$dir")
     next_task_key=$((task_key + 1))
     if ! task_json=$(printf '%s' "$rows" | jq -c \
       --argjson join "$next_task_key" --arg dir "$dir_label" \

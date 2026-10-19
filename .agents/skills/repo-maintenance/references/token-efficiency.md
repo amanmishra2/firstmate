@@ -40,7 +40,9 @@ Read the ranking as a work queue, not a verdict: a hot file that is cold, stable
 Outputs are aggregates only, and the guard is enforced at extraction time:
 
 - Prompts, diffs, message text, tool output, and file contents are never copied into outputs; only counts, sizes, and sanitized paths are.
-- Project paths, code-root paths, and other paths under the approved home are stored relative to their matching scope; the absolute forms never appear.
+- Registered-project, pool, and code-root file paths retain their scoped file detail.
+- Other home file reads collapse to their top-level area bucket (`home:data`, `home:state`, `home:config`, and similar).
+- Home-scoped task directories and source-coverage paths use the same area labels, without subdirectory or filename detail.
 - Local prefixes are sanitized to `<HOME>`, `<FIRSTMATE>`, and `<POOL>` labels; every other path is counted in the `external` bucket with no path recorded. Physical containment is checked after resolving symlinks, and traversal, exact roots, or unknown absolute paths become `<EXTERNAL>`.
 - Coverage records what was scanned, what was skipped, and why, so a partial run is never presented as a complete week.
 
@@ -50,7 +52,7 @@ Every source reports one status (`mined`, `empty`, `absent`, `sqlite3-missing`, 
 When a source is absent or unreadable, say so in the report and in any captain-facing summary; never describe a partial dataset as the week's read picture.
 A rising `skipped_empty` is normal, while a rising `skipped_error` means the store shape changed or candidate metadata was malformed and the adapter needs attention.
 
-File coverage is intentionally narrow: only successful tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing recognizes named edit tools only after a positive outcome (OpenCode edit/write/patch/apply_patch; Codex `FileChange` status `completed` or a `DynamicToolCall` completion with `success: true`). Codex `FunctionCallOutput` bodies and their completed items carry no success signal, so they remain unknown and do not stop exploration-token accumulation.
+File coverage is intentionally narrow: only successful tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing recognizes named edit tools after a positive outcome (OpenCode edit/write/patch/apply_patch; Codex `FileChange` status `completed`, `DynamicToolCall` completion with `success: true`, or a named `write` / `apply_patch` call with a matching completed `FunctionCallOutput` item). The completed output item is the persisted success signal for that call, even when its body is a string or array without a success field.
 
 ## Weekly rhythm
 
