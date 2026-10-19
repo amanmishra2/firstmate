@@ -55,6 +55,38 @@ rm_entrypoint_valid() {
   ' "$file" 2>/dev/null
 }
 
+rm_readme_valid() {
+  local file=$1
+  rm_entrypoint_valid "$file" || return 1
+  awk '
+    function placeholder(line) {
+      line=tolower(line)
+      return line ~ /(^|[^[:alnum:]])(todo|tbd|tba|n[\/]?a|none|placeholder|pending|unknown|fill[[:space:]_-]*me|change[[:space:]_-]*me|fill[[:space:]]+this[[:space:]]+in)([^[:alnum:]]|$)/
+    }
+    function meaningful(line, compact) {
+      compact=tolower(line)
+      gsub(/[[:space:]`*_#|:.-]/, "", compact)
+      return compact != "" && compact !~ /^(todo|tbd|tba|na|none|placeholder|pending|unknown|fillme|changeme)$/ && compact ~ /[[:alnum:]]/ && !placeholder(line)
+    }
+    function setup_content(line) {
+      line=tolower(line)
+      return line ~ /(^|[^[:alnum:]])(setup|install|usage|get[[:space:]-]*started)([^[:alnum:]]|$)/
+    }
+    function validation_content(line) {
+      line=tolower(line)
+      return line ~ /(^|[^[:alnum:]])(validat[[:alpha:]]*|test|check|lint|verif[[:alpha:]]*)([^[:alnum:]]|$)/
+    }
+    NF {
+      if (meaningful($0)) {
+        if ($0 !~ /^[[:space:]]*#/ && !setup_content($0) && !validation_content($0)) description=1
+      }
+      if (setup_content($0)) setup=1
+      if (validation_content($0)) validation=1
+    }
+    END { exit(description && setup && validation ? 0 : 1) }
+  ' "$file" 2>/dev/null
+}
+
 rm_route_rows() {
   local agents=$1
   awk -F'|' '
@@ -257,7 +289,7 @@ rm_navigation_path_ok() {
   rm_tracked_target_ok "$root" "$path" || return 1
   if [[ "$path" != */* ]]; then
     case "$path" in
-      README.md) rm_entrypoint_valid "$root/README.md"; return $? ;;
+      README.md) rm_readme_valid "$root/README.md"; return $? ;;
       AGENTS.md) rm_entrypoint_valid "$root/AGENTS.md" && rm_agents_routing_ok "$root/AGENTS.md" "$root"; return $? ;;
     esac
     agents="$root/AGENTS.md"
@@ -278,10 +310,112 @@ rm_navigation_path_ok() {
   return 1
 }
 
+rm_import_direction_scan() {
+  awk '
+    function cleaned_target(target, clean, ch, q, i) {
+      q=sprintf("%c", 39)
+      clean=target
+      sub(/^[[:space:]]+/, "", clean)
+      while (length(clean) > 0) {
+        ch=substr(clean, 1, 1)
+        if (ch == "(" || ch == "<" || ch == "\"" || ch == q || ch == "`") clean=substr(clean, 2)
+        else break
+      }
+      for (i=1; i<=length(clean); i++) {
+        ch=substr(clean, i, 1)
+        if (ch == " " || ch == "\t" || ch == ";" || ch == "," || ch == ")" || ch == "]" || ch == ">" || ch == "\"" || ch == q || ch == "`") {
+          clean=substr(clean, 1, i - 1)
+          break
+        }
+      }
+      return clean
+    }
+    function emit_target(target, clean, parts, count, layer) {
+      clean=cleaned_target(target)
+      if (clean == "") return
+      count=split(clean, parts, /[\/:.]+/)
+      layer=parts[1]
+      if (layer == "cli" || layer == "web") print NR "\t" layer
+    }
+    function outside_quotes(line, end, quote, escaped, i, ch) {
+      quote=""
+      escaped=0
+      for (i=1; i<end; i++) {
+        ch=substr(line, i, 1)
+        if (escaped) {
+          escaped=0
+        } else if (ch == "\\") {
+          escaped=1
+        } else if (quote != "") {
+          if (ch == quote) quote=""
+        } else if (ch == "\"" || ch == sprintf("%c", 39) || ch == "`") {
+          quote=ch
+        }
+      }
+      return quote == ""
+    }
+    function keyword_target(line, keyword, pattern, q) {
+      q=sprintf("%c", 39)
+      if (keyword == "use") {
+        pattern="^[[:space:]]*(pub([[:space:]]*\\([^)]*\\))?[[:space:]]+)?use[[:space:]]+"
+      } else if (keyword == "require") {
+        pattern="(^|[[:space:]=(:,\\[!&|?{;])require[[:space:]]*(\\(|\"|" q "|`)?"
+      } else {
+        pattern="^[[:space:]]*include[[:space:]]*(\\(|<|\"|" q "|`)?"
+      }
+      if (match(line, pattern) && outside_quotes(line, RSTART)) return substr(line, RSTART + RLENGTH)
+      return ""
+    }
+    {
+      line=$0
+      if (line ~ /^[[:space:]]*#[[:space:]]*include[[:space:]]*/) {
+        sub(/^[[:space:]]*#[[:space:]]*include[[:space:]]*/, "", line)
+        emit_target(line)
+        next
+      }
+      sub(/[[:space:]]*\/\/.*/, "", line)
+      sub(/[[:space:]]*#.*/, "", line)
+      if (line ~ /^[[:space:]]*from[[:space:]]+[[:alnum:]_.:\/-]+[[:space:]]+import([[:space:]]|$)/) {
+        rest=line
+        sub(/^[[:space:]]*from[[:space:]]+/, "", rest)
+        split(rest, fields, /[[:space:]]+/)
+        emit_target(fields[1])
+        next
+      }
+      if (line ~ /^[[:space:]]*import[[:space:]]+/) {
+        rest=line
+        sub(/^[[:space:]]*import[[:space:]]+/, "", rest)
+        if (rest ~ /[[:space:]]from[[:space:]]*/) {
+          match(rest, /[[:space:]]from[[:space:]]*/)
+          emit_target(substr(rest, RSTART + RLENGTH))
+        } else {
+          sub(/^static[[:space:]]+/, "", rest)
+          count=split(rest, modules, /,[[:space:]]*/)
+          for (i=1; i<=count; i++) emit_target(modules[i])
+        }
+        next
+      }
+      for (i=1; i<=3; i++) {
+        if (i == 1) keyword="use"
+        else if (i == 2) keyword="require"
+        else keyword="include"
+        target=keyword_target(line, keyword)
+        if (target != "") emit_target(target)
+      }
+    }
+  ' "$1"
+}
+
 rm_structure_json() {
-  local root=$1 logical=${2:-} name exemptions tmp f n d base slines root_target route_targets layer import_line
+  local root=$1 logical=${2:-} name exemptions tmp f n d base slines root_target route_targets import_line physical_root
   local over_total=0 exempt_total=0 depth_total=0 import_total=0 dir_total=0 missing_total=0 gap_total=0 overlong_total=0 invalid_total=0 summaries_seen=0 root_orphan_total=0
-  name=${logical:-$(basename -- "$root")}
+  if [ -n "$logical" ]; then
+    name=$logical
+  else
+    physical_root=$(rm_physical_dir "$root" 2>/dev/null || true)
+    [ -n "$physical_root" ] || rm_die_refuse "project root missing"
+    name=$(basename -- "$physical_root")
+  fi
   exemptions="$RM_DATA/$name/exemptions.txt"
   rm_new_tmp structure tmp || rm_die_fail "cannot create a temp dir"
   git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
@@ -328,15 +462,12 @@ rm_structure_json() {
         fi
         case "$f" in src/cli/*|src/web/*) continue ;; esac
         rm_is_code_file "$f" || continue
-        for layer in cli web; do
-          while IFS=: read -r import_line _; do
-            [ -n "$import_line" ] || continue
-            import_total=$((import_total + 1))
-            jq -cn --arg path "$f" --argjson line "$import_line" --arg layer "$layer" \
-              '{path: $path, line: $line, layer: $layer}' >> "$tmp/import-direction.ndjson"
-          done < <(grep -nE -- "(^|[[:space:]])(from|import|use|require|include)([[:space:]]+|[[:space:]]*\\()[^[:space:]]*(/|\\.|::)?${layer}(/|\\.|::|[[:space:]]|\\)|[\"']|$)" "$root/$f" 2>/dev/null \
-            | grep -vE '^[0-9]+:[[:space:]]*(#|//|/\*|\*)' || true)
-        done
+        while IFS=$'\t' read -r import_line layer; do
+          [ -n "$import_line" ] || continue
+          import_total=$((import_total + 1))
+          jq -cn --arg path "$f" --argjson line "$import_line" --arg layer "$layer" \
+            '{path: $path, line: $line, layer: $layer}' >> "$tmp/import-direction.ndjson"
+        done < <(rm_import_direction_scan "$root/$f")
         ;;
     esac
   done < "$tmp/files.txt"
@@ -389,7 +520,7 @@ rm_structure_json() {
   local readme=0 agents=0 readme_valid=0 agents_valid=0 routing_ok=0
   [ -f "$root/README.md" ] && readme=1
   [ -f "$root/AGENTS.md" ] && agents=1
-  rm_entrypoint_valid "$root/README.md" && readme_valid=1
+  rm_readme_valid "$root/README.md" && readme_valid=1
   rm_entrypoint_valid "$root/AGENTS.md" && agents_valid=1
   [ "$agents_valid" -eq 1 ] && rm_agents_routing_ok "$root/AGENTS.md" "$root" && routing_ok=1
 

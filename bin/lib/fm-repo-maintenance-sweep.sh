@@ -4,6 +4,13 @@
 SWEEP_PROJECT=""
 SWEEP_DATE=""
 
+rm_sweep_date_valid() {
+  local candidate=$1 parsed
+  parsed=$(date -u -d "$candidate" +%Y-%m-%d 2>/dev/null) && [ "$parsed" = "$candidate" ] && return 0
+  parsed=$(date -u -j -f "%Y-%m-%d" "$candidate" +%Y-%m-%d 2>/dev/null) && [ "$parsed" = "$candidate" ] && return 0
+  return 1
+}
+
 rm_parse_sweep_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -29,6 +36,9 @@ rm_parse_sweep_args() {
     [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
     *) rm_die_usage "--date must be YYYY-MM-DD" ;;
   esac
+  if [ -n "$SWEEP_DATE" ] && ! rm_sweep_date_valid "$SWEEP_DATE"; then
+    rm_die_usage "--date must be a valid YYYY-MM-DD date"
+  fi
 }
 
 rm_registered_project_root() {
@@ -124,7 +134,8 @@ EOF
 - First edit timing includes only named edit tools (`edit`, `write`, `patch`, `apply_patch` for OpenCode; `apply_patch`, `write` for Codex). Shell-mediated edits are excluded.
 EOF
     jq -r --argjson lines "$SOFT_CEILING_LINES" '
-      "- Structure totals: files over \($lines) lines \(.files_over_ceiling.total) (exempt \(.files_over_ceiling.exempt)); depth violations \(.depth_violations.total); dirs missing SUMMARY.md \(.dirs_missing_summary.total) of \(.dirs_missing_summary.dirs); summary gaps \(.summary_gaps.total); invalid summaries \(.summary_invalid.total); root orphan files \(.root_orphans.total); over-long summaries \(.summary_over_limit.total); entrypoints ok=\(.entrypoints.ok)"' <<<"$structure_json" 2>/dev/null
+      "- Structure totals: files over \($lines) lines \(.files_over_ceiling.total) (exempt \(.files_over_ceiling.exempt)); depth violations \(.depth_violations.total); dirs missing SUMMARY.md \(.dirs_missing_summary.total) of \(.dirs_missing_summary.dirs); summary gaps \(.summary_gaps.total); import direction \(.import_direction.total); invalid summaries \(.summary_invalid.total); root orphan files \(.root_orphans.total); over-long summaries \(.summary_over_limit.total); entrypoints ok=\(.entrypoints.ok)",
+      (.import_direction.listed[] | "- Domain import: `\(.path):\(.line)` imports \(.layer)/")' <<<"$structure_json" 2>/dev/null
     printf '\n'
 
     printf '## Token heat ranking (instrument)\n\n'
@@ -145,6 +156,8 @@ EOF
       (.files_over_ceiling.listed[] | "  - `\(.path)` (\(.lines) lines)"),
       "- src depth violations (> \(.depth_violations.max_below_src) below src/): \(.depth_violations.total)",
       (.depth_violations.listed[] | "  - `\(.path)`"),
+      "- Domain imports of cli/ or web/: \(.import_direction.total)",
+      (.import_direction.listed[] | "  - `\(.path):\(.line)` imports \(.layer)/"),
       "- Directories missing SUMMARY.md: \(.dirs_missing_summary.total) of \(.dirs_missing_summary.dirs)",
       (.dirs_missing_summary.listed[] | "  - `\(.dir)`"),
       "- Files unlisted by their folder SUMMARY.md: \(.summary_gaps.total)",

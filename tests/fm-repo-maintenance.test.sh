@@ -40,7 +40,7 @@ make_lab() {
   # Project clone fixture.
   mkdir -p "$proj/src/a/b/c/d/e" "$proj/bin" "$proj/docs" "$proj/tests"
   ( cd "$proj" && git init -q )
-  printf '# proj\n\nSetup and validation for the fixture.\n' > "$proj/README.md"
+  printf '# proj\n\nA fixture project for repository maintenance checks.\n\n## Setup\n\nRun the fixture setup commands.\n\n## Validation\n\nRun the fixture tests and checks.\n' > "$proj/README.md"
   # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
   printf '# proj agents\n\n| Task | Domain | Files | Tests |\n| --- | --- | --- | --- |\n| maintain fixture | tooling | `bin/tool.sh` | `tests/fixture.test.sh` |\n' > "$proj/AGENTS.md"
   i=1
@@ -174,23 +174,32 @@ test_structure_reports_ceiling_depth_and_summary_gaps() {
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.routing_ok')" "AGENTS.md has a concrete routing row"
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.ok')" "root entrypoints and routing are valid"
   assert_contains "$(printf '%s' "$out" | jq -r '.root_orphans.listed[].file')" "big2.py" "root-level tracked files are audited"
+  out=$(cd "$proj" && "$TOOL" structure . --json) || fail "structure failed from the project working directory"
+  assert_equals "1" "$(printf '%s' "$out" | jq -r '.files_over_ceiling.exempt')" "structure . derives the physical project name for exemptions"
+  assert_not_contains "$(printf '%s' "$out" | jq -r '.files_over_ceiling.listed[].path')" "big2.py" "structure . honors the fixture exemption"
   pass "structure reports ceiling, depth, and SUMMARY findings with exemptions honored"
 }
 
 test_structure_checks_domain_import_direction() {
-  local lab proj out
+  local lab proj out human
   lab=$(make_lab structure-import-direction)
   lab_env "$lab"
   proj="$lab/home/projects/proj"
-  printf '\nfrom cli.commands import run\nimport web.routes\n' >> "$proj/src/one.py"
+  printf 'from domain.utils import cli\nfrom cli.commands import run\nimport web.routes\nimport domain.cli\n# import web.fake\n// import cli.fake\nmessage = "use cli.fake"\n' > "$proj/src/one.py"
   mkdir -p "$proj/src/cli"
   printf 'from domain.service import execute\n' > "$proj/src/cli/runner.py"
-  ( cd "$proj" && git add src/one.py src/cli/runner.py && git commit -qm 'exercise import direction audit' )
+  printf '#include <cli/runner.h>\n#include <domain/cli.h>\n' > "$proj/src/native.c"
+  ( cd "$proj" && git add src/one.py src/cli/runner.py src/native.c && git commit -qm 'exercise import direction audit' )
   out=$("$TOOL" structure "$proj" --json) || fail "structure exited nonzero for import direction"
 
-  assert_equals "2" "$(printf '%s' "$out" | jq -r '.import_direction.total')" "each domain-to-presentation import is reported"
-  assert_equals "cli,web" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[].layer] | sort | join(",")')" "both presentation layers are checked"
+  assert_equals "3" "$(printf '%s' "$out" | jq -r '.import_direction.total')" "only actual presentation module targets are reported"
+  assert_equals "cli,cli,web" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[].layer] | sort | join(",")')" "both presentation layers are checked"
   assert_equals "0" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[] | select(.path=="src/cli/runner.py")] | length')" "presentation-to-domain imports are allowed"
+  assert_equals "1" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[] | select(.path=="src/native.c" and .line==1 and .layer=="cli")] | length')" "C preprocessor includes are scanned"
+  assert_equals "0" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[] | select(.path=="src/one.py" and .line==1)] | length')" "imported names do not become findings"
+  assert_equals "0" "$(printf '%s' "$out" | jq -r '[.import_direction.listed[] | select(.path=="src/one.py" and .line==7)] | length')" "keywords inside ordinary strings do not become findings"
+  human=$("$TOOL" structure "$proj") || fail "human structure output failed for import direction"
+  assert_contains "$human" "src/native.c:1 imports cli/" "human structure output lists C include findings"
   pass "structure checks domain-to-presentation imports"
 }
 
@@ -265,7 +274,12 @@ test_structure_requires_routing_table_and_ignores_malformed_exemptions() {
   printf '# one line\n' > "$proj/README.md"
   out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for one-line README"
   assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.readme_valid')" "a one-line README is invalid"
-  printf '# proj\n\nSetup and validation for the fixture.\n' > "$proj/README.md"
+  printf '# proj\n\nmisc notes.\n' > "$proj/README.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for notes-only README"
+  assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.readme_valid')" "a notes-only README is invalid"
+  printf '# proj\n\nA fixture project for structure checks.\n\n## Setup\n\nRun the fixture setup commands.\n\n## Validation\n\nRun the fixture tests.\n' > "$proj/README.md"
+  out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for descriptive README"
+  assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.readme_valid')" "a descriptive setup and validation README is valid"
   printf '# malformed routing\n' > "$proj/AGENTS.md"
   out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for malformed AGENTS.md"
   assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.agents_valid')" "a one-line AGENTS.md route is invalid"
@@ -599,7 +613,7 @@ test_rank_without_metrics_refuses() {
 }
 
 test_rank_zeroes_thi_for_distinct_single_reads_and_rejects_traversal() {
-  local lab metrics rank fakebin
+  local lab metrics rank invalid_rank fakebin
   lab=$(make_lab rank-boundaries)
   lab_env "$lab"
   metrics="$lab/home/data/repo-maintenance/metrics/single.json"
@@ -622,6 +636,11 @@ test_rank_zeroes_thi_for_distinct_single_reads_and_rejects_traversal() {
 ]}
 JSON
   rank=$(PATH="$fakebin:$PATH" FM_HOME="$lab/home" "$TOOL" rank --metrics "$metrics" --project proj --json) || fail "rank exited nonzero"
+  printf '# proj\n\nmisc notes.\n' > "$lab/home/projects/proj/README.md"
+  invalid_rank=$(PATH="$fakebin:$PATH" FM_HOME="$lab/home" "$TOOL" rank --metrics "$metrics" --project proj --json) || fail "rank failed for notes-only README"
+  assert_equals "false" "$(printf '%s' "$invalid_rank" | jq -r '.files[] | select(.path=="README.md") | .nav')" "navigation rejects a notes-only README"
+  printf '# proj\n\nA fixture project for repository maintenance checks.\n\n## Setup\n\nRun the fixture setup commands.\n\n## Validation\n\nRun the fixture tests and checks.\n' > "$lab/home/projects/proj/README.md"
+  rank=$(PATH="$fakebin:$PATH" FM_HOME="$lab/home" "$TOOL" rank --metrics "$metrics" --project proj --json) || fail "rank failed for descriptive README"
   assert_equals "0" "$(printf '%s' "$rank" | jq -r '.files[0].thi')" "one read in each distinct task has zero THI"
   assert_equals "2" "$(printf '%s' "$rank" | jq -r '.unresolved')" "traversal and symlink escape rows are unresolved"
   assert_equals "5" "$(printf '%s' "$rank" | jq -r '.files | length')" "resolvable rows reach ranking output"
@@ -893,6 +912,18 @@ test_artifact_writers_fail_before_success_messages() {
   pass "artifact writers publish success only after final paths are available"
 }
 
+test_sweep_rejects_invalid_calendar_date_without_artifact() {
+  local lab status=0
+  lab=$(make_lab sweep-invalid-date)
+  lab_env "$lab"
+  FM_HOME="$lab/home" "$TOOL" sweep proj --date 2026-02-31 \
+    >"$lab/sweep.out" 2>"$lab/sweep.err" || status=$?
+  expect_code 2 "$status" "sweep rejects an invalid calendar date"
+  assert_absent "$lab/home/data/repo-maintenance/proj/2026-02-31" "an invalid date creates no report artifact"
+  assert_contains "$(cat "$lab/sweep.err")" "valid YYYY-MM-DD" "the invalid date refusal names the calendar constraint"
+  pass "sweep validates dates before creating report artifacts"
+}
+
 test_sweep_writes_report_and_refuses_overwrite() {
   local lab report original status=0
   lab=$(make_lab sweep-basic)
@@ -920,6 +951,22 @@ test_sweep_writes_report_and_refuses_overwrite() {
   assert_equals "$original" "$(cat "$report")" "the refusal preserves the completed report"
 
   pass "sweep writes the dated report and refuses overwrite"
+}
+
+test_sweep_reports_import_direction_totals_and_findings() {
+  local lab proj report
+  lab=$(make_lab sweep-import-direction)
+  lab_env "$lab"
+  proj="$lab/home/projects/proj"
+  printf 'from cli.commands import run\n' > "$proj/src/one.py"
+  ( cd "$proj" && git add src/one.py && git commit -qm 'add import direction fixture' )
+  "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed before import direction sweep"
+  "$TOOL" sweep proj --date 2026-10-18 >/dev/null || fail "sweep failed for import direction"
+  report="$lab/home/data/repo-maintenance/proj/2026-10-18/report.md"
+  assert_contains "$(cat "$report")" "import direction 1" "weekly totals carry import direction findings"
+  assert_contains "$(cat "$report")" "- Domain imports of cli/ or web/: 1" "the structure renderer carries the import total"
+  assert_equals "2" "$(grep -Fc '`src/one.py:1` imports cli/' "$report")" "both report sections carry the import finding"
+  pass "sweep carries import direction totals and findings"
 }
 
 test_sweep_concurrent_publish_refuses_second_writer() {
@@ -1004,5 +1051,7 @@ test_completed_cohort_uses_completion_time_for_all_rollouts
 test_mine_codex_first_edit_uses_completed_function_call_output
 test_mine_marks_codex_find_failures_unreadable
 test_artifact_writers_fail_before_success_messages
+test_sweep_rejects_invalid_calendar_date_without_artifact
 test_sweep_writes_report_and_refuses_overwrite
+test_sweep_reports_import_direction_totals_and_findings
 test_sweep_concurrent_publish_refuses_second_writer
