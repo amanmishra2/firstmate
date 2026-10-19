@@ -88,12 +88,23 @@ EOF
 
 rm_mine_opencode() {
   local tmp=$1 start=$2 end=$3 cap=$4
-  local db=${FM_RM_OPENCODE_DB:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode/opencode.db}
+  local db=${FM_RM_OPENCODE_DB:-$FM_HOME/.local/share/opencode/opencode.db} physical
   local status=mined seen=0 mined=0 cap_skips=0 empty_skips=0 error_skips=0 scope_skips=0
   local session_rows row id dir updated rows task_json dir_label id_sql start_ms end_ms task_key=0 next_task_key
   local invalid_candidates=0
   start_ms=$((start * 1000))
   end_ms=$((end * 1000))
+
+  physical=$(rm_resolve_source_path "$db" 2>/dev/null || true)
+  if [ -z "$physical" ]; then
+    rm_coverage_json opencode '<EXTERNAL>' unreadable 0 0 0 0 1 0
+    return 0
+  fi
+  if ! rm_path_in_home "$physical"; then
+    rm_coverage_json opencode '<EXTERNAL>' outside-home 0 0 0 0 0 0
+    return 0
+  fi
+  db=$physical
 
   if [ ! -f "$db" ]; then
     rm_coverage_json opencode "$(rm_sanitize_path "$db")" absent 0 0 0 0 0 0
@@ -201,7 +212,8 @@ rm_mine_codex_reduced() {
     elif (.type == "response_item" and .payload.type == "function_call") then
       {t: "call", id: (.payload.call_id // ""), name: (.payload.name // "")}
     elif (.type == "response_item" and .payload.type == "function_call_output") then
-      {t: "result", id: (.payload.call_id // ""), success: (.payload.output.success // false)}
+      {t: "result", id: (.payload.call_id // ""),
+       success: (if (.payload.output | type) == "object" then .payload.output.success == true else false end)}
     else empty end'
 }
 
@@ -231,17 +243,25 @@ rm_mine_codex_metrics() {
 
 rm_mine_codex() {
   local tmp=$1 start=$2 end=$3 cap=$4
-  local root=${FM_RM_CODEX_SESSIONS:-$HOME/.codex/sessions}
+  local root=${FM_RM_CODEX_SESSIONS:-$FM_HOME/.codex/sessions} physical
   local status=mined seen=0 mined=0 cap_skips=0 empty_skips=0 error_skips=0 scope_skips=0
   local filelist="$tmp/codex-files" eligible="$tmp/codex-eligible" file mtime meta cwd sid ts reduced metrics task_json dir_label
   local invalid_candidates=0
 
+  physical=$(rm_resolve_source_path "$root" 2>/dev/null || true)
+  if [ -z "$physical" ]; then
+    rm_coverage_json codex '<EXTERNAL>' unreadable 0 0 0 0 1 0
+    return 0
+  fi
+  if ! rm_path_in_home "$physical"; then
+    rm_coverage_json codex '<EXTERNAL>' outside-home 0 0 0 0 0 0
+    return 0
+  fi
+  root=$physical
   if [ ! -d "$root" ]; then
     rm_coverage_json codex "$(rm_sanitize_path "$root")" absent 0 0 0 0 0 0
     return 0
   fi
-  root=$(rm_physical_dir "$root" 2>/dev/null || true)
-  [ -n "$root" ] || { rm_coverage_json codex '<EXTERNAL>' unreadable 0 0 0 0 1 0; return 0; }
   if ! find "$root" -type f -name 'rollout-*.jsonl' -print0 > "$filelist" 2>/dev/null; then
     rm_coverage_json codex "$(rm_sanitize_path "$root")" unreadable 0 0 0 0 1 0
     return 0
@@ -376,5 +396,5 @@ rm_run_mine() {
   fi
 
   printf 'mine: wrote %s\n' "$(rm_sanitize_path "$out")"
-  jq -sr '.[] | "mine: \(.source) \(.status) sessions_seen=\(.sessions_seen) sessions_mined=\(.sessions_mined) skipped_cap=\(.skipped_cap) skipped_empty=\(.skipped_empty) skipped_error=\(.skipped_error)"' "$tmp/coverage.ndjson"
+  jq -sr '.[] | if .status == "outside-home" then "mine: \(.source) skipped: source store is outside firstmate home" else "mine: \(.source) \(.status) sessions_seen=\(.sessions_seen) sessions_mined=\(.sessions_mined) skipped_cap=\(.skipped_cap) skipped_empty=\(.skipped_empty) skipped_error=\(.skipped_error)" end' "$tmp/coverage.ndjson"
 }

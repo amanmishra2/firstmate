@@ -17,7 +17,7 @@ PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 RM_DATA="$DATA/repo-maintenance"
 export METRICS_DIR="$RM_DATA/metrics" SOFT_CEILING_LINES=500 SUMMARY_MAX_LINES=30 \
   DEPTH_MAX_BELOW_SRC=4 DEFAULT_WINDOW_DAYS=7 DEFAULT_MAX_SESSIONS=250 \
-  DEFAULT_TOP=10 DEFAULT_MAX_FINDINGS=30
+  DEFAULT_TOP=10
 
 RM_CLEANUP_ROOT=""
 rm_cleanup_all() {
@@ -117,6 +117,18 @@ rm_physical_dir() {
 rm_path_under() {
   local path=$1 root=$2
   [ "$path" = "$root" ] || case "$path" in "$root"/*) ;; *) return 1 ;; esac
+}
+
+rm_path_in_home() {
+  local path=$1
+  [ -n "$RM_APPROVED_HOME" ] && [ "$path" != "$RM_APPROVED_HOME" ] \
+    && rm_path_under "$path" "$RM_APPROVED_HOME"
+}
+
+rm_resolve_source_path() {
+  local path=$1
+  case "$path" in /*) ;; *) path="$PWD/$path" ;; esac
+  rm_physical_path "$path"
 }
 
 RM_APPROVED_HOME=""

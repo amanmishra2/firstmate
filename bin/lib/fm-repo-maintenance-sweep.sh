@@ -3,7 +3,6 @@
 
 SWEEP_PROJECT=""
 SWEEP_DATE=""
-SWEEP_MAX=$DEFAULT_MAX_FINDINGS
 
 rm_parse_sweep_args() {
   while [ "$#" -gt 0 ]; do
@@ -11,12 +10,6 @@ rm_parse_sweep_args() {
       --date)
         [ "$#" -ge 2 ] || rm_die_usage "--date requires YYYY-MM-DD"
         SWEEP_DATE=$2
-        shift 2
-        ;;
-      --max-findings)
-        [ "$#" -ge 2 ] || rm_die_usage "--max-findings requires a count"
-        case "$2" in ''|*[!0-9]*) rm_die_usage "--max-findings must be a count" ;; esac
-        SWEEP_MAX=$2
         shift 2
         ;;
       -* ) rm_die_usage "unknown argument '$1'" ;;
@@ -102,7 +95,7 @@ rm_run_sweep() {
   if [ -n "$metrics" ]; then
     rank_json=$(rm_run_rank_json "$metrics" "$SWEEP_PROJECT" 15 2>/dev/null || true)
   fi
-  structure_json=$(rm_structure_json "$root" "$SWEEP_MAX" "$SWEEP_PROJECT") || exit $?
+  structure_json=$(rm_structure_json "$root" "$SWEEP_PROJECT") || exit $?
 
   if ! mkdir -p -- "$outdir"; then rm_die_fail "cannot create report directory"; fi
   tmp_report=$(mktemp "$outdir/.report.XXXXXX") || rm_die_fail "cannot create report temp file"
@@ -122,7 +115,7 @@ EOF
     if [ -n "$metrics" ]; then
       printf -- "- Metrics: \`%s\`\n" "$(rm_sanitize_path "$metrics")"
       jq -r '"  - Window: \(.window.start) to \(.window.end) (\(.window.days) days); tasks mined: \(.tasks | length)"' "$metrics" 2>/dev/null
-      jq -r '.coverage[] | "  - \(.source): \(.status), sessions mined \(.sessions_mined) of \(.sessions_seen) seen (cap \(.skipped_cap), empty \(.skipped_empty), error \(.skipped_error), out of scope \(.skipped_scope // 0))"' "$metrics" 2>/dev/null
+      jq -r '.coverage[] | if .status == "outside-home" then "  - \(.source): skipped because the source store is outside firstmate home" else "  - \(.source): \(.status), sessions mined \(.sessions_mined) of \(.sessions_seen) seen (cap \(.skipped_cap), empty \(.skipped_empty), error \(.skipped_error), out of scope \(.skipped_scope // 0))" end' "$metrics" 2>/dev/null
     else
       printf -- "- Metrics: none; run \`bin/fm-repo-maintenance.sh mine\` before the next sweep.\n"
     fi

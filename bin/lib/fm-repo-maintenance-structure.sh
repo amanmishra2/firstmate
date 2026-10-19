@@ -3,19 +3,12 @@
 
 STRUCTURE_ROOT=""
 STRUCTURE_JSON=0
-STRUCTURE_MAX=$DEFAULT_MAX_FINDINGS
 STRUCTURE_LOGICAL_NAME=""
 
 rm_parse_structure_args() {
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --json) STRUCTURE_JSON=1; shift ;;
-      --max-findings)
-        [ "$#" -ge 2 ] || rm_die_usage "--max-findings requires a count"
-        case "$2" in ''|*[!0-9]*) rm_die_usage "--max-findings must be a count" ;; esac
-        STRUCTURE_MAX=$2
-        shift 2
-        ;;
       -* ) rm_die_usage "unknown argument '$1'" ;;
       *)
         [ -z "$STRUCTURE_ROOT" ] || rm_die_usage "structure takes exactly one root directory"
@@ -102,7 +95,7 @@ rm_agents_routing_ok() {
 }
 
 rm_structure_json() {
-  local root=$1 max=$2 logical=${3:-} name exemptions tmp f n d base slines
+  local root=$1 logical=${2:-} name exemptions tmp f n d base slines
   local over_total=0 exempt_total=0 depth_total=0 dir_total=0 missing_total=0 gap_total=0 overlong_total=0 invalid_total=0 summaries_seen=0
   name=${logical:-$(basename -- "$root")}
   exemptions="$RM_DATA/$name/exemptions.txt"
@@ -131,9 +124,7 @@ rm_structure_json() {
     n=$(wc -l < "$root/$f" 2>/dev/null | tr -d ' ') || n=0
     if [ "$n" -gt "$SOFT_CEILING_LINES" ]; then
       over_total=$((over_total + 1))
-      if [ "$over_total" -le "$max" ]; then
-        jq -cn --arg path "$f" --argjson lines "$n" '{path: $path, lines: $lines}' >> "$tmp/over.ndjson"
-      fi
+      jq -cn --arg path "$f" --argjson lines "$n" '{path: $path, lines: $lines}' >> "$tmp/over.ndjson"
     fi
   done < "$tmp/files.txt"
   while IFS= read -r f; do
@@ -148,7 +139,7 @@ rm_structure_json() {
         n=$(printf '%s' "$f" | awk -F/ '{ print NF - 2 }')
         if [ "$n" -gt "$DEPTH_MAX_BELOW_SRC" ]; then
           depth_total=$((depth_total + 1))
-          [ "$depth_total" -le "$max" ] && jq -cn --arg path "$f" '{path: $path}' >> "$tmp/depth.ndjson"
+          jq -cn --arg path "$f" '{path: $path}' >> "$tmp/depth.ndjson"
         fi
         ;;
     esac
@@ -171,19 +162,17 @@ rm_structure_json() {
       slines=$(wc -l < "$root/$d/SUMMARY.md" 2>/dev/null | tr -d ' ') || slines=0
       if [ "$slines" -gt "$SUMMARY_MAX_LINES" ]; then
         overlong_total=$((overlong_total + 1))
-        [ "$overlong_total" -le "$max" ] && jq -cn --arg summary "$d/SUMMARY.md" --argjson lines "$slines" \
+        jq -cn --arg summary "$d/SUMMARY.md" --argjson lines "$slines" \
           '{summary: $summary, lines: $lines}' >> "$tmp/overlong.ndjson"
       fi
       if ! rm_validate_summary "$root/$d/SUMMARY.md"; then
         invalid_total=$((invalid_total + 1))
-        if [ "$invalid_total" -le "$max" ]; then
-          jq -cn --arg summary "$d/SUMMARY.md" --arg reasons "$RM_SUMMARY_REASON" \
-            '{summary: $summary, reasons: ($reasons | split(",") | map(select(length > 0)))}' >> "$tmp/invalid.ndjson"
-        fi
+        jq -cn --arg summary "$d/SUMMARY.md" --arg reasons "$RM_SUMMARY_REASON" \
+          '{summary: $summary, reasons: ($reasons | split(",") | map(select(length > 0)))}' >> "$tmp/invalid.ndjson"
       fi
     else
       missing_total=$((missing_total + 1))
-      [ "$missing_total" -le "$max" ] && jq -cn --arg dir "$d" '{dir: $dir}' >> "$tmp/missing.ndjson"
+      jq -cn --arg dir "$d" '{dir: $dir}' >> "$tmp/missing.ndjson"
     fi
   done < "$tmp/dirs.txt"
 
@@ -195,7 +184,7 @@ rm_structure_json() {
     base=${f##*/}
     if ! rm_summary_lists_file "$root/$d/SUMMARY.md" "$base"; then
       gap_total=$((gap_total + 1))
-      [ "$gap_total" -le "$max" ] && jq -cn --arg summary "$d/SUMMARY.md" --arg file "$f" \
+      jq -cn --arg summary "$d/SUMMARY.md" --arg file "$f" \
         '{summary: $summary, file: $file}' >> "$tmp/gaps.ndjson"
     fi
   done < "$tmp/dirfiles.tsv"
@@ -235,7 +224,7 @@ rm_run_structure() {
   rm_require_jq
   rm_init_tmp_root || rm_die_fail "cannot create a temp dir"
   local json
-  json=$(rm_structure_json "$STRUCTURE_ROOT" "$STRUCTURE_MAX" "$STRUCTURE_LOGICAL_NAME") || exit $?
+  json=$(rm_structure_json "$STRUCTURE_ROOT" "$STRUCTURE_LOGICAL_NAME") || exit $?
   if [ "$STRUCTURE_JSON" -eq 1 ]; then
     printf '%s\n' "$json"
     return 0

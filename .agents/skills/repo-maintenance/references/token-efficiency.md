@@ -15,6 +15,7 @@ The mechanics - flags, environment seams, paths, and output schemas - live in th
 
 A session counts only when its working directory is under the home, a project clone, or a configured pool root, so personal and foreign sessions never enter the aggregates.
 Codex sessions contribute session-level metrics only: codex reads files through the shell, which carries no structured file attribution, and the instrument never guesses paths out of command text.
+The OpenCode database and Codex sessions directory must resolve inside the physical `FM_HOME`; an external source override is skipped before enumeration and recorded only as `<EXTERNAL>` with status `outside-home`.
 
 ## Token Heat Index
 
@@ -43,7 +44,7 @@ Outputs are aggregates only, and the guard is enforced at extraction time:
 
 ## Coverage honesty
 
-Every source reports one status (`mined`, `empty`, `absent`, `sqlite3-missing`, `unreadable`) plus session counts and skip reasons (`skipped_cap`, `skipped_empty`, `skipped_error`). An empty valid store remains distinct from a source that could not be read.
+Every source reports one status (`mined`, `empty`, `absent`, `sqlite3-missing`, `unreadable`, `outside-home`) plus session counts and skip reasons (`skipped_cap`, `skipped_empty`, `skipped_error`). An empty valid store remains distinct from a source that could not be read or a store that is outside `FM_HOME`.
 When a source is absent or unreadable, say so in the report and in any captain-facing summary; never describe a partial dataset as the week's read picture.
 A rising `skipped_empty` is normal (sessions updated inside the window whose messages are older), while a rising `skipped_error` means the store shape changed or candidate metadata was malformed and the adapter needs attention. Codex eligibility uses rollout file modification time, ordered newest first before the cap.
 

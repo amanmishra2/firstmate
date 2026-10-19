@@ -5,8 +5,8 @@
 # Usage:
 #   fm-repo-maintenance.sh mine [--now EPOCH]
 #   fm-repo-maintenance.sh rank [--metrics PATH] [--project NAME] [--top N] [--json]
-#   fm-repo-maintenance.sh structure <root-dir> [--max-findings N] [--json]
-#   fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD] [--max-findings N]
+#   fm-repo-maintenance.sh structure <root-dir> [--json]
+#   fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD]
 #   fm-repo-maintenance.sh --help
 #
 # mine always scans the fixed seven-day window and both structured sources and
@@ -38,8 +38,8 @@ rm_usage() {
 Usage:
   fm-repo-maintenance.sh mine [--now EPOCH]
   fm-repo-maintenance.sh rank [--metrics PATH] [--project NAME] [--top N] [--json]
-  fm-repo-maintenance.sh structure <root-dir> [--max-findings N] [--json]
-  fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD] [--max-findings N]
+  fm-repo-maintenance.sh structure <root-dir> [--json]
+  fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD]
   fm-repo-maintenance.sh --help
 
 mine writes aggregate session metrics for the fixed seven-day, all-source window.

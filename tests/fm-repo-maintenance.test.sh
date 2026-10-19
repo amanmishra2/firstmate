@@ -111,7 +111,10 @@ SQL
     printf '{"timestamp":"2026-10-18T10:00:02.750Z","type":"response_item","payload":{"type":"function_call","call_id":"write-fail","name":"write","arguments":"{}"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.800Z","type":"response_item","payload":{"type":"function_call_output","call_id":"write-fail","output":{"success":false}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.000Z","type":"turn_context","payload":{"turn_id":"t2"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:03.500Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\\"cmd\\":\\"printf changed > src/one.py\\"}"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:03.500Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-string","name":"exec_command","arguments":"{\\"cmd\\":\\"printf changed > src/one.py\\"}"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:03.750Z","type":"response_item","payload":{"type":"function_call_output","call_id":"exec-string","output":"command completed"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:03.875Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-array","name":"exec_command","arguments":"{}"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:03.937Z","type":"response_item","payload":{"type":"function_call_output","call_id":"exec-array","output":[{"type":"text","text":"command completed"}]}}\n'
     printf '{"timestamp":"2026-10-18T10:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"patch-success","name":"apply_patch","arguments":"{}"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call_output","call_id":"patch-success","output":{"success":true}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":10000,"input_tokens":10000}}}}\n'
@@ -161,6 +164,40 @@ test_structure_reports_ceiling_depth_and_summary_gaps() {
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.routing_ok')" "AGENTS.md has a concrete routing row"
   assert_equals "true" "$(printf '%s' "$out" | jq -r '.entrypoints.ok')" "root entrypoints and routing are valid"
   pass "structure reports ceiling, depth, and SUMMARY findings with exemptions honored"
+}
+
+test_structure_and_sweep_list_all_findings() {
+  local lab proj out total listed src_listed report report_listed status=0 i
+  lab=$(make_lab structure-untruncated)
+  lab_env "$lab"
+  proj="$lab/home/projects/proj"
+  i=1
+  while [ "$i" -le 31 ]; do
+    printf 'gap %s\n' "$i" > "$proj/src/gap-$i.py"
+    i=$((i + 1))
+  done
+  ( cd "$proj" && git add src && git commit -qm 'add summary-gap fixtures' )
+
+  out=$("$TOOL" structure "$proj" --json) || fail "structure exited nonzero"
+  total=$(printf '%s' "$out" | jq -r '.summary_gaps.total')
+  listed=$(printf '%s' "$out" | jq -r '.summary_gaps.listed | length')
+  src_listed=$(printf '%s' "$out" | jq -r '[.summary_gaps.listed[] | select(.summary == "src/SUMMARY.md")] | length')
+  [ "$total" -gt 30 ] || fail "fixture did not exceed 30 summary gaps"
+  assert_equals "$total" "$listed" "every structure finding is listed"
+
+  status=0
+  "$TOOL" structure "$proj" --max-findings 1 --json >/dev/null 2>&1 || status=$?
+  expect_code 2 "$status" "structure no longer accepts a findings limit"
+  status=0
+  "$TOOL" sweep proj --date 2026-10-18 --max-findings 1 >/dev/null 2>&1 || status=$?
+  expect_code 2 "$status" "sweep no longer accepts a findings limit"
+
+  "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed before sweep"
+  "$TOOL" sweep proj --date 2026-10-18 >/dev/null || fail "sweep exited nonzero"
+  report="$lab/home/data/repo-maintenance/proj/2026-10-18/report.md"
+  report_listed=$(grep -Fc 'not in `src/SUMMARY.md`' "$report")
+  assert_equals "$src_listed" "$report_listed" "sweep publishes every source-summary gap"
+  pass "structure and sweep report every finding without a limit"
 }
 
 test_structure_is_read_only_and_refuses_non_git() {
@@ -349,13 +386,62 @@ test_mine_reports_absent_sources() {
   local lab out status=0
   lab=$(make_lab mine-absent)
   mkdir -p "$lab/home"
-  FM_HOME="$lab/home" FM_RM_OPENCODE_DB="$lab/none.db" FM_RM_CODEX_SESSIONS="$lab/none" \
+  FM_HOME="$lab/home" FM_RM_OPENCODE_DB="$lab/home/none.db" FM_RM_CODEX_SESSIONS="$lab/home/none" \
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
   expect_code 0 "$status" "mine succeeds with absent sources"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
   assert_equals "absent" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="opencode") | .status')" "the missing opencode store is reported absent"
   assert_equals "absent" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .status')" "the missing codex root is reported absent"
   pass "mine reports absent sources instead of failing silently"
+}
+
+test_mine_skips_external_stores() {
+  local lab home outside db codex metrics out mode db_path codex_path source report
+  lab=$(make_lab mine-external-stores)
+  home="$lab/home"
+  outside="$lab/outside"
+  mkdir -p "$outside"
+  cp "$home/.local/share/opencode/opencode.db" "$outside/opencode.db"
+  cp -R "$home/.codex/sessions" "$outside/"
+  db="$home/.local/share/opencode/external.db"
+  codex="$home/.codex/external-sessions"
+  ln -s "$outside/opencode.db" "$db"
+  ln -s "$outside/sessions" "$codex"
+  metrics="$home/data/repo-maintenance/metrics/2026-10-19.json"
+
+  for mode in direct symlink relative; do
+    if [ "$mode" = direct ]; then
+      db_path="$outside/opencode.db"
+      codex_path="$outside/sessions"
+    elif [ "$mode" = relative ]; then
+      db_path="outside/opencode.db"
+      codex_path="outside/sessions"
+    else
+      db_path=$db
+      codex_path=$codex
+    fi
+    if [ "$mode" = relative ]; then
+      out=$(cd "$lab" && FM_HOME="$home" FM_RM_OPENCODE_DB="$db_path" FM_RM_CODEX_SESSIONS="$codex_path" \
+        FM_RM_SESSION_ROOTS="$home:$lab/pool" "$TOOL" mine --now 1792400300) || fail "mine rejected $mode outside stores"
+    else
+      out=$(FM_HOME="$home" FM_RM_OPENCODE_DB="$db_path" FM_RM_CODEX_SESSIONS="$codex_path" \
+        FM_RM_SESSION_ROOTS="$home:$lab/pool" "$TOOL" mine --now 1792400300) || fail "mine rejected $mode outside stores"
+    fi
+    for source in opencode codex; do
+      assert_equals "outside-home" "$(jq -r --arg source "$source" '.coverage[] | select(.source == $source) | .status' "$metrics")" "$source $mode store is rejected"
+      assert_equals "0" "$(jq -r --arg source "$source" '.coverage[] | select(.source == $source) | .sessions_seen' "$metrics")" "$source $mode store is not enumerated"
+      assert_contains "$out" "$source skipped: source store is outside firstmate home" "$source $mode skip is reported clearly"
+    done
+    assert_equals "0" "$(jq -r '.tasks | length' "$metrics")" "$mode outside stores contribute no tasks"
+    assert_equals "0" "$(jq -r '.files | length' "$metrics")" "$mode outside stores contribute no file rows"
+    assert_equals "<EXTERNAL>" "$(jq -r '.coverage[0].path' "$metrics")" "$mode source location stays sanitized"
+    assert_not_contains "$(cat "$metrics")" "$outside" "$mode source path is not persisted"
+  done
+  FM_HOME="$home" "$TOOL" sweep proj --date 2026-10-18 >/dev/null || fail "sweep failed with external stores"
+  report="$home/data/repo-maintenance/proj/2026-10-18/report.md"
+  assert_contains "$(cat "$report")" "source store is outside firstmate home" "sweep explains skipped external sources"
+  assert_not_contains "$(cat "$report")" "$outside" "sweep does not persist external source paths"
+  pass "mine rejects external and symlink-escaped source stores"
 }
 
 test_mine_uses_fixed_home_data_root() {
@@ -377,10 +463,10 @@ test_mine_uses_fixed_home_data_root() {
 test_mine_reports_empty_sources() {
   local lab empty_db out status=0
   lab=$(make_lab mine-empty)
-  empty_db="$lab/empty.db"
+  empty_db="$lab/home/empty.db"
   sqlite3 "$empty_db" 'CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT, time_updated INTEGER); CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT);'
-  mkdir -p "$lab/empty-codex"
-  FM_HOME="$lab/home" FM_RM_OPENCODE_DB="$empty_db" FM_RM_CODEX_SESSIONS="$lab/empty-codex" \
+  mkdir -p "$lab/home/empty-codex"
+  FM_HOME="$lab/home" FM_RM_OPENCODE_DB="$empty_db" FM_RM_CODEX_SESSIONS="$lab/home/empty-codex" \
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
   expect_code 0 "$status" "mine succeeds with valid empty sources"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
@@ -444,10 +530,10 @@ JSON
 test_mine_marks_session_enumeration_failures_unreadable() {
   local lab bad_db out status=0
   lab=$(make_lab mine-enumeration-failure)
-  bad_db="$lab/bad.db"
+  bad_db="$lab/home/bad.db"
   sqlite3 "$bad_db" 'CREATE TABLE other (value TEXT);'
   lab_env "$lab"
-  FM_RM_OPENCODE_DB="$bad_db" FM_RM_CODEX_SESSIONS="$lab/no-codex-store" \
+  FM_RM_OPENCODE_DB="$bad_db" FM_RM_CODEX_SESSIONS="$lab/home/no-codex-store" \
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
   expect_code 0 "$status" "mine reports an enumeration failure without aborting"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
@@ -477,7 +563,7 @@ SH
   chmod +x "$fakebin/sqlite3"
   lab_env "$lab"
   PATH="$fakebin:$PATH" FM_RM_TEST_SQLITE3="$real_sqlite" \
-    FM_RM_CODEX_SESSIONS="$lab/no-codex" \
+    FM_RM_CODEX_SESSIONS="$lab/home/no-codex" \
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
   expect_code 0 "$status" "mine reports OpenCode query failures without aborting"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
@@ -491,7 +577,7 @@ test_mine_marks_codex_projection_failures_unreadable() {
   local lab fakebin codex_dir rollout real_jq out status=0
   lab=$(make_lab mine-codex-projection-failure)
   fakebin="$lab/fake-bin"
-  codex_dir="$lab/codex"
+  codex_dir="$lab/home/codex"
   rollout="$codex_dir/rollout-projection.jsonl"
   real_jq=$(command -v jq) || fail "jq is required for the projection failure fixture"
   mkdir -p "$fakebin" "$codex_dir"
@@ -512,7 +598,7 @@ SH
   touch -t 2610181200 "$rollout"
   lab_env "$lab"
   PATH="$fakebin:$PATH" FM_RM_TEST_JQ="$real_jq" \
-    FM_RM_OPENCODE_DB="$lab/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" \
+    FM_RM_OPENCODE_DB="$lab/home/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" \
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
   expect_code 0 "$status" "mine reports Codex projection failures without aborting"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
@@ -525,13 +611,13 @@ SH
 test_mine_marks_malformed_candidates_unreadable() {
   local lab bad_db bad_codex out status=0
   lab=$(make_lab mine-malformed-candidates)
-  bad_db="$lab/malformed.db"
+  bad_db="$lab/home/malformed.db"
   sqlite3 "$bad_db" <<'SQL'
 CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT, time_updated INTEGER);
 CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT);
 INSERT INTO session_v2 VALUES ('', 'p', 'bad', 'relative-cwd', 1792400200000);
 SQL
-  bad_codex="$lab/malformed-codex"
+  bad_codex="$lab/home/malformed-codex"
   rm -rf "$bad_codex"
   mkdir -p "$bad_codex"
   printf '%s\n' '{"type":"session_meta","payload":{"session_id":"bad-codex","cwd":"relative-cwd","timestamp":"not-a-timestamp"}}' > "$bad_codex/rollout-malformed.jsonl"
@@ -551,7 +637,7 @@ SQL
 test_codex_uses_mtime_for_window_and_cap_order() {
   local lab codex_dir newest older out status=0
   lab=$(make_lab codex-mtime-order)
-  codex_dir="$lab/codex-mtime"
+  codex_dir="$lab/home/codex-mtime"
   mkdir -p "$codex_dir"
   newest="$codex_dir/rollout-new.jsonl"
   older="$codex_dir/rollout-old.jsonl"
@@ -566,7 +652,7 @@ test_codex_uses_mtime_for_window_and_cap_order() {
   touch -t 2610181300 "$newest"
   touch -t 2610181200 "$older"
   lab_env "$lab"
-  FM_RM_OPENCODE_DB="$lab/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" FM_RM_MAX_SESSIONS=1 \
+  FM_RM_OPENCODE_DB="$lab/home/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" FM_RM_MAX_SESSIONS=1 \
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
   expect_code 0 "$status" "codex mtime ordering succeeds"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
@@ -586,7 +672,7 @@ test_mine_marks_codex_find_failures_unreadable() {
   printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/find"
   chmod +x "$fakebin/find"
   lab_env "$lab"
-  PATH="$fakebin:$PATH" FM_RM_OPENCODE_DB="$lab/no-opencode.db" \
+  PATH="$fakebin:$PATH" FM_RM_OPENCODE_DB="$lab/home/no-opencode.db" \
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
   expect_code 0 "$status" "mine reports a find failure without aborting"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
@@ -704,6 +790,7 @@ SH
 }
 
 test_structure_reports_ceiling_depth_and_summary_gaps
+test_structure_and_sweep_list_all_findings
 test_structure_is_read_only_and_refuses_non_git
 test_structure_requires_routing_table_and_ignores_malformed_exemptions
 test_mine_extracts_read_metrics_from_opencode
@@ -713,6 +800,7 @@ test_mine_cleanup_preserves_paths_with_spaces
 test_mine_never_records_raw_paths_or_content
 test_mine_codex_session_metrics
 test_mine_reports_absent_sources
+test_mine_skips_external_stores
 test_mine_uses_fixed_home_data_root
 test_mine_reports_empty_sources
 test_rank_orders_by_token_heat
