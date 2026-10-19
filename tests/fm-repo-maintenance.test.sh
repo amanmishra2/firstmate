@@ -232,6 +232,7 @@ test_structure_and_sweep_list_all_findings() {
   "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed before sweep"
   "$TOOL" sweep proj --date 2026-10-18 >/dev/null || fail "sweep exited nonzero"
   report="$lab/home/data/repo-maintenance/proj/2026-10-18/report.md"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
   report_listed=$(grep -Fc 'not in `src/SUMMARY.md`' "$report")
   assert_equals "$src_listed" "$report_listed" "sweep publishes every source-summary gap"
   pass "structure and sweep report every finding without a limit"
@@ -299,6 +300,7 @@ test_structure_requires_routing_table_and_ignores_malformed_exemptions() {
   printf '# proj agents\n\n| Task | Domain | Files | Tests |\n| --- | --- | --- | --- |\n| maintain fixture | tooling | `bin/tool.sh` plus missing.py | `tests/fixture.test.sh` |\n' > "$proj/AGENTS.md"
   out=$($TOOL structure "$proj" --json) || fail "structure exited nonzero for mixed routing targets"
   assert_equals "false" "$(printf '%s' "$out" | jq -r '.entrypoints.routing_ok')" "a valid target plus stray missing path is invalid"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
   printf '# proj agents\n\n| Task | Domain | Files | Tests |\n| --- | --- | --- | --- |\n| maintain fixture | tooling | `bin/tool.sh` | `tests/fixture.test.sh` |\n' > "$proj/AGENTS.md"
   printf 'orphan = 1\n' > "$proj/orphan.py"
   ( cd "$proj" && git add AGENTS.md orphan.py && git commit -qm 'add root orphan fixture' )
@@ -973,6 +975,7 @@ test_sweep_reports_import_direction_totals_and_findings() {
   report="$lab/home/data/repo-maintenance/proj/2026-10-18/report.md"
   assert_contains "$(cat "$report")" "import direction 1" "weekly totals carry import direction findings"
   assert_contains "$(cat "$report")" "- Domain imports of cli/ or web/: 1" "the structure renderer carries the import total"
+  # shellcheck disable=SC2016  # backticks are literal fixture content, not command substitution.
   assert_equals "2" "$(grep -Fc '`src/one.py:1` imports cli/' "$report")" "both report sections carry the import finding"
   pass "sweep carries import direction totals and findings"
 }
