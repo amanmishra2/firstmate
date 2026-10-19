@@ -177,7 +177,7 @@ rm_mine_opencode() {
   done < <(printf '%s' "$session_rows" | jq -c '.[]' 2>/dev/null)
 
   if [ "$mined" -eq 0 ]; then
-    if [ "$invalid_candidates" -gt 0 ]; then status=unreadable; else status=empty; fi
+    if [ "$invalid_candidates" -gt 0 ] || [ "$error_skips" -gt 0 ]; then status=unreadable; else status=empty; fi
   fi
   rm_coverage_json opencode "$(rm_sanitize_path "$db")" "$status" "$seen" "$mined" \
     "$cap_skips" "$empty_skips" "$error_skips" "$scope_skips"
@@ -289,7 +289,7 @@ rm_mine_codex() {
   done < "$eligible"
 
   if [ "$mined" -eq 0 ]; then
-    if [ "$invalid_candidates" -gt 0 ]; then status=unreadable; else status=empty; fi
+    if [ "$invalid_candidates" -gt 0 ] || [ "$error_skips" -gt 0 ]; then status=unreadable; else status=empty; fi
   fi
   rm_coverage_json codex "$(rm_sanitize_path "$root")" "$status" "$seen" "$mined" \
     "$cap_skips" "$empty_skips" "$error_skips" "$scope_skips"

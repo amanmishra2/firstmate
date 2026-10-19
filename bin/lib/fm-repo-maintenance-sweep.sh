@@ -170,9 +170,10 @@ this section with the evidence-backed findings list (category, anchor, why it ma
 
 ## Phased slice plan (pending)
 
-This pilot build delivers Phase 1 slices and navigation summaries. Phase 2 rollout requires
-domain packages to meet the four-level depth, per-folder SUMMARY.md, and unexempted 500-line
-standards after the pilot ranking improves; ranking improvement is evidence, not a universal gate.
+Phase 1 remains pending until its three receipts are recorded: a green test suite, zero broken
+imports, and a measured token-consumption drop on subsequent tasks. Phase 2 requires those receipts
+and the remaining domain packages to meet the four-level depth, per-folder SUMMARY.md, and
+unexempted 500-line standards.
 
 ## Summary: DO FIRST / DO LATER / DO NOT DO (pending)
 

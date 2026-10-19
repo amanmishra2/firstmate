@@ -91,7 +91,14 @@ rm_physical_path() {
     physical=$(realpath "$input" 2>/dev/null) || physical=""
   fi
   if [ -z "$physical" ]; then
-    physical=$(cd -P -- "$input" 2>/dev/null && pwd -P) || return 1
+    if [ -d "$input" ]; then
+      physical=$(cd -P -- "$input" 2>/dev/null && pwd -P) || return 1
+    else
+      [ ! -L "$input" ] || return 1
+      base=$(basename -- "$input")
+      parent=$(cd -P -- "$(dirname -- "$input")" 2>/dev/null && pwd -P) || return 1
+      physical="$parent/$base"
+    fi
   fi
   printf '%s%s\n' "$physical" "$suffix"
 }

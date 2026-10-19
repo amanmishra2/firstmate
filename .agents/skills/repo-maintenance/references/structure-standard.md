@@ -34,11 +34,12 @@ This reference owns the universal repository baseline: layout, folder depth, per
 
 ## Rollout
 
-1. Pilot one project: add the missing `SUMMARY.md` files for its hottest folders first, fix broken exports and duplicate math, and measure the read-cost drop on subsequent tasks.
-2. Phase 2 rolls the standard out to remaining domain packages only after they meet the four-level depth bound, per-folder summary standard, and unexempted 500-line ceiling. The pilot's ranking improvement is necessary evidence, but it is not a universal rollout gate.
+1. Pilot one project by implementing its first slices, scaffolding missing `SUMMARY.md` files, and measuring subsequent task read cost.
+   Phase 1 remains pending until the test suite is green, zero broken imports are confirmed, and subsequent tasks show a measured token-consumption drop.
+2. Phase 2 may begin only after all three pilot receipts are recorded and the remaining domain packages meet the four-level depth bound, per-folder summary standard, and unexempted 500-line ceiling.
 3. A new repository is scaffolded to this standard from its first commit: `src/` layout, folder summaries, entrypoints, and the size ceiling.
 
-The current pilot build delivers Phase 1 slices and navigation summaries. It records invalid summary shapes and requires a non-empty root `AGENTS.md` alongside `README.md`.
+The audit records invalid summary shapes and requires a non-empty root `AGENTS.md` alongside `README.md`.
 
 The audit reports against this standard; it never edits a project.
 Structure work ships as ordinary tasks, largest navigation wins first.

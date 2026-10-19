@@ -235,6 +235,23 @@ test_mine_extracts_read_metrics_from_opencode() {
   pass "mine extracts opencode read, edit, and token aggregates"
 }
 
+test_mine_resolves_file_paths_when_realpath_fails() {
+  local lab fakebin metrics
+  lab=$(make_lab mine-realpath-fallback)
+  fakebin="$lab/fake-bin"
+  mkdir -p "$fakebin"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/realpath"
+  chmod +x "$fakebin/realpath"
+  lab_env "$lab"
+  PATH="$fakebin:$PATH" FM_HOME="$lab/home" \
+    "$TOOL" mine --now 1792400300 >/dev/null || fail "mine failed when realpath failed"
+  metrics="$lab/home/data/repo-maintenance/metrics/2026-10-19.json"
+
+  assert_equals "3" "$(jq -r '.files[] | select(.path=="src/one.py") | .reads' "$metrics")" "existing files remain classifiable through their physical parent"
+  assert_equals "projects/proj" "$(jq -r '.files[] | select(.path=="src/one.py") | .scope' "$metrics")" "the fallback retains project scope"
+  pass "mine resolves regular file paths when realpath fails"
+}
+
 test_mine_never_records_raw_paths_or_content() {
   local lab metrics
   lab=$(make_lab mine-privacy)
@@ -336,11 +353,15 @@ test_rank_without_metrics_refuses() {
 }
 
 test_rank_zeroes_thi_for_distinct_single_reads_and_rejects_traversal() {
-  local lab metrics rank
+  local lab metrics rank fakebin
   lab=$(make_lab rank-boundaries)
   lab_env "$lab"
   metrics="$lab/home/data/repo-maintenance/metrics/single.json"
   mkdir -p "$(dirname "$metrics")"
+  fakebin="$lab/fake-bin"
+  mkdir -p "$fakebin"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/realpath"
+  chmod +x "$fakebin/realpath"
   printf 'outside\n' > "$lab/outside.txt"
   ln -s "$lab/outside.txt" "$lab/home/projects/proj/escape.txt"
   cat > "$metrics" <<'JSON'
@@ -350,7 +371,7 @@ test_rank_zeroes_thi_for_distinct_single_reads_and_rejects_traversal() {
   {"scope":"projects/proj","path":"escape.txt","reads":1,"tasks":1,"reread_reads":1,"max_payload_bytes":12}
 ]}
 JSON
-  rank=$(FM_HOME="$lab/home" "$TOOL" rank --metrics "$metrics" --project proj --json) || fail "rank exited nonzero"
+  rank=$(PATH="$fakebin:$PATH" FM_HOME="$lab/home" "$TOOL" rank --metrics "$metrics" --project proj --json) || fail "rank exited nonzero"
   assert_equals "0" "$(printf '%s' "$rank" | jq -r '.files[0].thi')" "one read in each distinct task has zero THI"
   assert_equals "2" "$(printf '%s' "$rank" | jq -r '.unresolved')" "traversal and symlink escape rows are unresolved"
   assert_equals "1" "$(printf '%s' "$rank" | jq -r '.files | length')" "traversal rows never reach ranking output"
@@ -372,6 +393,70 @@ test_mine_marks_session_enumeration_failures_unreadable() {
   assert_equals "1" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="opencode") | .skipped_error')" "schema enumeration failure is counted as an error"
   assert_equals "absent" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .status')" "the absent second source remains distinguishable"
   pass "mine marks session enumeration failures unreadable"
+}
+
+test_mine_marks_opencode_processing_failures_unreadable() {
+  local lab fakebin real_sqlite out status=0
+  lab=$(make_lab mine-opencode-query-failure)
+  fakebin="$lab/fake-bin"
+  real_sqlite=$(command -v sqlite3) || fail "sqlite3 is required for the query failure fixture"
+  mkdir -p "$fakebin"
+  cat > "$fakebin/sqlite3" <<'SH'
+#!/usr/bin/env bash
+set -u
+query=""
+for arg in "$@"; do query=$arg; done
+case "$query" in
+  *"SELECT m.seq AS seq,"*) exit 1 ;;
+esac
+exec "$FM_RM_TEST_SQLITE3" "$@"
+SH
+  chmod +x "$fakebin/sqlite3"
+  lab_env "$lab"
+  PATH="$fakebin:$PATH" FM_RM_TEST_SQLITE3="$real_sqlite" \
+    FM_RM_CODEX_SESSIONS="$lab/no-codex" \
+    "$TOOL" mine --now 1792400300 >/dev/null || status=$?
+  expect_code 0 "$status" "mine reports OpenCode query failures without aborting"
+  out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
+  assert_equals "unreadable" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="opencode") | .status')" "query failures are not reported as empty"
+  assert_equals "0" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="opencode") | .sessions_mined')" "failed queries cannot become mined"
+  assert_equals "true" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="opencode") | (.skipped_error > 0)')" "processing failures are counted"
+  pass "mine marks zero-mined OpenCode query failures unreadable"
+}
+
+test_mine_marks_codex_projection_failures_unreadable() {
+  local lab fakebin codex_dir rollout real_jq out status=0
+  lab=$(make_lab mine-codex-projection-failure)
+  fakebin="$lab/fake-bin"
+  codex_dir="$lab/codex"
+  rollout="$codex_dir/rollout-projection.jsonl"
+  real_jq=$(command -v jq) || fail "jq is required for the projection failure fixture"
+  mkdir -p "$fakebin" "$codex_dir"
+  cat > "$fakebin/jq" <<'SH'
+#!/usr/bin/env bash
+set -u
+filter=""
+for arg in "$@"; do filter=$arg; done
+if [ "$filter" = '. + {source: "codex", dir: $dir}' ]; then exit 1; fi
+exec "$FM_RM_TEST_JQ" "$@"
+SH
+  chmod +x "$fakebin/jq"
+  printf '%s\n' \
+    "{\"timestamp\":\"2026-10-18T10:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_projection\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T10:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T10:00:01.000Z","type":"turn_context","payload":{"turn_id":"t1"}}' \
+    '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
+    > "$rollout"
+  touch -t 2610181200 "$rollout"
+  lab_env "$lab"
+  PATH="$fakebin:$PATH" FM_RM_TEST_JQ="$real_jq" \
+    FM_RM_OPENCODE_DB="$lab/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" \
+    "$TOOL" mine --now 1792400300 >/dev/null || status=$?
+  expect_code 0 "$status" "mine reports Codex projection failures without aborting"
+  out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
+  assert_equals "unreadable" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .status')" "projection failures are not reported as empty"
+  assert_equals "0" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_mined')" "failed projections cannot become mined"
+  assert_equals "1" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .skipped_error')" "the projection failure is counted"
+  pass "mine marks zero-mined Codex projection failures unreadable"
 }
 
 test_mine_marks_malformed_candidates_unreadable() {
@@ -559,6 +644,7 @@ test_structure_reports_ceiling_depth_and_summary_gaps
 test_structure_is_read_only_and_refuses_non_git
 test_structure_requires_routing_table_and_ignores_malformed_exemptions
 test_mine_extracts_read_metrics_from_opencode
+test_mine_resolves_file_paths_when_realpath_fails
 test_mine_never_records_raw_paths_or_content
 test_mine_codex_session_metrics
 test_mine_reports_absent_sources
@@ -568,6 +654,8 @@ test_rank_orders_by_token_heat
 test_rank_without_metrics_refuses
 test_rank_zeroes_thi_for_distinct_single_reads_and_rejects_traversal
 test_mine_marks_session_enumeration_failures_unreadable
+test_mine_marks_opencode_processing_failures_unreadable
+test_mine_marks_codex_projection_failures_unreadable
 test_mine_marks_malformed_candidates_unreadable
 test_codex_uses_mtime_for_window_and_cap_order
 test_mine_marks_codex_find_failures_unreadable
