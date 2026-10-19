@@ -1,0 +1,3277 @@
+{
+  "schema": "fm-repo-maintenance-structure.v1",
+  "root": "<FIRSTMATE>",
+  "ceiling_lines": 500,
+  "files_over_ceiling": {
+    "total": 205,
+    "exempt": 0,
+    "listed": [
+      {
+        "path": ".claude/mods/firstmate-calm/hooks/register.ts",
+        "lines": 504
+      },
+      {
+        "path": ".omp/extensions/fm-primary-omp-watch.ts",
+        "lines": 1152
+      },
+      {
+        "path": ".omp/extensions/fm-primary-turnend-guard.ts",
+        "lines": 620
+      },
+      {
+        "path": ".opencode/plugins/fm-primary-watch-arm.js",
+        "lines": 579
+      },
+      {
+        "path": ".pi/extensions/fm-branch-supervision.ts",
+        "lines": 2454
+      },
+      {
+        "path": ".pi/extensions/fm-calm.ts",
+        "lines": 514
+      },
+      {
+        "path": ".pi/extensions/fm-primary-pi-watch.ts",
+        "lines": 1307
+      },
+      {
+        "path": ".pi/extensions/fm-primary-turnend-guard.ts",
+        "lines": 652
+      },
+      {
+        "path": ".pi/extensions/lib/fm-branch-dispatch.ts",
+        "lines": 748
+      },
+      {
+        "path": "bin/backends/cmux.sh",
+        "lines": 653
+      },
+      {
+        "path": "bin/backends/herdr.sh",
+        "lines": 4119
+      },
+      {
+        "path": "bin/backends/tmux.sh",
+        "lines": 510
+      },
+      {
+        "path": "bin/backends/zellij.sh",
+        "lines": 708
+      },
+      {
+        "path": "bin/fm-afk-contract.sh",
+        "lines": 707
+      },
+      {
+        "path": "bin/fm-afk-launch.sh",
+        "lines": 932
+      },
+      {
+        "path": "bin/fm-afk-return.sh",
+        "lines": 931
+      },
+      {
+        "path": "bin/fm-arm-command-policy.mjs",
+        "lines": 973
+      },
+      {
+        "path": "bin/fm-backend.sh",
+        "lines": 1111
+      },
+      {
+        "path": "bin/fm-backlog-handoff.sh",
+        "lines": 1100
+      },
+      {
+        "path": "bin/fm-backlog-transition-lib.sh",
+        "lines": 1237
+      },
+      {
+        "path": "bin/fm-bearings-snapshot.sh",
+        "lines": 740
+      },
+      {
+        "path": "bin/fm-bootstrap.sh",
+        "lines": 1672
+      },
+      {
+        "path": "bin/fm-branch-outcome.sh",
+        "lines": 812
+      },
+      {
+        "path": "bin/fm-brief.sh",
+        "lines": 812
+      },
+      {
+        "path": "bin/fm-busy-lib.sh",
+        "lines": 1222
+      },
+      {
+        "path": "bin/fm-captain-hold.sh",
+        "lines": 2056
+      },
+      {
+        "path": "bin/fm-classify-lib.sh",
+        "lines": 2742
+      },
+      {
+        "path": "bin/fm-claude-stop-autoarm.sh",
+        "lines": 588
+      },
+      {
+        "path": "bin/fm-claude-trust.sh",
+        "lines": 593
+      },
+      {
+        "path": "bin/fm-composer-lib.sh",
+        "lines": 2234
+      },
+      {
+        "path": "bin/fm-config-inherit-lib.sh",
+        "lines": 1463
+      },
+      {
+        "path": "bin/fm-contributions.sh",
+        "lines": 634
+      },
+      {
+        "path": "bin/fm-control-lib.sh",
+        "lines": 523
+      },
+      {
+        "path": "bin/fm-control.sh",
+        "lines": 1226
+      },
+      {
+        "path": "bin/fm-crew-state.sh",
+        "lines": 1374
+      },
+      {
+        "path": "bin/fm-dispatch-resolve.sh",
+        "lines": 520
+      },
+      {
+        "path": "bin/fm-dod-lib.sh",
+        "lines": 895
+      },
+      {
+        "path": "bin/fm-extension.mjs",
+        "lines": 2577
+      },
+      {
+        "path": "bin/fm-ff-lib.sh",
+        "lines": 580
+      },
+      {
+        "path": "bin/fm-fleet-snapshot.sh",
+        "lines": 2088
+      },
+      {
+        "path": "bin/fm-harness.sh",
+        "lines": 573
+      },
+      {
+        "path": "bin/fm-herdr-groups.sh",
+        "lines": 540
+      },
+      {
+        "path": "bin/fm-herdr-lab.sh",
+        "lines": 593
+      },
+      {
+        "path": "bin/fm-home-seed.sh",
+        "lines": 1023
+      },
+      {
+        "path": "bin/fm-inactive-reconcile.sh",
+        "lines": 710
+      },
+      {
+        "path": "bin/fm-inbox.sh",
+        "lines": 1159
+      },
+      {
+        "path": "bin/fm-lint.sh",
+        "lines": 1408
+      },
+      {
+        "path": "bin/fm-live-lab.sh",
+        "lines": 869
+      },
+      {
+        "path": "bin/fm-mail.sh",
+        "lines": 650
+      },
+      {
+        "path": "bin/fm-nm-run-lib.sh",
+        "lines": 520
+      },
+      {
+        "path": "bin/fm-pending-reply-lib.sh",
+        "lines": 1686
+      },
+      {
+        "path": "bin/fm-polytoken-lib.sh",
+        "lines": 506
+      },
+      {
+        "path": "bin/fm-pr-lib.sh",
+        "lines": 1526
+      },
+      {
+        "path": "bin/fm-pr-merge.sh",
+        "lines": 1841
+      },
+      {
+        "path": "bin/fm-procevent-lavish.sh",
+        "lines": 978
+      },
+      {
+        "path": "bin/fm-procevent-lib.sh",
+        "lines": 1365
+      },
+      {
+        "path": "bin/fm-procevent-remote-reply.sh",
+        "lines": 844
+      },
+      {
+        "path": "bin/fm-procevent-when.sh",
+        "lines": 638
+      },
+      {
+        "path": "bin/fm-procevent.sh",
+        "lines": 2570
+      },
+      {
+        "path": "bin/fm-promote.sh",
+        "lines": 502
+      },
+      {
+        "path": "bin/fm-public-followup-lib.sh",
+        "lines": 599
+      },
+      {
+        "path": "bin/fm-public-followup.sh",
+        "lines": 1681
+      },
+      {
+        "path": "bin/fm-remote-doctor.sh",
+        "lines": 949
+      },
+      {
+        "path": "bin/fm-remote-job-lib.sh",
+        "lines": 1480
+      },
+      {
+        "path": "bin/fm-remote-job-worker.sh",
+        "lines": 1339
+      },
+      {
+        "path": "bin/fm-role-lib.sh",
+        "lines": 533
+      },
+      {
+        "path": "bin/fm-secondmate-reconcile.sh",
+        "lines": 588
+      },
+      {
+        "path": "bin/fm-send.sh",
+        "lines": 1211
+      },
+      {
+        "path": "bin/fm-session-start.sh",
+        "lines": 1108
+      },
+      {
+        "path": "bin/fm-spawn.sh",
+        "lines": 6553
+      },
+      {
+        "path": "bin/fm-startup-network.sh",
+        "lines": 759
+      },
+      {
+        "path": "bin/fm-supervise-daemon.sh",
+        "lines": 2036
+      },
+      {
+        "path": "bin/fm-supervision-host.sh",
+        "lines": 1191
+      },
+      {
+        "path": "bin/fm-task-inbox-lib.sh",
+        "lines": 546
+      },
+      {
+        "path": "bin/fm-teardown.sh",
+        "lines": 3972
+      },
+      {
+        "path": "bin/fm-test-isolation-proof.sh",
+        "lines": 589
+      },
+      {
+        "path": "bin/fm-test-run.sh",
+        "lines": 2728
+      },
+      {
+        "path": "bin/fm-tool-update-check.sh",
+        "lines": 941
+      },
+      {
+        "path": "bin/fm-turnend-guard.sh",
+        "lines": 549
+      },
+      {
+        "path": "bin/fm-voice-client.py",
+        "lines": 1373
+      },
+      {
+        "path": "bin/fm-voice-relay.py",
+        "lines": 1256
+      },
+      {
+        "path": "bin/fm-wake-drain.sh",
+        "lines": 1078
+      },
+      {
+        "path": "bin/fm-wake-lib.sh",
+        "lines": 2953
+      },
+      {
+        "path": "bin/fm-watch-arm.sh",
+        "lines": 795
+      },
+      {
+        "path": "bin/fm-watch.sh",
+        "lines": 3494
+      },
+      {
+        "path": "bin/fm-x-lib.sh",
+        "lines": 1036
+      },
+      {
+        "path": "bin/fm_voice_records.py",
+        "lines": 597
+      },
+      {
+        "path": "bin/lib/fm-repo-maintenance-structure.sh",
+        "lines": 612
+      },
+      {
+        "path": "tests/fm-afk-contract.test.sh",
+        "lines": 687
+      },
+      {
+        "path": "tests/fm-afk-inject-herdr-e2e.test.sh",
+        "lines": 541
+      },
+      {
+        "path": "tests/fm-afk-launch.test.sh",
+        "lines": 1780
+      },
+      {
+        "path": "tests/fm-afk-return.test.sh",
+        "lines": 1388
+      },
+      {
+        "path": "tests/fm-agy-harness.test.sh",
+        "lines": 930
+      },
+      {
+        "path": "tests/fm-backend-cmux.test.sh",
+        "lines": 1166
+      },
+      {
+        "path": "tests/fm-backend-herdr-presentation-e2e.test.sh",
+        "lines": 1581
+      },
+      {
+        "path": "tests/fm-backend-herdr.test.sh",
+        "lines": 6177
+      },
+      {
+        "path": "tests/fm-backend-orca.test.sh",
+        "lines": 1403
+      },
+      {
+        "path": "tests/fm-backend-zellij.test.sh",
+        "lines": 1360
+      },
+      {
+        "path": "tests/fm-backend.test.sh",
+        "lines": 1267
+      },
+      {
+        "path": "tests/fm-backlog-atomicity.test.sh",
+        "lines": 3166
+      },
+      {
+        "path": "tests/fm-backlog-handoff.test.sh",
+        "lines": 1397
+      },
+      {
+        "path": "tests/fm-bearings-board.test.sh",
+        "lines": 789
+      },
+      {
+        "path": "tests/fm-bearings-snapshot.test.sh",
+        "lines": 3420
+      },
+      {
+        "path": "tests/fm-bootstrap-network-parallel.test.sh",
+        "lines": 771
+      },
+      {
+        "path": "tests/fm-bootstrap.test.sh",
+        "lines": 1278
+      },
+      {
+        "path": "tests/fm-branch-supervision.test.sh",
+        "lines": 1649
+      },
+      {
+        "path": "tests/fm-brief.test.sh",
+        "lines": 1671
+      },
+      {
+        "path": "tests/fm-busy-adapter-wiring.test.sh",
+        "lines": 861
+      },
+      {
+        "path": "tests/fm-busy-state.test.sh",
+        "lines": 650
+      },
+      {
+        "path": "tests/fm-calm-claude-mod-live-e2e.test.sh",
+        "lines": 508
+      },
+      {
+        "path": "tests/fm-calm-claude-mod.test.sh",
+        "lines": 606
+      },
+      {
+        "path": "tests/fm-calm-pi-extension.test.sh",
+        "lines": 4998
+      },
+      {
+        "path": "tests/fm-captain-hold-lifecycle.test.sh",
+        "lines": 4692
+      },
+      {
+        "path": "tests/fm-classify-corr-token.test.sh",
+        "lines": 805
+      },
+      {
+        "path": "tests/fm-classify-decision-key.test.sh",
+        "lines": 606
+      },
+      {
+        "path": "tests/fm-claude-stop-autoarm.test.sh",
+        "lines": 2051
+      },
+      {
+        "path": "tests/fm-claude-trust.test.sh",
+        "lines": 871
+      },
+      {
+        "path": "tests/fm-composer-ghost.test.sh",
+        "lines": 716
+      },
+      {
+        "path": "tests/fm-composer-lib.test.sh",
+        "lines": 1513
+      },
+      {
+        "path": "tests/fm-contributions.test.sh",
+        "lines": 1650
+      },
+      {
+        "path": "tests/fm-control-relaunch.test.sh",
+        "lines": 2858
+      },
+      {
+        "path": "tests/fm-control.test.sh",
+        "lines": 1262
+      },
+      {
+        "path": "tests/fm-crew-state.test.sh",
+        "lines": 5897
+      },
+      {
+        "path": "tests/fm-cursor-harness.test.sh",
+        "lines": 619
+      },
+      {
+        "path": "tests/fm-cursor-primary.test.sh",
+        "lines": 827
+      },
+      {
+        "path": "tests/fm-daemon.test.sh",
+        "lines": 3490
+      },
+      {
+        "path": "tests/fm-dispatch-resolve.test.sh",
+        "lines": 1008
+      },
+      {
+        "path": "tests/fm-dod-lib.test.sh",
+        "lines": 602
+      },
+      {
+        "path": "tests/fm-extension-binding.test.sh",
+        "lines": 2281
+      },
+      {
+        "path": "tests/fm-fleet-snapshot-view.test.sh",
+        "lines": 1172
+      },
+      {
+        "path": "tests/fm-fleet-sync.test.sh",
+        "lines": 776
+      },
+      {
+        "path": "tests/fm-gate-refuse.test.sh",
+        "lines": 570
+      },
+      {
+        "path": "tests/fm-git-strip-ai-trailers.test.sh",
+        "lines": 519
+      },
+      {
+        "path": "tests/fm-guard-stale-banner.test.sh",
+        "lines": 978
+      },
+      {
+        "path": "tests/fm-harness-precedence.test.sh",
+        "lines": 843
+      },
+      {
+        "path": "tests/fm-herdr-lab.test.sh",
+        "lines": 554
+      },
+      {
+        "path": "tests/fm-home-summary-refresh.test.sh",
+        "lines": 1085
+      },
+      {
+        "path": "tests/fm-inactive-reconcile.test.sh",
+        "lines": 1079
+      },
+      {
+        "path": "tests/fm-inbox.test.sh",
+        "lines": 546
+      },
+      {
+        "path": "tests/fm-kimi-harness.test.sh",
+        "lines": 1166
+      },
+      {
+        "path": "tests/fm-lint-workflows.test.sh",
+        "lines": 532
+      },
+      {
+        "path": "tests/fm-lint.test.sh",
+        "lines": 2077
+      },
+      {
+        "path": "tests/fm-live-lab.test.sh",
+        "lines": 765
+      },
+      {
+        "path": "tests/fm-mail.test.sh",
+        "lines": 2659
+      },
+      {
+        "path": "tests/fm-muse-harness.test.sh",
+        "lines": 992
+      },
+      {
+        "path": "tests/fm-omp-harness.test.sh",
+        "lines": 879
+      },
+      {
+        "path": "tests/fm-on.test.sh",
+        "lines": 548
+      },
+      {
+        "path": "tests/fm-pending-reply.test.sh",
+        "lines": 2155
+      },
+      {
+        "path": "tests/fm-pi-branch-extension.test.sh",
+        "lines": 6241
+      },
+      {
+        "path": "tests/fm-pi-branch-live-e2e.test.sh",
+        "lines": 1448
+      },
+      {
+        "path": "tests/fm-pi-watch-extension.test.sh",
+        "lines": 5435
+      },
+      {
+        "path": "tests/fm-polytoken-harness.test.sh",
+        "lines": 1222
+      },
+      {
+        "path": "tests/fm-pr-check-security.test.sh",
+        "lines": 3651
+      },
+      {
+        "path": "tests/fm-pr-merge.test.sh",
+        "lines": 4622
+      },
+      {
+        "path": "tests/fm-procevent-when.test.sh",
+        "lines": 649
+      },
+      {
+        "path": "tests/fm-procevent.test.sh",
+        "lines": 5149
+      },
+      {
+        "path": "tests/fm-project-capacity.test.sh",
+        "lines": 667
+      },
+      {
+        "path": "tests/fm-public-followup.test.sh",
+        "lines": 4008
+      },
+      {
+        "path": "tests/fm-quota-array-dispatch-live-e2e.test.sh",
+        "lines": 524
+      },
+      {
+        "path": "tests/fm-quota-choose.test.sh",
+        "lines": 769
+      },
+      {
+        "path": "tests/fm-remote-backlog-handoff.test.sh",
+        "lines": 715
+      },
+      {
+        "path": "tests/fm-remote-doctor.test.sh",
+        "lines": 889
+      },
+      {
+        "path": "tests/fm-remote-job.test.sh",
+        "lines": 1551
+      },
+      {
+        "path": "tests/fm-remote-reply.test.sh",
+        "lines": 1301
+      },
+      {
+        "path": "tests/fm-remote-secondmate-lifecycle-e2e.test.sh",
+        "lines": 1640
+      },
+      {
+        "path": "tests/fm-repo-maintenance.test.sh",
+        "lines": 1065
+      },
+      {
+        "path": "tests/fm-secondmate-harness.test.sh",
+        "lines": 2823
+      },
+      {
+        "path": "tests/fm-secondmate-liveness.test.sh",
+        "lines": 846
+      },
+      {
+        "path": "tests/fm-secondmate-reconcile.test.sh",
+        "lines": 1009
+      },
+      {
+        "path": "tests/fm-secondmate-restart.test.sh",
+        "lines": 870
+      },
+      {
+        "path": "tests/fm-secondmate-safety.test.sh",
+        "lines": 3197
+      },
+      {
+        "path": "tests/fm-secondmate-sync.test.sh",
+        "lines": 1463
+      },
+      {
+        "path": "tests/fm-self-repo-role.test.sh",
+        "lines": 697
+      },
+      {
+        "path": "tests/fm-send-inbox.test.sh",
+        "lines": 522
+      },
+      {
+        "path": "tests/fm-send-remote-delivery.test.sh",
+        "lines": 805
+      },
+      {
+        "path": "tests/fm-send-resolve-key.test.sh",
+        "lines": 931
+      },
+      {
+        "path": "tests/fm-session-lock-ancestry.test.sh",
+        "lines": 1235
+      },
+      {
+        "path": "tests/fm-session-start.test.sh",
+        "lines": 3110
+      },
+      {
+        "path": "tests/fm-sessionstart-hook-live-e2e.test.sh",
+        "lines": 628
+      },
+      {
+        "path": "tests/fm-sessionstart-nudge.test.sh",
+        "lines": 1122
+      },
+      {
+        "path": "tests/fm-shared-captain-inheritance.test.sh",
+        "lines": 610
+      },
+      {
+        "path": "tests/fm-spawn-dispatch-profile.test.sh",
+        "lines": 2359
+      },
+      {
+        "path": "tests/fm-spawn-orca-worktree.test.sh",
+        "lines": 884
+      },
+      {
+        "path": "tests/fm-spawn-pool-base-freshen.test.sh",
+        "lines": 1206
+      },
+      {
+        "path": "tests/fm-startup-growth-check.test.sh",
+        "lines": 629
+      },
+      {
+        "path": "tests/fm-startup-network.test.sh",
+        "lines": 883
+      },
+      {
+        "path": "tests/fm-supervision-host.test.sh",
+        "lines": 3044
+      },
+      {
+        "path": "tests/fm-task-delivery.test.sh",
+        "lines": 1728
+      },
+      {
+        "path": "tests/fm-task-inbox.test.sh",
+        "lines": 1230
+      },
+      {
+        "path": "tests/fm-teardown-endpoint-safety.test.sh",
+        "lines": 1449
+      },
+      {
+        "path": "tests/fm-teardown.test.sh",
+        "lines": 5306
+      },
+      {
+        "path": "tests/fm-test-run.test.sh",
+        "lines": 1869
+      },
+      {
+        "path": "tests/fm-tool-update-check.test.sh",
+        "lines": 1243
+      },
+      {
+        "path": "tests/fm-trace-context-spawn.test.sh",
+        "lines": 638
+      },
+      {
+        "path": "tests/fm-turnend-guard.test.sh",
+        "lines": 2394
+      },
+      {
+        "path": "tests/fm-update.test.sh",
+        "lines": 576
+      },
+      {
+        "path": "tests/fm-voice-relay.test.sh",
+        "lines": 4785
+      },
+      {
+        "path": "tests/fm-wake-drain-outcome-backstop.test.sh",
+        "lines": 533
+      },
+      {
+        "path": "tests/fm-wake-queue.test.sh",
+        "lines": 3584
+      },
+      {
+        "path": "tests/fm-watch-arm.test.sh",
+        "lines": 1746
+      },
+      {
+        "path": "tests/fm-watch-triage.test.sh",
+        "lines": 7302
+      },
+      {
+        "path": "tests/fm-watcher-lock.test.sh",
+        "lines": 1609
+      },
+      {
+        "path": "tests/fm-worker-account.test.sh",
+        "lines": 505
+      },
+      {
+        "path": "tests/fm-x-mode.test.sh",
+        "lines": 3288
+      },
+      {
+        "path": "tests/lib.sh",
+        "lines": 900
+      }
+    ]
+  },
+  "depth_violations": {
+    "total": 0,
+    "max_below_src": 4,
+    "listed": []
+  },
+  "import_direction": {
+    "total": 0,
+    "listed": []
+  },
+  "dirs_missing_summary": {
+    "total": 71,
+    "dirs": 78,
+    "listed": [
+      {
+        "dir": ".agents"
+      },
+      {
+        "dir": ".agents/skills"
+      },
+      {
+        "dir": ".agents/skills/afk"
+      },
+      {
+        "dir": ".agents/skills/agent-skill-trigger-index"
+      },
+      {
+        "dir": ".agents/skills/ahoy"
+      },
+      {
+        "dir": ".agents/skills/ask-user-authority"
+      },
+      {
+        "dir": ".agents/skills/away-quiet-supervision"
+      },
+      {
+        "dir": ".agents/skills/bearings"
+      },
+      {
+        "dir": ".agents/skills/bearings/assets"
+      },
+      {
+        "dir": ".agents/skills/bootstrap-diagnostics"
+      },
+      {
+        "dir": ".agents/skills/captain-hold-lifecycle"
+      },
+      {
+        "dir": ".agents/skills/decision-hold-lifecycle"
+      },
+      {
+        "dir": ".agents/skills/diagnostic-reasoning"
+      },
+      {
+        "dir": ".agents/skills/firstmate-codexapp"
+      },
+      {
+        "dir": ".agents/skills/firstmate-codexapp/agents"
+      },
+      {
+        "dir": ".agents/skills/firstmate-coding-guidelines"
+      },
+      {
+        "dir": ".agents/skills/firstmate-orca"
+      },
+      {
+        "dir": ".agents/skills/firstmate-self-repo"
+      },
+      {
+        "dir": ".agents/skills/fmx-respond"
+      },
+      {
+        "dir": ".agents/skills/harness-adapters"
+      },
+      {
+        "dir": ".agents/skills/harness-adapters/references"
+      },
+      {
+        "dir": ".agents/skills/harness-adapters/references/common"
+      },
+      {
+        "dir": ".agents/skills/harness-adapters/references/harness"
+      },
+      {
+        "dir": ".agents/skills/operational-home-layout"
+      },
+      {
+        "dir": ".agents/skills/process-event-sources"
+      },
+      {
+        "dir": ".agents/skills/project-management"
+      },
+      {
+        "dir": ".agents/skills/quiet"
+      },
+      {
+        "dir": ".agents/skills/quota-array-dispatch"
+      },
+      {
+        "dir": ".agents/skills/scout-completion"
+      },
+      {
+        "dir": ".agents/skills/secondmate-provisioning"
+      },
+      {
+        "dir": ".agents/skills/session-start-recovery"
+      },
+      {
+        "dir": ".agents/skills/ship-landing"
+      },
+      {
+        "dir": ".agents/skills/stow"
+      },
+      {
+        "dir": ".agents/skills/stuck-crewmate-recovery"
+      },
+      {
+        "dir": ".agents/skills/updatefirstmate"
+      },
+      {
+        "dir": ".agents/skills/validation-supervision"
+      },
+      {
+        "dir": ".claude"
+      },
+      {
+        "dir": ".claude/mods"
+      },
+      {
+        "dir": ".claude/mods/firstmate-calm"
+      },
+      {
+        "dir": ".claude/mods/firstmate-calm/.claude-plugin"
+      },
+      {
+        "dir": ".claude/mods/firstmate-calm/hooks"
+      },
+      {
+        "dir": ".claude/mods/firstmate-calm/lib"
+      },
+      {
+        "dir": ".claude/mods/firstmate-calm/tests"
+      },
+      {
+        "dir": ".codex"
+      },
+      {
+        "dir": ".cursor"
+      },
+      {
+        "dir": ".github"
+      },
+      {
+        "dir": ".github/workflows"
+      },
+      {
+        "dir": ".greptile"
+      },
+      {
+        "dir": ".grok"
+      },
+      {
+        "dir": ".grok/hooks"
+      },
+      {
+        "dir": ".omp"
+      },
+      {
+        "dir": ".omp/extensions"
+      },
+      {
+        "dir": ".opencode"
+      },
+      {
+        "dir": ".opencode/plugins"
+      },
+      {
+        "dir": ".opencode/plugins/lib"
+      },
+      {
+        "dir": ".pi"
+      },
+      {
+        "dir": ".pi/extensions"
+      },
+      {
+        "dir": ".pi/extensions/lib"
+      },
+      {
+        "dir": "assets"
+      },
+      {
+        "dir": "bin/backends"
+      },
+      {
+        "dir": "docs/examples"
+      },
+      {
+        "dir": "docs/examples/process-event-extension"
+      },
+      {
+        "dir": "docs/supervision-protocols"
+      },
+      {
+        "dir": "docs/verification"
+      },
+      {
+        "dir": "skills"
+      },
+      {
+        "dir": "skills/stow"
+      },
+      {
+        "dir": "tests/assets"
+      },
+      {
+        "dir": "tests/captures"
+      },
+      {
+        "dir": "tests/captures/no-mistakes-v1.70.1"
+      },
+      {
+        "dir": "tests/fixtures"
+      },
+      {
+        "dir": "tests/fixtures/opencode-1.18.31-cwd"
+      }
+    ]
+  },
+  "summary_gaps": {
+    "total": 536,
+    "summaries_seen": 7,
+    "listed": [
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-afk-contract.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-afk-launch.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-afk-return.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-afk-start.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-agent-process-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-agy-trust.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-arm-command-policy.mjs"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-arm-pretool-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-backend-hometag-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-backend.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-backlog-handoff.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-backlog-receive.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-backlog-transition-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-bearings-board.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-bearings-snapshot.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-bootstrap.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-branch-dispatch.mjs"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-branch-outcome.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-branch-prompt.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-branch-report.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-brief-heading-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-brief.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-busy-event.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-busy-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-captain-hold.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-cd-command-policy.mjs"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-cd-pretool-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-check-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-check-register.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-check-unregister.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-classify-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-claude-stop-autoarm.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-claude-trust.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-commandcode-mod.ts"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-composer-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-config-inherit-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-config-push.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-contributions.jq"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-contributions.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-control-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-control.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-crew-state.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-cursor-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-decision-hold.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-devin-config.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-dispatch-resolve.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-doc-audience-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-dod-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-ensure-agents-md.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-env-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-exclude-tools-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-extension-launch-barrier.mjs"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-extension.mjs"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-extension.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-external-review-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-ff-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-fleet-ledger.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-fleet-snapshot.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-fleet-sync.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-fleet-view.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-forge-detect.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-gate-refuse-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-gemini-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-git-push-guard.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-git-strip-ai-trailers.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-guard.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-harness.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-herdr-ci-cleanup.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-herdr-groups.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-herdr-lab-viewer.py"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-herdr-lab.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-herdr-session-cleanup.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-hold-reason-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-home-seed.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-home-summary-refresh.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-hook-host-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-host-mirror.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-inactive-reconcile.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-inbox.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-install-actionlint.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-install-herdr.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-install-shellcheck.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-install-treehouse.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-jev-mem-guard.py"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-jev-mem-guard.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-kimi-turnend-hook.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-lab-home.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-landed-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-lease-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-lease.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-line-cap-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-lint-workflows.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-lint.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-live-lab.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-lock-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-lock.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-mail-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-mail.py"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-mail.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-marker-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-merge-authority-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-merge-local.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-merge-outcome-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-nm-run-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-on.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-operational-input.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-parent-channel-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-path-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-peek.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-pending-reply-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-pipeline-spend.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-polytoken-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-pr-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-pr-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-pr-merge.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-pr-poll.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-pr-reviewers.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-pr-state.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-primary-scope-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-procevent-extension-capture.pl"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-procevent-lavish.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-procevent-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-procevent-quota.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-procevent-remote-reply.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-procevent-when.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-procevent.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-project-capacity-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-project-mode.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-project-origin-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-promote.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-public-followup-collect.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-public-followup-emit.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-public-followup-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-public-followup.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-push-transition-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-quota-axi-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-quota-choose.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-delta-read.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-doctor.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-entrypoint.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-file.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-herdr-guard.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-herdr-owner-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-home-provision.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-home-seed.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-inherit-push.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-inherit.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-job-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-job-reap-orphans.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-job-worker.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-readiness-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-secondmate-control.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-remote-secondmate-relaunch.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-repo-maintenance.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-review-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-review-diff.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-role-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-role.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-charter-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-liveness-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-nudge-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-parent-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-reconcile.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-registry-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-report.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-restart-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-secondmate-restart.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-send.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-session-lock-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-session-start.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-sessionstart-cursor.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-sessionstart-nudge.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-sessionstart-run.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-spawn.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-startup-growth-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-startup-memory-budget-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-startup-memory-budget.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-startup-network.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-stow-cascade.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-subagent-pretool-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-supervise-daemon.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-supervision-engine-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-supervision-host.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-supervision-instructions.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-supervision-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-supervisor-target-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-tangle-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-task-inbox-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-tasks-axi-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-tasks-axi.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-teardown.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-test-isolation-proof.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-test-run.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-timeout-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-timing-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-tmux-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-tool-update-check.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-trace-context-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-transition-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-turnend-guard-cursor.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-turnend-guard-grok.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-turnend-guard.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-update.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-vendor-auth-probe.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-voice-client.py"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-voice-relay.py"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-wake-drain.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-wake-grant.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-wake-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-watch-arm.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-watch-checkpoint.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-watch.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-worker-account-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-x-dismiss.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-x-followup.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-x-lib.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-x-link.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-x-poll.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm-x-reply.sh"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm_voice_frame.py"
+      },
+      {
+        "summary": "bin/SUMMARY.md",
+        "file": "bin/fm_voice_records.py"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/agent-control.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/architecture.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/arm-pretool-check.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/calm-mode-feasibility.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/calm.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/captain-hold-lifecycle.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/cd-guard.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/cmux-backend.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/codex-app-backend.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/configuration.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/documentation-audiences.json"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/documentation-audiences.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/extension-bindings.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/external-review-forge.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/fleet-ledger.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/fm-test-isolation-proof.json"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/fm-test-isolation-proof.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/fm-test-portable-shards.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/forgejo-tea-integration.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/gerrit-change-watch.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/gerrit-forge-integration.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/gitlab-merge-watch.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/herdr-backend.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/jev-guards.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/orca-backend.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/pi-supervision-branch-poster.svg"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/pi-supervision-branch.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/remote-secondmates.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/scripts.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/secondmate-parent-channel.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/sessionstart-nudge.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/subagent-guard.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/supervision-host.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/tmux-backend.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/trace-context.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/turnend-guard.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/voice-relay.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/watcher-continuity.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/wedge-alarm.md"
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "file": "docs/zellij-backend.md"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/cmux-test-safety.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fixtures.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-afk-contract.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-afk-inject-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-afk-inject-herdr-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-afk-launch.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-afk-pi-herdr-return-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-afk-return.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-agy-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-agy-signals-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-arm-pretool-check.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-ask-user-authority.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-autodetect-smoke.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-cmux-smoke.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-cmux.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-eventwait-smoke.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-eventwait.test.py"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-focus-flash-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-launcher-workspace-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-presentation-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-prune-safety-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-respawn-idem-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-smoke.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-stale-active-tab-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr-workspace-per-home-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-herdr.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-orca.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-tmux-smoke.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-zellij-smoke.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend-zellij.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backend.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backlog-atomicity.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backlog-handoff.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-backlog-read-bound.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-bearings-board-lavish-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-bearings-board-render.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-bearings-board.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-bearings-snapshot.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-bootstrap-network-parallel.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-bootstrap.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-branch-supervision.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-brief.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-busy-adapter-wiring.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-busy-state.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-calm-claude-mod-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-calm-claude-mod-plugin.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-calm-claude-mod.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-calm-pi-extension.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-calm-pi-queue-retention-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-captain-hold-lifecycle.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-cd-pretool-check.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-check-unregister.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-ci-workflow.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-classify-corr-token.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-classify-decision-key.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-claude-stop-autoarm-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-claude-stop-autoarm.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-claude-trust.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-cmux-claude-composer-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-codex-continuity-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-codex-hook-layer-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-commandcode-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-commandcode-signals-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-composer-codex-idle-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-composer-ghost.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-composer-lib.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-composer-matrix-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-contributions.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-control-herdr-smoke.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-control-relaunch.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-control.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-crew-state.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-cursor-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-cursor-primary-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-cursor-primary.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-daemon.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-devin-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-devin-signals-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-dispatch-resolve.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-documentation-audiences.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-dod-lib.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-ensure-agents-md.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-extension-binding.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-fleet-ledger.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-fleet-snapshot-view.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-fleet-sync.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-forge-detect.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-fork-free-helpers.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-gate-refuse.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-gemini-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-git-push-guard.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-git-strip-ai-trailers.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-gitignore-config.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-gotmp.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-grok-continuity-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-grok-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-grok-stop-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-guard-stale-banner.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-harness-adapter-instructions-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-harness-adapter-references.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-harness-liveness-drift-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-harness-precedence.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-herdr-attached-viewer-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-herdr-groups.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-herdr-lab.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-herdr-pi-stale-registration-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-herdr-session-cleanup-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-herdr-session-cleanup.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-herdr-submit-confirm-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-herdr-version-floor-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-home-summary-refresh.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-host-mirror-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-host-mirror.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-inactive-reconcile.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-inbox.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-jev-mem-guard.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-kimi-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-launch-prompt-signals-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-lint-workflows.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-lint.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-live-gate.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-live-lab-up-mate.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-live-lab.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-mail-check.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-mail.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-muse-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-muse-signals-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-nm-test-contract.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-no-mistakes-required.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-omp-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-omp-primary-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-on.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-opencode-primary-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-operational-input.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-parent-channel-scan-exclusion.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-peek-remote.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pending-reply.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-branch-extension.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-branch-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-branch-responsiveness-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-codex-native.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-primary-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-primary-types.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-seeded-home-trust-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-watch-extension.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pi-windows-shell-invocation.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pipeline-spend.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-polytoken-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-polytoken-signals-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pr-check-security.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pr-merge.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pr-reviewers.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pr-state-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-pr-state.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-procevent-quota.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-procevent-when.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-procevent.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-project-capacity.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-project-mode.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-project-origin.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-public-followup.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-quota-array-dispatch-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-quota-choose.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-backlog-handoff.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-delta-read.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-doctor.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-entrypoint.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-herdr-guard.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-job-claim-reap.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-job-claim-retention.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-job-launchagent.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-job-orphan-reap.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-job.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-reply.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-secondmate-lifecycle-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-secondmate-parent-binding.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-secondmate-relaunch.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-secondmate-trace-context.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-remote-transport-lanes.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-repo-maintenance.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-review-check.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-review-diff.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-rovo-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-rovo-signals-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-secondmate-busy-contract-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-secondmate-harness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-secondmate-lifecycle-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-secondmate-liveness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-secondmate-reconcile.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-secondmate-restart.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-secondmate-safety.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-secondmate-sync.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-self-repo-role.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-agy-confirm.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-inbox-doorbell-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-inbox.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-popup-settle.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-remote-delivery.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-resolve-key.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-secondmate-marker-herdr-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-secondmate-marker.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-settle.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-send-strict.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-session-lock-ancestry.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-session-start.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-sessionstart-hook-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-sessionstart-nudge.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-shared-captain-inheritance.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-spawn-batch.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-spawn-compact-adviser-disable-remote.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-spawn-compact-adviser-disable.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-spawn-dispatch-profile.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-spawn-external-review.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-spawn-orca-worktree.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-spawn-pool-base-freshen.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-spawn-worktree-settle.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-startup-growth-check.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-startup-memory-budget.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-startup-network.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-stat-shadowing.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-stow-cascade.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-subagent-pretool-check.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-supervision-events.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-supervision-host-attended-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-supervision-host-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-supervision-host.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-supervision-instructions.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-tangle-guard.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-task-delivery.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-task-inbox.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-tasks-axi.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-teardown-endpoint-safety.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-teardown.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-test-fixture-cleanup.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-test-fixtures.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-test-isolation-proof.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-test-run.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-timeout-lib.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-tmux-agent-liveness.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-tmux-submit-busy.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-tool-update-check.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-trace-context-lib.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-trace-context-spawn.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-transition-lib.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-turnend-foreign-owner-arm-fix.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-turnend-foreign-owner-repro.py"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-turnend-guard.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-update.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-vendor-auth-probe.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-voice-relay.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-wake-daemon-lifecycle-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-wake-drain-open-decisions-cursor.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-wake-drain-open-decisions.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-wake-drain-outcome-backstop.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-wake-drain-unread-status.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-wake-queue.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-watch-arm.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-watch-checkpoint.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-watch-recovery-loop.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-watch-triage.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-watcher-lock.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-worker-account-live-e2e.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-worker-account.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/fm-x-mode.test.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/git-config-helpers.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/herdr-client-pair-fixture.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/herdr-test-safety.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/lib.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/remote-herdr-fixture.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/secondmate-helpers.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/wake-helpers.sh"
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "file": "tests/zellij-test-safety.sh"
+      }
+    ]
+  },
+  "summary_over_limit": {
+    "total": 0,
+    "max_lines": 30,
+    "listed": []
+  },
+  "summary_invalid": {
+    "total": 3,
+    "listed": [
+      {
+        "summary": "bin/SUMMARY.md",
+        "reasons": [
+          "table"
+        ]
+      },
+      {
+        "summary": "docs/SUMMARY.md",
+        "reasons": [
+          "table"
+        ]
+      },
+      {
+        "summary": "tests/SUMMARY.md",
+        "reasons": [
+          "table"
+        ]
+      }
+    ]
+  },
+  "root_orphans": {
+    "total": 9,
+    "listed": [
+      {
+        "file": ".gitattributes"
+      },
+      {
+        "file": ".gitignore"
+      },
+      {
+        "file": ".no-mistakes.yaml"
+      },
+      {
+        "file": ".tasks.toml"
+      },
+      {
+        "file": "CLAUDE.md"
+      },
+      {
+        "file": "CONTRIBUTING.md"
+      },
+      {
+        "file": "GROK_BOT.md"
+      },
+      {
+        "file": "LICENSE"
+      },
+      {
+        "file": "VISION.md"
+      }
+    ]
+  },
+  "entrypoints": {
+    "readme": true,
+    "agents": true,
+    "readme_valid": false,
+    "agents_valid": true,
+    "routing_ok": false,
+    "ok": false
+  }
+}

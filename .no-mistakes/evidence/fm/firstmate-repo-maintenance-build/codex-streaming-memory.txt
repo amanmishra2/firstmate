@@ -1,0 +1,4 @@
+Live Codex streaming probe; memory is peak summed RSS of the CLI process tree (KiB).
+rollout	token_events	jsonl_bytes	peak_process_tree_rss_kb	completed_tasks_mined
+small	20000	3298335	10304	1
+large	200000	33378337	10304	1

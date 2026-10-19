@@ -1,0 +1,870 @@
+# Repo maintenance sweep - firstmate - 2026-10-18
+
+Instrument: `bin/fm-repo-maintenance.sh` (schema `fm-repo-maintenance-report.v1`).
+Report shape: `.agents/skills/repo-maintenance/references/audit-playbook.md` owns the section contract;
+complete the pending sections through the maintenance pass before acting on this report.
+
+## Coverage
+
+- Structure root: `<FIRSTMATE>`
+- Metrics: none; run `bin/fm-repo-maintenance.sh mine` before the next sweep.
+- File coverage includes only tool-attributed named `read` events. Codex and shell-mediated reads are excluded, so absent or zero file rows do not measure inactivity for those paths.
+- First edit timing includes only named edit tools (`edit`, `write`, `patch`, `apply_patch` for OpenCode; `apply_patch`, `write` for Codex). Shell-mediated edits are excluded.
+- Structure totals: files over 500 lines 205 (exempt 0); depth violations 0; dirs missing SUMMARY.md 71 of 78; summary gaps 536; import direction 0; invalid summaries 3; root orphan files 9; over-long summaries 0; entrypoints ok=false
+
+## Token heat ranking (instrument)
+
+No metrics available; run `bin/fm-repo-maintenance.sh mine` first.
+
+## Structure audit (instrument)
+
+- Files over 500 lines: 205 (exempt: 0)
+  - `.claude/mods/firstmate-calm/hooks/register.ts` (504 lines)
+  - `.omp/extensions/fm-primary-omp-watch.ts` (1152 lines)
+  - `.omp/extensions/fm-primary-turnend-guard.ts` (620 lines)
+  - `.opencode/plugins/fm-primary-watch-arm.js` (579 lines)
+  - `.pi/extensions/fm-branch-supervision.ts` (2454 lines)
+  - `.pi/extensions/fm-calm.ts` (514 lines)
+  - `.pi/extensions/fm-primary-pi-watch.ts` (1307 lines)
+  - `.pi/extensions/fm-primary-turnend-guard.ts` (652 lines)
+  - `.pi/extensions/lib/fm-branch-dispatch.ts` (748 lines)
+  - `bin/backends/cmux.sh` (653 lines)
+  - `bin/backends/herdr.sh` (4119 lines)
+  - `bin/backends/tmux.sh` (510 lines)
+  - `bin/backends/zellij.sh` (708 lines)
+  - `bin/fm-afk-contract.sh` (707 lines)
+  - `bin/fm-afk-launch.sh` (932 lines)
+  - `bin/fm-afk-return.sh` (931 lines)
+  - `bin/fm-arm-command-policy.mjs` (973 lines)
+  - `bin/fm-backend.sh` (1111 lines)
+  - `bin/fm-backlog-handoff.sh` (1100 lines)
+  - `bin/fm-backlog-transition-lib.sh` (1237 lines)
+  - `bin/fm-bearings-snapshot.sh` (740 lines)
+  - `bin/fm-bootstrap.sh` (1672 lines)
+  - `bin/fm-branch-outcome.sh` (812 lines)
+  - `bin/fm-brief.sh` (812 lines)
+  - `bin/fm-busy-lib.sh` (1222 lines)
+  - `bin/fm-captain-hold.sh` (2056 lines)
+  - `bin/fm-classify-lib.sh` (2742 lines)
+  - `bin/fm-claude-stop-autoarm.sh` (588 lines)
+  - `bin/fm-claude-trust.sh` (593 lines)
+  - `bin/fm-composer-lib.sh` (2234 lines)
+  - `bin/fm-config-inherit-lib.sh` (1463 lines)
+  - `bin/fm-contributions.sh` (634 lines)
+  - `bin/fm-control-lib.sh` (523 lines)
+  - `bin/fm-control.sh` (1226 lines)
+  - `bin/fm-crew-state.sh` (1374 lines)
+  - `bin/fm-dispatch-resolve.sh` (520 lines)
+  - `bin/fm-dod-lib.sh` (895 lines)
+  - `bin/fm-extension.mjs` (2577 lines)
+  - `bin/fm-ff-lib.sh` (580 lines)
+  - `bin/fm-fleet-snapshot.sh` (2088 lines)
+  - `bin/fm-harness.sh` (573 lines)
+  - `bin/fm-herdr-groups.sh` (540 lines)
+  - `bin/fm-herdr-lab.sh` (593 lines)
+  - `bin/fm-home-seed.sh` (1023 lines)
+  - `bin/fm-inactive-reconcile.sh` (710 lines)
+  - `bin/fm-inbox.sh` (1159 lines)
+  - `bin/fm-lint.sh` (1408 lines)
+  - `bin/fm-live-lab.sh` (869 lines)
+  - `bin/fm-mail.sh` (650 lines)
+  - `bin/fm-nm-run-lib.sh` (520 lines)
+  - `bin/fm-pending-reply-lib.sh` (1686 lines)
+  - `bin/fm-polytoken-lib.sh` (506 lines)
+  - `bin/fm-pr-lib.sh` (1526 lines)
+  - `bin/fm-pr-merge.sh` (1841 lines)
+  - `bin/fm-procevent-lavish.sh` (978 lines)
+  - `bin/fm-procevent-lib.sh` (1365 lines)
+  - `bin/fm-procevent-remote-reply.sh` (844 lines)
+  - `bin/fm-procevent-when.sh` (638 lines)
+  - `bin/fm-procevent.sh` (2570 lines)
+  - `bin/fm-promote.sh` (502 lines)
+  - `bin/fm-public-followup-lib.sh` (599 lines)
+  - `bin/fm-public-followup.sh` (1681 lines)
+  - `bin/fm-remote-doctor.sh` (949 lines)
+  - `bin/fm-remote-job-lib.sh` (1480 lines)
+  - `bin/fm-remote-job-worker.sh` (1339 lines)
+  - `bin/fm-role-lib.sh` (533 lines)
+  - `bin/fm-secondmate-reconcile.sh` (588 lines)
+  - `bin/fm-send.sh` (1211 lines)
+  - `bin/fm-session-start.sh` (1108 lines)
+  - `bin/fm-spawn.sh` (6553 lines)
+  - `bin/fm-startup-network.sh` (759 lines)
+  - `bin/fm-supervise-daemon.sh` (2036 lines)
+  - `bin/fm-supervision-host.sh` (1191 lines)
+  - `bin/fm-task-inbox-lib.sh` (546 lines)
+  - `bin/fm-teardown.sh` (3972 lines)
+  - `bin/fm-test-isolation-proof.sh` (589 lines)
+  - `bin/fm-test-run.sh` (2728 lines)
+  - `bin/fm-tool-update-check.sh` (941 lines)
+  - `bin/fm-turnend-guard.sh` (549 lines)
+  - `bin/fm-voice-client.py` (1373 lines)
+  - `bin/fm-voice-relay.py` (1256 lines)
+  - `bin/fm-wake-drain.sh` (1078 lines)
+  - `bin/fm-wake-lib.sh` (2953 lines)
+  - `bin/fm-watch-arm.sh` (795 lines)
+  - `bin/fm-watch.sh` (3494 lines)
+  - `bin/fm-x-lib.sh` (1036 lines)
+  - `bin/fm_voice_records.py` (597 lines)
+  - `bin/lib/fm-repo-maintenance-structure.sh` (612 lines)
+  - `tests/fm-afk-contract.test.sh` (687 lines)
+  - `tests/fm-afk-inject-herdr-e2e.test.sh` (541 lines)
+  - `tests/fm-afk-launch.test.sh` (1780 lines)
+  - `tests/fm-afk-return.test.sh` (1388 lines)
+  - `tests/fm-agy-harness.test.sh` (930 lines)
+  - `tests/fm-backend-cmux.test.sh` (1166 lines)
+  - `tests/fm-backend-herdr-presentation-e2e.test.sh` (1581 lines)
+  - `tests/fm-backend-herdr.test.sh` (6177 lines)
+  - `tests/fm-backend-orca.test.sh` (1403 lines)
+  - `tests/fm-backend-zellij.test.sh` (1360 lines)
+  - `tests/fm-backend.test.sh` (1267 lines)
+  - `tests/fm-backlog-atomicity.test.sh` (3166 lines)
+  - `tests/fm-backlog-handoff.test.sh` (1397 lines)
+  - `tests/fm-bearings-board.test.sh` (789 lines)
+  - `tests/fm-bearings-snapshot.test.sh` (3420 lines)
+  - `tests/fm-bootstrap-network-parallel.test.sh` (771 lines)
+  - `tests/fm-bootstrap.test.sh` (1278 lines)
+  - `tests/fm-branch-supervision.test.sh` (1649 lines)
+  - `tests/fm-brief.test.sh` (1671 lines)
+  - `tests/fm-busy-adapter-wiring.test.sh` (861 lines)
+  - `tests/fm-busy-state.test.sh` (650 lines)
+  - `tests/fm-calm-claude-mod-live-e2e.test.sh` (508 lines)
+  - `tests/fm-calm-claude-mod.test.sh` (606 lines)
+  - `tests/fm-calm-pi-extension.test.sh` (4998 lines)
+  - `tests/fm-captain-hold-lifecycle.test.sh` (4692 lines)
+  - `tests/fm-classify-corr-token.test.sh` (805 lines)
+  - `tests/fm-classify-decision-key.test.sh` (606 lines)
+  - `tests/fm-claude-stop-autoarm.test.sh` (2051 lines)
+  - `tests/fm-claude-trust.test.sh` (871 lines)
+  - `tests/fm-composer-ghost.test.sh` (716 lines)
+  - `tests/fm-composer-lib.test.sh` (1513 lines)
+  - `tests/fm-contributions.test.sh` (1650 lines)
+  - `tests/fm-control-relaunch.test.sh` (2858 lines)
+  - `tests/fm-control.test.sh` (1262 lines)
+  - `tests/fm-crew-state.test.sh` (5897 lines)
+  - `tests/fm-cursor-harness.test.sh` (619 lines)
+  - `tests/fm-cursor-primary.test.sh` (827 lines)
+  - `tests/fm-daemon.test.sh` (3490 lines)
+  - `tests/fm-dispatch-resolve.test.sh` (1008 lines)
+  - `tests/fm-dod-lib.test.sh` (602 lines)
+  - `tests/fm-extension-binding.test.sh` (2281 lines)
+  - `tests/fm-fleet-snapshot-view.test.sh` (1172 lines)
+  - `tests/fm-fleet-sync.test.sh` (776 lines)
+  - `tests/fm-gate-refuse.test.sh` (570 lines)
+  - `tests/fm-git-strip-ai-trailers.test.sh` (519 lines)
+  - `tests/fm-guard-stale-banner.test.sh` (978 lines)
+  - `tests/fm-harness-precedence.test.sh` (843 lines)
+  - `tests/fm-herdr-lab.test.sh` (554 lines)
+  - `tests/fm-home-summary-refresh.test.sh` (1085 lines)
+  - `tests/fm-inactive-reconcile.test.sh` (1079 lines)
+  - `tests/fm-inbox.test.sh` (546 lines)
+  - `tests/fm-kimi-harness.test.sh` (1166 lines)
+  - `tests/fm-lint-workflows.test.sh` (532 lines)
+  - `tests/fm-lint.test.sh` (2077 lines)
+  - `tests/fm-live-lab.test.sh` (765 lines)
+  - `tests/fm-mail.test.sh` (2659 lines)
+  - `tests/fm-muse-harness.test.sh` (992 lines)
+  - `tests/fm-omp-harness.test.sh` (879 lines)
+  - `tests/fm-on.test.sh` (548 lines)
+  - `tests/fm-pending-reply.test.sh` (2155 lines)
+  - `tests/fm-pi-branch-extension.test.sh` (6241 lines)
+  - `tests/fm-pi-branch-live-e2e.test.sh` (1448 lines)
+  - `tests/fm-pi-watch-extension.test.sh` (5435 lines)
+  - `tests/fm-polytoken-harness.test.sh` (1222 lines)
+  - `tests/fm-pr-check-security.test.sh` (3651 lines)
+  - `tests/fm-pr-merge.test.sh` (4622 lines)
+  - `tests/fm-procevent-when.test.sh` (649 lines)
+  - `tests/fm-procevent.test.sh` (5149 lines)
+  - `tests/fm-project-capacity.test.sh` (667 lines)
+  - `tests/fm-public-followup.test.sh` (4008 lines)
+  - `tests/fm-quota-array-dispatch-live-e2e.test.sh` (524 lines)
+  - `tests/fm-quota-choose.test.sh` (769 lines)
+  - `tests/fm-remote-backlog-handoff.test.sh` (715 lines)
+  - `tests/fm-remote-doctor.test.sh` (889 lines)
+  - `tests/fm-remote-job.test.sh` (1551 lines)
+  - `tests/fm-remote-reply.test.sh` (1301 lines)
+  - `tests/fm-remote-secondmate-lifecycle-e2e.test.sh` (1640 lines)
+  - `tests/fm-repo-maintenance.test.sh` (1065 lines)
+  - `tests/fm-secondmate-harness.test.sh` (2823 lines)
+  - `tests/fm-secondmate-liveness.test.sh` (846 lines)
+  - `tests/fm-secondmate-reconcile.test.sh` (1009 lines)
+  - `tests/fm-secondmate-restart.test.sh` (870 lines)
+  - `tests/fm-secondmate-safety.test.sh` (3197 lines)
+  - `tests/fm-secondmate-sync.test.sh` (1463 lines)
+  - `tests/fm-self-repo-role.test.sh` (697 lines)
+  - `tests/fm-send-inbox.test.sh` (522 lines)
+  - `tests/fm-send-remote-delivery.test.sh` (805 lines)
+  - `tests/fm-send-resolve-key.test.sh` (931 lines)
+  - `tests/fm-session-lock-ancestry.test.sh` (1235 lines)
+  - `tests/fm-session-start.test.sh` (3110 lines)
+  - `tests/fm-sessionstart-hook-live-e2e.test.sh` (628 lines)
+  - `tests/fm-sessionstart-nudge.test.sh` (1122 lines)
+  - `tests/fm-shared-captain-inheritance.test.sh` (610 lines)
+  - `tests/fm-spawn-dispatch-profile.test.sh` (2359 lines)
+  - `tests/fm-spawn-orca-worktree.test.sh` (884 lines)
+  - `tests/fm-spawn-pool-base-freshen.test.sh` (1206 lines)
+  - `tests/fm-startup-growth-check.test.sh` (629 lines)
+  - `tests/fm-startup-network.test.sh` (883 lines)
+  - `tests/fm-supervision-host.test.sh` (3044 lines)
+  - `tests/fm-task-delivery.test.sh` (1728 lines)
+  - `tests/fm-task-inbox.test.sh` (1230 lines)
+  - `tests/fm-teardown-endpoint-safety.test.sh` (1449 lines)
+  - `tests/fm-teardown.test.sh` (5306 lines)
+  - `tests/fm-test-run.test.sh` (1869 lines)
+  - `tests/fm-tool-update-check.test.sh` (1243 lines)
+  - `tests/fm-trace-context-spawn.test.sh` (638 lines)
+  - `tests/fm-turnend-guard.test.sh` (2394 lines)
+  - `tests/fm-update.test.sh` (576 lines)
+  - `tests/fm-voice-relay.test.sh` (4785 lines)
+  - `tests/fm-wake-drain-outcome-backstop.test.sh` (533 lines)
+  - `tests/fm-wake-queue.test.sh` (3584 lines)
+  - `tests/fm-watch-arm.test.sh` (1746 lines)
+  - `tests/fm-watch-triage.test.sh` (7302 lines)
+  - `tests/fm-watcher-lock.test.sh` (1609 lines)
+  - `tests/fm-worker-account.test.sh` (505 lines)
+  - `tests/fm-x-mode.test.sh` (3288 lines)
+  - `tests/lib.sh` (900 lines)
+- src depth violations (> 4 below src/): 0
+- Domain imports of cli/ or web/: 0
+- Directories missing SUMMARY.md: 71 of 78
+  - `.agents`
+  - `.agents/skills`
+  - `.agents/skills/afk`
+  - `.agents/skills/agent-skill-trigger-index`
+  - `.agents/skills/ahoy`
+  - `.agents/skills/ask-user-authority`
+  - `.agents/skills/away-quiet-supervision`
+  - `.agents/skills/bearings`
+  - `.agents/skills/bearings/assets`
+  - `.agents/skills/bootstrap-diagnostics`
+  - `.agents/skills/captain-hold-lifecycle`
+  - `.agents/skills/decision-hold-lifecycle`
+  - `.agents/skills/diagnostic-reasoning`
+  - `.agents/skills/firstmate-codexapp`
+  - `.agents/skills/firstmate-codexapp/agents`
+  - `.agents/skills/firstmate-coding-guidelines`
+  - `.agents/skills/firstmate-orca`
+  - `.agents/skills/firstmate-self-repo`
+  - `.agents/skills/fmx-respond`
+  - `.agents/skills/harness-adapters`
+  - `.agents/skills/harness-adapters/references`
+  - `.agents/skills/harness-adapters/references/common`
+  - `.agents/skills/harness-adapters/references/harness`
+  - `.agents/skills/operational-home-layout`
+  - `.agents/skills/process-event-sources`
+  - `.agents/skills/project-management`
+  - `.agents/skills/quiet`
+  - `.agents/skills/quota-array-dispatch`
+  - `.agents/skills/scout-completion`
+  - `.agents/skills/secondmate-provisioning`
+  - `.agents/skills/session-start-recovery`
+  - `.agents/skills/ship-landing`
+  - `.agents/skills/stow`
+  - `.agents/skills/stuck-crewmate-recovery`
+  - `.agents/skills/updatefirstmate`
+  - `.agents/skills/validation-supervision`
+  - `.claude`
+  - `.claude/mods`
+  - `.claude/mods/firstmate-calm`
+  - `.claude/mods/firstmate-calm/.claude-plugin`
+  - `.claude/mods/firstmate-calm/hooks`
+  - `.claude/mods/firstmate-calm/lib`
+  - `.claude/mods/firstmate-calm/tests`
+  - `.codex`
+  - `.cursor`
+  - `.github`
+  - `.github/workflows`
+  - `.greptile`
+  - `.grok`
+  - `.grok/hooks`
+  - `.omp`
+  - `.omp/extensions`
+  - `.opencode`
+  - `.opencode/plugins`
+  - `.opencode/plugins/lib`
+  - `.pi`
+  - `.pi/extensions`
+  - `.pi/extensions/lib`
+  - `assets`
+  - `bin/backends`
+  - `docs/examples`
+  - `docs/examples/process-event-extension`
+  - `docs/supervision-protocols`
+  - `docs/verification`
+  - `skills`
+  - `skills/stow`
+  - `tests/assets`
+  - `tests/captures`
+  - `tests/captures/no-mistakes-v1.70.1`
+  - `tests/fixtures`
+  - `tests/fixtures/opencode-1.18.31-cwd`
+- Files unlisted by their folder SUMMARY.md: 536
+  - `bin/fm-afk-contract.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-afk-launch.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-afk-return.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-afk-start.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-agent-process-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-agy-trust.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-arm-command-policy.mjs` not in `bin/SUMMARY.md`
+  - `bin/fm-arm-pretool-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-backend-hometag-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-backend.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-backlog-handoff.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-backlog-receive.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-backlog-transition-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-bearings-board.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-bearings-snapshot.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-bootstrap.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-branch-dispatch.mjs` not in `bin/SUMMARY.md`
+  - `bin/fm-branch-outcome.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-branch-prompt.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-branch-report.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-brief-heading-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-brief.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-busy-event.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-busy-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-captain-hold.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-cd-command-policy.mjs` not in `bin/SUMMARY.md`
+  - `bin/fm-cd-pretool-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-check-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-check-register.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-check-unregister.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-classify-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-claude-stop-autoarm.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-claude-trust.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-commandcode-mod.ts` not in `bin/SUMMARY.md`
+  - `bin/fm-composer-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-config-inherit-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-config-push.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-contributions.jq` not in `bin/SUMMARY.md`
+  - `bin/fm-contributions.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-control-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-control.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-crew-state.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-cursor-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-decision-hold.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-devin-config.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-dispatch-resolve.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-doc-audience-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-dod-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-ensure-agents-md.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-env-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-exclude-tools-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-extension-launch-barrier.mjs` not in `bin/SUMMARY.md`
+  - `bin/fm-extension.mjs` not in `bin/SUMMARY.md`
+  - `bin/fm-extension.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-external-review-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-ff-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-fleet-ledger.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-fleet-snapshot.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-fleet-sync.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-fleet-view.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-forge-detect.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-gate-refuse-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-gemini-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-git-push-guard.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-git-strip-ai-trailers.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-guard.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-harness.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-herdr-ci-cleanup.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-herdr-groups.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-herdr-lab-viewer.py` not in `bin/SUMMARY.md`
+  - `bin/fm-herdr-lab.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-herdr-session-cleanup.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-hold-reason-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-home-seed.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-home-summary-refresh.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-hook-host-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-host-mirror.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-inactive-reconcile.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-inbox.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-install-actionlint.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-install-herdr.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-install-shellcheck.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-install-treehouse.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-jev-mem-guard.py` not in `bin/SUMMARY.md`
+  - `bin/fm-jev-mem-guard.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-kimi-turnend-hook.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-lab-home.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-landed-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-lease-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-lease.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-line-cap-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-lint-workflows.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-lint.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-live-lab.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-lock-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-lock.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-mail-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-mail.py` not in `bin/SUMMARY.md`
+  - `bin/fm-mail.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-marker-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-merge-authority-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-merge-local.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-merge-outcome-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-nm-run-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-on.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-operational-input.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-parent-channel-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-path-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-peek.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-pending-reply-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-pipeline-spend.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-polytoken-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-pr-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-pr-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-pr-merge.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-pr-poll.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-pr-reviewers.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-pr-state.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-primary-scope-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-procevent-extension-capture.pl` not in `bin/SUMMARY.md`
+  - `bin/fm-procevent-lavish.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-procevent-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-procevent-quota.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-procevent-remote-reply.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-procevent-when.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-procevent.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-project-capacity-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-project-mode.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-project-origin-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-promote.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-public-followup-collect.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-public-followup-emit.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-public-followup-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-public-followup.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-push-transition-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-quota-axi-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-quota-choose.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-delta-read.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-doctor.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-entrypoint.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-file.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-herdr-guard.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-herdr-owner-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-home-provision.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-home-seed.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-inherit-push.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-inherit.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-job-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-job-reap-orphans.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-job-worker.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-readiness-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-secondmate-control.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-remote-secondmate-relaunch.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-repo-maintenance.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-review-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-review-diff.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-role-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-role.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-charter-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-liveness-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-nudge-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-parent-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-reconcile.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-registry-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-report.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-restart-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-secondmate-restart.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-send.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-session-lock-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-session-start.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-sessionstart-cursor.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-sessionstart-nudge.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-sessionstart-run.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-spawn.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-startup-growth-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-startup-memory-budget-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-startup-memory-budget.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-startup-network.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-stow-cascade.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-subagent-pretool-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-supervise-daemon.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-supervision-engine-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-supervision-host.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-supervision-instructions.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-supervision-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-supervisor-target-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-tangle-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-task-inbox-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-tasks-axi-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-tasks-axi.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-teardown.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-test-isolation-proof.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-test-run.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-timeout-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-timing-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-tmux-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-tool-update-check.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-trace-context-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-transition-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-turnend-guard-cursor.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-turnend-guard-grok.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-turnend-guard.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-update.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-vendor-auth-probe.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-voice-client.py` not in `bin/SUMMARY.md`
+  - `bin/fm-voice-relay.py` not in `bin/SUMMARY.md`
+  - `bin/fm-wake-drain.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-wake-grant.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-wake-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-watch-arm.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-watch-checkpoint.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-watch.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-worker-account-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-x-dismiss.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-x-followup.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-x-lib.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-x-link.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-x-poll.sh` not in `bin/SUMMARY.md`
+  - `bin/fm-x-reply.sh` not in `bin/SUMMARY.md`
+  - `bin/fm_voice_frame.py` not in `bin/SUMMARY.md`
+  - `bin/fm_voice_records.py` not in `bin/SUMMARY.md`
+  - `docs/agent-control.md` not in `docs/SUMMARY.md`
+  - `docs/architecture.md` not in `docs/SUMMARY.md`
+  - `docs/arm-pretool-check.md` not in `docs/SUMMARY.md`
+  - `docs/calm-mode-feasibility.md` not in `docs/SUMMARY.md`
+  - `docs/calm.md` not in `docs/SUMMARY.md`
+  - `docs/captain-hold-lifecycle.md` not in `docs/SUMMARY.md`
+  - `docs/cd-guard.md` not in `docs/SUMMARY.md`
+  - `docs/cmux-backend.md` not in `docs/SUMMARY.md`
+  - `docs/codex-app-backend.md` not in `docs/SUMMARY.md`
+  - `docs/configuration.md` not in `docs/SUMMARY.md`
+  - `docs/documentation-audiences.json` not in `docs/SUMMARY.md`
+  - `docs/documentation-audiences.md` not in `docs/SUMMARY.md`
+  - `docs/extension-bindings.md` not in `docs/SUMMARY.md`
+  - `docs/external-review-forge.md` not in `docs/SUMMARY.md`
+  - `docs/fleet-ledger.md` not in `docs/SUMMARY.md`
+  - `docs/fm-test-isolation-proof.json` not in `docs/SUMMARY.md`
+  - `docs/fm-test-isolation-proof.md` not in `docs/SUMMARY.md`
+  - `docs/fm-test-portable-shards.md` not in `docs/SUMMARY.md`
+  - `docs/forgejo-tea-integration.md` not in `docs/SUMMARY.md`
+  - `docs/gerrit-change-watch.md` not in `docs/SUMMARY.md`
+  - `docs/gerrit-forge-integration.md` not in `docs/SUMMARY.md`
+  - `docs/gitlab-merge-watch.md` not in `docs/SUMMARY.md`
+  - `docs/herdr-backend.md` not in `docs/SUMMARY.md`
+  - `docs/jev-guards.md` not in `docs/SUMMARY.md`
+  - `docs/orca-backend.md` not in `docs/SUMMARY.md`
+  - `docs/pi-supervision-branch-poster.svg` not in `docs/SUMMARY.md`
+  - `docs/pi-supervision-branch.md` not in `docs/SUMMARY.md`
+  - `docs/remote-secondmates.md` not in `docs/SUMMARY.md`
+  - `docs/scripts.md` not in `docs/SUMMARY.md`
+  - `docs/secondmate-parent-channel.md` not in `docs/SUMMARY.md`
+  - `docs/sessionstart-nudge.md` not in `docs/SUMMARY.md`
+  - `docs/subagent-guard.md` not in `docs/SUMMARY.md`
+  - `docs/supervision-host.md` not in `docs/SUMMARY.md`
+  - `docs/tmux-backend.md` not in `docs/SUMMARY.md`
+  - `docs/trace-context.md` not in `docs/SUMMARY.md`
+  - `docs/turnend-guard.md` not in `docs/SUMMARY.md`
+  - `docs/voice-relay.md` not in `docs/SUMMARY.md`
+  - `docs/watcher-continuity.md` not in `docs/SUMMARY.md`
+  - `docs/wedge-alarm.md` not in `docs/SUMMARY.md`
+  - `docs/zellij-backend.md` not in `docs/SUMMARY.md`
+  - `tests/cmux-test-safety.sh` not in `tests/SUMMARY.md`
+  - `tests/fixtures.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-afk-contract.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-afk-inject-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-afk-inject-herdr-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-afk-launch.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-afk-pi-herdr-return-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-afk-return.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-agy-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-agy-signals-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-arm-pretool-check.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-ask-user-authority.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-autodetect-smoke.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-cmux-smoke.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-cmux.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-eventwait-smoke.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-eventwait.test.py` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-focus-flash-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-launcher-workspace-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-presentation-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-prune-safety-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-respawn-idem-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-smoke.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-stale-active-tab-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr-workspace-per-home-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-herdr.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-orca.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-tmux-smoke.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-zellij-smoke.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend-zellij.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backend.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backlog-atomicity.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backlog-handoff.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-backlog-read-bound.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-bearings-board-lavish-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-bearings-board-render.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-bearings-board.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-bearings-snapshot.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-bootstrap-network-parallel.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-bootstrap.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-branch-supervision.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-brief.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-busy-adapter-wiring.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-busy-state.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-calm-claude-mod-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-calm-claude-mod-plugin.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-calm-claude-mod.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-calm-pi-extension.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-calm-pi-queue-retention-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-captain-hold-lifecycle.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-cd-pretool-check.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-check-unregister.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-ci-workflow.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-classify-corr-token.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-classify-decision-key.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-claude-stop-autoarm-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-claude-stop-autoarm.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-claude-trust.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-cmux-claude-composer-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-codex-continuity-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-codex-hook-layer-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-commandcode-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-commandcode-signals-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-composer-codex-idle-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-composer-ghost.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-composer-lib.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-composer-matrix-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-contributions.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-control-herdr-smoke.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-control-relaunch.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-control.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-crew-state.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-cursor-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-cursor-primary-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-cursor-primary.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-daemon.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-devin-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-devin-signals-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-dispatch-resolve.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-documentation-audiences.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-dod-lib.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-ensure-agents-md.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-extension-binding.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-fleet-ledger.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-fleet-snapshot-view.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-fleet-sync.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-forge-detect.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-fork-free-helpers.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-gate-refuse.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-gemini-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-git-push-guard.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-git-strip-ai-trailers.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-gitignore-config.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-gotmp.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-grok-continuity-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-grok-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-grok-stop-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-guard-stale-banner.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-harness-adapter-instructions-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-harness-adapter-references.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-harness-liveness-drift-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-harness-precedence.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-herdr-attached-viewer-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-herdr-groups.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-herdr-lab.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-herdr-pi-stale-registration-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-herdr-session-cleanup-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-herdr-session-cleanup.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-herdr-submit-confirm-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-herdr-version-floor-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-home-summary-refresh.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-host-mirror-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-host-mirror.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-inactive-reconcile.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-inbox.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-jev-mem-guard.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-kimi-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-launch-prompt-signals-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-lint-workflows.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-lint.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-live-gate.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-live-lab-up-mate.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-live-lab.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-mail-check.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-mail.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-muse-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-muse-signals-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-nm-test-contract.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-no-mistakes-required.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-omp-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-omp-primary-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-on.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-opencode-abs-cwd-rail-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-opencode-primary-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-operational-input.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-parent-channel-scan-exclusion.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-peek-remote.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pending-reply.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-branch-extension.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-branch-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-branch-responsiveness-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-codex-native.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-primary-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-primary-types.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-seeded-home-trust-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-watch-extension.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pi-windows-shell-invocation.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pipeline-spend.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-polytoken-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-polytoken-signals-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pr-check-security.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pr-merge.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pr-reviewers.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pr-state-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-pr-state.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-procevent-quota.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-procevent-when.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-procevent.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-project-capacity.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-project-mode.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-project-origin.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-public-followup.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-quota-array-dispatch-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-quota-choose.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-backlog-handoff.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-delta-read.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-doctor.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-entrypoint.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-herdr-guard.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-job-claim-reap.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-job-claim-retention.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-job-launchagent.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-job-orphan-reap.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-job.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-reply.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-secondmate-lifecycle-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-secondmate-parent-binding.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-secondmate-relaunch.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-secondmate-trace-context.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-remote-transport-lanes.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-repo-maintenance.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-review-check.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-review-diff.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-rovo-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-rovo-signals-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-secondmate-busy-contract-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-secondmate-harness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-secondmate-lifecycle-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-secondmate-liveness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-secondmate-reconcile.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-secondmate-restart.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-secondmate-safety.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-secondmate-sync.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-self-repo-role.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-agy-confirm.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-inbox-doorbell-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-inbox.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-popup-settle.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-remote-delivery.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-resolve-key.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-secondmate-marker-herdr-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-secondmate-marker.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-settle.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-send-strict.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-session-lock-ancestry.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-session-start.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-sessionstart-hook-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-sessionstart-nudge.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-shared-captain-inheritance.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-spawn-batch.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-spawn-compact-adviser-disable-remote.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-spawn-compact-adviser-disable.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-spawn-dispatch-profile.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-spawn-external-review.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-spawn-orca-worktree.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-spawn-pool-base-freshen.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-spawn-worktree-settle.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-startup-growth-check.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-startup-memory-budget.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-startup-network.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-stat-shadowing.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-stow-cascade.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-subagent-pretool-check.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-supervision-events.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-supervision-host-attended-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-supervision-host-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-supervision-host.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-supervision-instructions.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-tangle-guard.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-task-delivery.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-task-inbox.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-tasks-axi.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-teardown-endpoint-safety.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-teardown.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-test-fixture-cleanup.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-test-fixtures.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-test-isolation-proof.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-test-run.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-timeout-lib.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-tmux-agent-liveness.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-tmux-submit-busy.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-tool-update-check.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-trace-context-lib.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-trace-context-spawn.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-transition-lib.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-turnend-foreign-owner-arm-fix.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-turnend-foreign-owner-repro.py` not in `tests/SUMMARY.md`
+  - `tests/fm-turnend-guard.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-update.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-vendor-auth-probe.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-voice-relay.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-wake-daemon-lifecycle-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-wake-drain-open-decisions-cursor.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-wake-drain-open-decisions.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-wake-drain-outcome-backstop.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-wake-drain-unread-status.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-wake-queue.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-watch-arm.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-watch-checkpoint.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-watch-recovery-loop.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-watch-triage.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-watcher-lock.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-worker-account-live-e2e.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-worker-account.test.sh` not in `tests/SUMMARY.md`
+  - `tests/fm-x-mode.test.sh` not in `tests/SUMMARY.md`
+  - `tests/git-config-helpers.sh` not in `tests/SUMMARY.md`
+  - `tests/herdr-client-pair-fixture.sh` not in `tests/SUMMARY.md`
+  - `tests/herdr-test-safety.sh` not in `tests/SUMMARY.md`
+  - `tests/lib.sh` not in `tests/SUMMARY.md`
+  - `tests/remote-herdr-fixture.sh` not in `tests/SUMMARY.md`
+  - `tests/secondmate-helpers.sh` not in `tests/SUMMARY.md`
+  - `tests/wake-helpers.sh` not in `tests/SUMMARY.md`
+  - `tests/zellij-test-safety.sh` not in `tests/SUMMARY.md`
+- Invalid SUMMARY.md shapes: 3
+  - `bin/SUMMARY.md` (table)
+  - `docs/SUMMARY.md` (table)
+  - `tests/SUMMARY.md` (table)
+- Root orphan files: 9
+  - `.gitattributes`
+  - `.gitignore`
+  - `.no-mistakes.yaml`
+  - `.tasks.toml`
+  - `CLAUDE.md`
+  - `CONTRIBUTING.md`
+  - `GROK_BOT.md`
+  - `LICENSE`
+  - `VISION.md`
+- Summaries over 30 lines: 0
+- Entrypoints: README.md=true AGENTS.md=true routing_ok=false ok=false
+
+## Evidence-backed findings (pending qualitative audit)
+
+Pending. Run the audit playbook (`references/audit-playbook.md`) over this project and replace
+this section with the evidence-backed findings list (category, anchor, why it matters).
+
+## Phased slice plan (pending)
+
+This build delivered the initial Phase 1 slices and missing SUMMARY.md scaffolding. Phase 1
+completion remains gated on three pending receipts: a green test suite, zero broken imports, and a
+measured token-consumption drop on subsequent tasks. Phase 2 requires those receipts and the
+remaining domain packages to meet the four-level depth, per-folder SUMMARY.md, and unexempted
+500-line standards.
+
+## Summary: DO FIRST / DO LATER / DO NOT DO (pending)
+
+Pending. Classify the findings per the audit playbook tri-state rules.
