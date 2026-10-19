@@ -2,8 +2,6 @@
 # Aggregate the structured OpenCode and Codex session stores.
 
 MINE_NOW=""
-MINE_MAX=${FM_RM_MAX_SESSIONS:-$DEFAULT_MAX_SESSIONS}
-case "$MINE_MAX" in ''|*[!0-9]*) MINE_MAX=$DEFAULT_MAX_SESSIONS ;; esac
 
 rm_parse_mine_args() {
   while [ "$#" -gt 0 ]; do
@@ -20,12 +18,12 @@ rm_parse_mine_args() {
 }
 
 rm_coverage_json() {
-  local source=$1 path=$2 status=$3 seen=$4 mined=$5 cap=$6 empty=$7 error=$8 scope=${9:-0}
+  local source=$1 path=$2 status=$3 seen=$4 mined=$5 empty=$6 error=$7 scope=${8:-0}
   jq -cn --arg source "$source" --arg path "$path" --arg status "$status" \
-    --argjson seen "$seen" --argjson mined "$mined" --argjson cap "$cap" \
+    --argjson seen "$seen" --argjson mined "$mined" \
     --argjson empty "$empty" --argjson error "$error" --argjson scope "$scope" \
     '{source: $source, path: $path, status: $status,
-      sessions_seen: $seen, sessions_mined: $mined, skipped_cap: $cap,
+      sessions_seen: $seen, sessions_mined: $mined,
       skipped_empty: $empty, skipped_error: $error, skipped_scope: $scope}'
 }
 
@@ -87,17 +85,17 @@ EOF
 }
 
 rm_mine_opencode() {
-  local tmp=$1 start=$2 end=$3 cap=$4
+  local tmp=$1 start=$2 end=$3
   local db=${FM_RM_OPENCODE_DB:-$FM_HOME/.local/share/opencode/opencode.db} physical
-  local status=mined seen=0 mined=0 cap_skips=0 empty_skips=0 error_skips=0 scope_skips=0
-  local session_rows row id dir updated rows task_json dir_label id_sql start_ms end_ms task_key=0 next_task_key
+  local status=mined seen=0 mined=0 empty_skips=0 error_skips=0 scope_skips=0
+  local session_rows row id dir outcome idle rows task_json dir_label id_sql start_ms end_ms task_key=0 next_task_key
   local invalid_candidates=0
   start_ms=$((start * 1000))
   end_ms=$((end * 1000))
 
   physical=$(rm_resolve_source_path "$db" 2>/dev/null || true)
   if [ -z "$physical" ]; then
-    rm_coverage_json opencode '<EXTERNAL>' unreadable 0 0 0 0 1 0
+    rm_coverage_json opencode '<EXTERNAL>' unreadable 0 0 0 1 0
     return 0
   fi
   if ! rm_path_in_home "$physical"; then
@@ -120,15 +118,20 @@ rm_mine_opencode() {
   fi
 
   if ! session_rows=$(sqlite3 -readonly -json "$db" \
-      'SELECT id, slug, directory, time_updated FROM session_v2 ORDER BY time_updated DESC;' 2>/dev/null); then
-    rm_coverage_json opencode "$(rm_sanitize_path "$db")" unreadable 0 0 0 0 1 0
+      "SELECT id, slug, directory, idle_outcome, time_idle
+         FROM session_v2
+        WHERE idle_outcome IN ('succeeded', 'failed', 'interrupted')
+          AND time_idle >= $start_ms AND time_idle <= $end_ms
+        ORDER BY time_idle DESC;" 2>/dev/null); then
+    rm_coverage_json opencode "$(rm_sanitize_path "$db")" unreadable 0 0 0 1 0
     return 0
   fi
   while IFS= read -r row; do
     [ -n "$row" ] || continue
     id=$(printf '%s' "$row" | jq -r '.id // empty' 2>/dev/null || true)
     dir=$(printf '%s' "$row" | jq -r '.directory // empty' 2>/dev/null || true)
-    updated=$(printf '%s' "$row" | jq -r '.time_updated // empty' 2>/dev/null || true)
+    outcome=$(printf '%s' "$row" | jq -r '.idle_outcome // empty' 2>/dev/null || true)
+    idle=$(printf '%s' "$row" | jq -r '.time_idle // empty' 2>/dev/null || true)
     if [ -z "$id" ] || [ -z "$dir" ]; then
       invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue
     fi
@@ -136,19 +139,13 @@ rm_mine_opencode() {
       /*) ;;
       *) invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue ;;
     esac
-    case "$updated" in ''|*[!0-9]*) invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue ;; esac
-    if [ "$updated" -lt "$start_ms" ] || [ "$updated" -gt "$end_ms" ]; then
-      continue
-    fi
+    case "$outcome" in succeeded|failed|interrupted) ;; *) invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue ;; esac
+    case "$idle" in ''|*[!0-9]*) invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue ;; esac
     case "$(rm_root_matches "$dir")" in
       1) ;;
       *) scope_skips=$((scope_skips + 1)); continue ;;
     esac
     seen=$((seen + 1))
-    if [ "$seen" -gt "$cap" ]; then
-      cap_skips=$((cap_skips + 1))
-      continue
-    fi
 
     id_sql=${id//\'/\'\'}
 
@@ -169,7 +166,6 @@ rm_mine_opencode() {
        FROM session_message m
        LEFT JOIN json_each(m.data,'\$.content') p ON true
        WHERE m.session_id = '$id_sql' AND m.type = 'assistant'
-         AND m.time_created >= $start_ms AND m.time_created <= $end_ms
        ORDER BY m.seq;" 2>/dev/null); then
       error_skips=$((error_skips + 1))
       continue
@@ -194,7 +190,7 @@ rm_mine_opencode() {
     if [ "$invalid_candidates" -gt 0 ] || [ "$error_skips" -gt 0 ]; then status=unreadable; else status=empty; fi
   fi
   rm_coverage_json opencode "$(rm_sanitize_path "$db")" "$status" "$seen" "$mined" \
-    "$cap_skips" "$empty_skips" "$error_skips" "$scope_skips"
+    "$empty_skips" "$error_skips" "$scope_skips"
 }
 
 rm_mine_codex_reduced() {
@@ -242,15 +238,15 @@ rm_mine_codex_metrics() {
 }
 
 rm_mine_codex() {
-  local tmp=$1 start=$2 end=$3 cap=$4
+  local tmp=$1 start=$2 end=$3
   local root=${FM_RM_CODEX_SESSIONS:-$FM_HOME/.codex/sessions} physical
-  local status=mined seen=0 mined=0 cap_skips=0 empty_skips=0 error_skips=0 scope_skips=0
-  local filelist="$tmp/codex-files" eligible="$tmp/codex-eligible" file mtime meta cwd sid ts reduced metrics task_json dir_label
+  local status=mined seen=0 mined=0 empty_skips=0 error_skips=0 scope_skips=0
+  local filelist="$tmp/codex-files" file meta cwd sid complete_ts complete_count completion_epoch reduced metrics task_json dir_label
   local invalid_candidates=0
 
   physical=$(rm_resolve_source_path "$root" 2>/dev/null || true)
   if [ -z "$physical" ]; then
-    rm_coverage_json codex '<EXTERNAL>' unreadable 0 0 0 0 1 0
+    rm_coverage_json codex '<EXTERNAL>' unreadable 0 0 0 1 0
     return 0
   fi
   if ! rm_path_in_home "$physical"; then
@@ -263,39 +259,34 @@ rm_mine_codex() {
     return 0
   fi
   if ! find "$root" -type f -name 'rollout-*.jsonl' -print0 > "$filelist" 2>/dev/null; then
-    rm_coverage_json codex "$(rm_sanitize_path "$root")" unreadable 0 0 0 0 1 0
+    rm_coverage_json codex "$(rm_sanitize_path "$root")" unreadable 0 0 0 1 0
     return 0
   fi
-  : > "$eligible"
   while IFS= read -r -d '' file; do
-    mtime=$(rm_file_mtime "$file" || true)
-    case "$mtime" in ''|*[!0-9]*) invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue ;; esac
-    [ "$mtime" -ge "$start" ] && [ "$mtime" -le "$end" ] || continue
-    printf '%s\t%s\n' "$mtime" "$file" >> "$eligible"
-  done < "$filelist"
-  if [ -s "$eligible" ]; then
-    sort -nr -k1,1 "$eligible" -o "$eligible" 2>/dev/null || {
-      rm_coverage_json codex "$(rm_sanitize_path "$root")" unreadable 0 0 0 0 1 0
-      return 0
-    }
-  fi
-
-  while IFS=$'\t' read -r mtime file; do
     [ -n "$file" ] || continue
-    seen=$((seen + 1))
-    if [ "$seen" -gt "$cap" ]; then
-      cap_skips=$((cap_skips + 1))
-      continue
-    fi
     meta=$(sed -n '1p' "$file" 2>/dev/null | jq -ce \
-      'select(.type == "session_meta") | {cwd: .payload.cwd, sid: .payload.session_id, ts: (.payload.timestamp // .timestamp)}' \
+      'select(.type == "session_meta") | {cwd: .payload.cwd, sid: .payload.session_id}' \
       2>/dev/null) || { invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue; }
     cwd=$(printf '%s' "$meta" | jq -r '.cwd // empty')
     sid=$(printf '%s' "$meta" | jq -r '.sid // empty')
-    ts=$(printf '%s' "$meta" | jq -r '.ts // empty')
-    if [ -z "$cwd" ] || [ -z "$sid" ] || [ -z "$ts" ] || ! rm_iso_to_epoch "$ts" >/dev/null; then
+    if [ -z "$cwd" ] || [ -z "$sid" ]; then
       invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue
     fi
+    if ! complete_ts=$(jq -s -r '
+      [ .[] | select(.type == "event_msg" and .payload.type == "task_complete") ] as $events
+      | {count: ($events | length), timestamp: ($events[-1].timestamp // "")}
+      | [.count, .timestamp] | @tsv' "$file" 2>/dev/null); then
+      invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue
+    fi
+    IFS=$'\t' read -r complete_count complete_ts <<EOF
+$complete_ts
+EOF
+    [ "${complete_count:-0}" -gt 0 ] || continue
+    if [ -z "$complete_ts" ] || ! completion_epoch=$(rm_iso_to_epoch "$complete_ts"); then
+      invalid_candidates=$((invalid_candidates + 1)); error_skips=$((error_skips + 1)); continue
+    fi
+    [ "$completion_epoch" -ge "$start" ] && [ "$completion_epoch" -le "$end" ] || continue
+    seen=$((seen + 1))
     case "$(rm_root_matches "$cwd")" in
       1) ;;
       *) scope_skips=$((scope_skips + 1)); continue ;;
@@ -315,13 +306,13 @@ rm_mine_codex() {
     fi
     printf '%s\n' "$task_json" >> "$tmp/tasks.ndjson"
     mined=$((mined + 1))
-  done < "$eligible"
+  done < "$filelist"
 
   if [ "$mined" -eq 0 ]; then
     if [ "$invalid_candidates" -gt 0 ] || [ "$error_skips" -gt 0 ]; then status=unreadable; else status=empty; fi
   fi
   rm_coverage_json codex "$(rm_sanitize_path "$root")" "$status" "$seen" "$mined" \
-    "$cap_skips" "$empty_skips" "$error_skips" "$scope_skips"
+    "$empty_skips" "$error_skips" "$scope_skips"
 }
 
 rm_run_mine() {
@@ -340,9 +331,9 @@ rm_run_mine() {
   : > "$tmp/reads.ndjson"
   : > "$tmp/coverage.ndjson"
 
-  cov=$(rm_mine_opencode "$tmp" "$start" "$end" "$MINE_MAX") || rm_die_fail "opencode mining failed"
+  cov=$(rm_mine_opencode "$tmp" "$start" "$end") || rm_die_fail "opencode mining failed"
   printf '%s\n' "$cov" >> "$tmp/coverage.ndjson"
-  cov=$(rm_mine_codex "$tmp" "$start" "$end" "$MINE_MAX") || rm_die_fail "codex mining failed"
+  cov=$(rm_mine_codex "$tmp" "$start" "$end") || rm_die_fail "codex mining failed"
   printf '%s\n' "$cov" >> "$tmp/coverage.ndjson"
   coverage=$(jq -sc '.' "$tmp/coverage.ndjson") || rm_die_fail "cannot compose source coverage"
   roots_json=$(jq -cn --arg home "$RM_APPROVED_HOME" --arg code "$RM_CODE_ROOT" \
@@ -396,5 +387,5 @@ rm_run_mine() {
   fi
 
   printf 'mine: wrote %s\n' "$(rm_sanitize_path "$out")"
-  jq -sr '.[] | if .status == "outside-home" then "mine: \(.source) skipped: source store is outside firstmate home" else "mine: \(.source) \(.status) sessions_seen=\(.sessions_seen) sessions_mined=\(.sessions_mined) skipped_cap=\(.skipped_cap) skipped_empty=\(.skipped_empty) skipped_error=\(.skipped_error)" end' "$tmp/coverage.ndjson"
+  jq -sr '.[] | if .status == "outside-home" then "mine: \(.source) skipped: source store is outside firstmate home" else "mine: \(.source) \(.status) sessions_seen=\(.sessions_seen) sessions_mined=\(.sessions_mined) skipped_empty=\(.skipped_empty) skipped_error=\(.skipped_error)" end' "$tmp/coverage.ndjson"
 }

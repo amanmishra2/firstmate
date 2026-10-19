@@ -16,7 +16,7 @@ PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 
 RM_DATA="$DATA/repo-maintenance"
 export METRICS_DIR="$RM_DATA/metrics" SOFT_CEILING_LINES=500 SUMMARY_MAX_LINES=30 \
-  DEPTH_MAX_BELOW_SRC=4 DEFAULT_WINDOW_DAYS=7 DEFAULT_MAX_SESSIONS=250 \
+  DEPTH_MAX_BELOW_SRC=4 DEFAULT_WINDOW_DAYS=7 \
   DEFAULT_TOP=10
 
 RM_CLEANUP_ROOT=""
@@ -70,10 +70,6 @@ rm_iso_to_epoch() {
     || out=$(date -u -d "$ts" +%s 2>/dev/null) \
     || return 1
   printf '%s\n' "$out"
-}
-
-rm_file_mtime() {
-  stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null
 }
 
 # Return the physical path when the path or its parent exists. A missing final

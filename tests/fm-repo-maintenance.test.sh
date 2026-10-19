@@ -71,17 +71,18 @@ make_lab() {
 
   # opencode fixture: ses_a reads one.py three times and edits it at turn 4;
   # ses_b reads one path outside every root; ses_c works outside the scope;
-  # ses_d's only message predates the window.
+  # ses_d's completion predates the window; ses_in_progress has no completion.
   sqlite3 "$home/.local/share/opencode/opencode.db" <<SQL
-CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT, time_updated INTEGER);
+CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT, idle_outcome TEXT, time_idle INTEGER);
 CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT);
-INSERT INTO session_v2 VALUES ('ses_a', 'p', 'curious-proj', '$pool', 1792400000000);
-INSERT INTO session_v2 VALUES ('ses_b', 'p', 'steady-proj', '$proj', 1792400100000);
-INSERT INTO session_v2 VALUES ('ses_c', 'p', 'outside', '/tmp/elsewhere', 1792400200000);
-INSERT INTO session_v2 VALUES ('ses_d', 'p', 'old-work', '$pool', 1792400150000);
-INSERT INTO session_v2 VALUES ('ses_unicode', 'p', 'unicode-work', '$pool', 1792400250000);
-INSERT INTO session_v2 VALUES ('ses_shell', 'p', 'shell-only', '$pool', 1792400260000);
-INSERT INTO session_message VALUES ('a1', 'ses_a', 'assistant', 1, 1792399900000,
+INSERT INTO session_v2 VALUES ('ses_a', 'p', 'curious-proj', '$pool', 'succeeded', 1792400000000);
+INSERT INTO session_v2 VALUES ('ses_b', 'p', 'steady-proj', '$proj', 'succeeded', 1792400100000);
+INSERT INTO session_v2 VALUES ('ses_c', 'p', 'outside', '/tmp/elsewhere', 'succeeded', 1792400200000);
+INSERT INTO session_v2 VALUES ('ses_d', 'p', 'old-work', '$pool', 'succeeded', 1791700000000);
+INSERT INTO session_v2 VALUES ('ses_unicode', 'p', 'unicode-work', '$pool', 'failed', 1792400250000);
+INSERT INTO session_v2 VALUES ('ses_shell', 'p', 'shell-only', '$pool', 'interrupted', 1792400260000);
+INSERT INTO session_v2 VALUES ('ses_in_progress', 'p', 'still-working', '$pool', NULL, NULL);
+INSERT INTO session_message VALUES ('a1', 'ses_a', 'assistant', 1, 1791700000000,
  '{"tokens":{"input":1000,"output":100,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"$(printf 'p%.0s' $(seq 1 400))"}]}},{"type":"tool","name":"edit","state":{"status":"error","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"edit failed"}]}}]}');
 INSERT INTO session_message VALUES ('a2', 'ses_a', 'assistant', 2, 1792399910000,
  '{"tokens":{"input":2000,"output":100,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"$(printf 'p%.0s' $(seq 1 410))"}]}}]}');
@@ -100,6 +101,8 @@ INSERT INTO session_message VALUES ('u1', 'ses_unicode', 'assistant', 1, 1792400
  '{"tokens":{"input":600,"output":60,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/unicode.txt"},"content":[{"type":"text","text":"é"}]}}]}');
 INSERT INTO session_message VALUES ('s1', 'ses_shell', 'assistant', 1, 1792400260000,
  '{"tokens":{"input":700,"output":70,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"bash","state":{"status":"completed","input":{"command":"printf changed > src/one.py"}}}]}');
+INSERT INTO session_message VALUES ('p1', 'ses_in_progress', 'assistant', 1, 1792400260000,
+ '{"tokens":{"input":800,"output":80,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"unfinished"}]}}]}');
 SQL
 
   # codex fixture: two turns, an apply_patch at turn 2, and token totals.
@@ -119,6 +122,7 @@ SQL
     printf '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call_output","call_id":"patch-success","output":{"success":true}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":10000,"input_tokens":10000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:06.000Z","type":"turn_context","payload":{"turn_id":"t3"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:07.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t3"}}\n'
   } > "$home/.codex/sessions/rollout-2026-10-18T10-00-00-fixture.jsonl"
 
   printf '%s\n' "$lab"
@@ -267,8 +271,10 @@ test_mine_extracts_read_metrics_from_opencode() {
 
   assert_equals "1" "$(jq -r '.external.reads' "$metrics")" "the out-of-scope read is counted"
   assert_equals "1" "$(jq -r '.external.tasks' "$metrics")" "the out-of-scope task is counted"
+  assert_equals "4" "$(jq -r '.coverage[] | select(.source=="opencode") | .sessions_seen' "$metrics")" "unfinished and pre-window sessions are omitted from the cohort"
   assert_equals "4" "$(jq -r '.coverage[] | select(.source=="opencode") | .sessions_mined' "$metrics")" "four opencode sessions were mined"
-  assert_equals "1" "$(jq -r '.coverage[] | select(.source=="opencode") | .skipped_empty' "$metrics")" "the pre-window session is reported as empty"
+  assert_equals "0" "$(jq -r '.coverage[] | select(.source=="opencode") | .skipped_empty' "$metrics")" "pre-window and unfinished sessions are omitted without empty skips"
+  assert_equals "false" "$(jq -r '.coverage[] | select(.source=="opencode") | has("skipped_cap")' "$metrics")" "opencode coverage has no cap field"
   assert_equals "2" "$(jq -r '.files[] | select(.path=="src/unicode.txt") | .max_payload_bytes' "$metrics")" "SQLite payload size uses UTF-8 bytes"
   assert_equals "1" "$(jq -r '[.tasks[] | select(.source=="opencode" and .files_read == 0 and .first_edit_turn == null)] | length' "$metrics")" "shell-only mutation has no named edit turn"
   assert_equals "5" "$(jq -r '.tasks | length' "$metrics")" "the pre-window session is never mined"
@@ -285,8 +291,8 @@ test_mine_keeps_distinct_home_and_code_roots_aligned() {
   printf 'code one\ncode two\ncode three\n' > "$code/README.md"
   printf 'home one\nhome two\n' > "$lab/home/README.md"
   sqlite3 "$lab/home/.local/share/opencode/opencode.db" <<SQL
-INSERT INTO session_v2 VALUES ('ses_code_root', 'p', 'code-root', '$code', 1792400270000);
-INSERT INTO session_v2 VALUES ('ses_home_root', 'p', 'home-root', '$lab/home', 1792400280000);
+INSERT INTO session_v2 VALUES ('ses_code_root', 'p', 'code-root', '$code', 'succeeded', 1792400270000);
+INSERT INTO session_v2 VALUES ('ses_home_root', 'p', 'home-root', '$lab/home', 'succeeded', 1792400280000);
 INSERT INTO session_message VALUES ('code_read', 'ses_code_root', 'assistant', 1, 1792400270000,
  '{"tokens":{"input":100,"output":10,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$code/README.md"},"content":[{"type":"text","text":"code"}]}}]}');
 INSERT INTO session_message VALUES ('home_read', 'ses_home_root', 'assistant', 1, 1792400280000,
@@ -464,7 +470,7 @@ test_mine_reports_empty_sources() {
   local lab empty_db out status=0
   lab=$(make_lab mine-empty)
   empty_db="$lab/home/empty.db"
-  sqlite3 "$empty_db" 'CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT, time_updated INTEGER); CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT);'
+  sqlite3 "$empty_db" 'CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT, idle_outcome TEXT, time_idle INTEGER); CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT);'
   mkdir -p "$lab/home/empty-codex"
   FM_HOME="$lab/home" FM_RM_OPENCODE_DB="$empty_db" FM_RM_CODEX_SESSIONS="$lab/home/empty-codex" \
     "$TOOL" mine --now 1792400300 >/dev/null || status=$?
@@ -594,6 +600,7 @@ SH
     "{\"timestamp\":\"2026-10-18T10:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_projection\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T10:00:00.000Z\"}}" \
     '{"timestamp":"2026-10-18T10:00:01.000Z","type":"turn_context","payload":{"turn_id":"t1"}}' \
     '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
+    '{"timestamp":"2026-10-18T10:00:03.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"projection"}}' \
     > "$rollout"
   touch -t 2610181200 "$rollout"
   lab_env "$lab"
@@ -613,14 +620,17 @@ test_mine_marks_malformed_candidates_unreadable() {
   lab=$(make_lab mine-malformed-candidates)
   bad_db="$lab/home/malformed.db"
   sqlite3 "$bad_db" <<'SQL'
-CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT, time_updated INTEGER);
+CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, slug TEXT, directory TEXT, idle_outcome TEXT, time_idle INTEGER);
 CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, data TEXT);
-INSERT INTO session_v2 VALUES ('', 'p', 'bad', 'relative-cwd', 1792400200000);
+INSERT INTO session_v2 VALUES ('', 'p', 'bad', 'relative-cwd', 'succeeded', 1792400200000);
 SQL
   bad_codex="$lab/home/malformed-codex"
   rm -rf "$bad_codex"
   mkdir -p "$bad_codex"
-  printf '%s\n' '{"type":"session_meta","payload":{"session_id":"bad-codex","cwd":"relative-cwd","timestamp":"not-a-timestamp"}}' > "$bad_codex/rollout-malformed.jsonl"
+  printf '%s\n' \
+    "{\"type\":\"session_meta\",\"payload\":{\"session_id\":\"bad-codex\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"not-a-timestamp\"}}" \
+    '{"type":"event_msg","payload":{"type":"task_complete"}}' \
+    > "$bad_codex/rollout-malformed.jsonl"
   touch -t 2610181200 "$bad_codex/rollout-malformed.jsonl"
   lab_env "$lab"
   FM_RM_OPENCODE_DB="$bad_db" FM_RM_CODEX_SESSIONS="$bad_codex" \
@@ -634,34 +644,46 @@ SQL
   pass "mine marks malformed candidate records unreadable"
 }
 
-test_codex_uses_mtime_for_window_and_cap_order() {
-  local lab codex_dir newest older out status=0
-  lab=$(make_lab codex-mtime-order)
-  codex_dir="$lab/home/codex-mtime"
+test_completed_cohort_uses_completion_time_for_all_rollouts() {
+  local lab codex_dir completed_old completed_new unfinished stale out status=0
+  lab=$(make_lab codex-completion-cohort)
+  codex_dir="$lab/home/codex-completion"
   mkdir -p "$codex_dir"
-  newest="$codex_dir/rollout-new.jsonl"
-  older="$codex_dir/rollout-old.jsonl"
+  completed_old="$codex_dir/rollout-completed-old-mtime.jsonl"
+  completed_new="$codex_dir/rollout-completed-new-mtime.jsonl"
+  unfinished="$codex_dir/rollout-in-progress.jsonl"
+  stale="$codex_dir/rollout-stale-completion.jsonl"
   printf '%s\n' \
-    "{\"timestamp\":\"2020-01-01T00:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_new\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2020-01-01T00:00:00.000Z\"}}" \
-    '{"timestamp":"2020-01-01T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":900,"input_tokens":900}}}}' \
-    > "$newest"
+    "{\"timestamp\":\"2020-01-01T00:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_completed_old\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"not-a-timestamp\"}}" \
+    '{"timestamp":"2026-10-18T10:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":900,"input_tokens":900}}}}' \
+    '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"old"}}' \
+    > "$completed_old"
   printf '%s\n' \
-    "{\"timestamp\":\"2020-01-01T00:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_old\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2020-01-01T00:00:00.000Z\"}}" \
-    '{"timestamp":"2020-01-01T00:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
-    > "$older"
-  touch -t 2610181300 "$newest"
-  touch -t 2610181200 "$older"
+    "{\"timestamp\":\"2026-10-18T11:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_completed_new\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T11:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T11:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
+    '{"timestamp":"2026-10-18T11:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"new"}}' \
+    > "$completed_new"
+  printf '%s\n' \
+    "{\"timestamp\":\"2026-10-18T12:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_in_progress\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T12:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T12:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":800,"input_tokens":800}}}}' \
+    > "$unfinished"
+  printf '%s\n' \
+    "{\"timestamp\":\"2026-10-18T13:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_stale_completion\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T13:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T13:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":700,"input_tokens":700}}}}' \
+    '{"timestamp":"2020-01-01T00:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"stale"}}' \
+    > "$stale"
+  touch -t 2601010000 "$completed_old"
+  touch -t 2610181300 "$completed_new" "$unfinished" "$stale"
   lab_env "$lab"
-  FM_RM_OPENCODE_DB="$lab/home/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" FM_RM_MAX_SESSIONS=1 \
-    "$TOOL" mine --now 1792400300 >/dev/null || status=$?
-  expect_code 0 "$status" "codex mtime ordering succeeds"
+  FM_RM_OPENCODE_DB="$lab/home/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" \
+    "$TOOL" mine --now 1792400300 >"$lab/mine.out" || status=$?
+  expect_code 0 "$status" "codex completion cohort mining succeeds"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
-  assert_equals "2" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_seen')" "both in-window rollout files are seen"
-  assert_equals "1" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .skipped_cap')" "the older rollout is capped"
-  assert_equals "1" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_mined')" "only the newest rollout is mined"
-  assert_equals "900" "$(printf '%s' "$out" | jq -r '.tasks[] | select(.source=="codex") | .tokens_total')" "file mtime selects the newest rollout despite old metadata time"
-  assert_not_contains "$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")" "cdx_old" "capped session identifiers are not persisted"
-  pass "codex eligibility uses rollout mtime and newest-first cap order"
+  assert_equals "2" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_seen')" "only completed rollouts in the window are seen"
+  assert_equals "2" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_mined')" "both completed rollouts are mined"
+  assert_equals "100,900" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex") | .tokens_total] | sort | join(",")')" "completion time admits the old-mtime rollout"
+  assert_not_contains "$out" "cdx_in_progress" "unfinished rollout identifiers are not persisted"
+  pass "codex eligibility uses task completion time and mines all completed rollouts"
 }
 
 test_mine_marks_codex_find_failures_unreadable() {
@@ -721,6 +743,7 @@ test_sweep_writes_report_and_refuses_overwrite() {
   assert_contains "$(cat "$report")" "## Token heat ranking (instrument)" "the report carries the instrument ranking"
   assert_contains "$(cat "$report")" 'src/one.py` (THI 3096' "the report names the fix-next file"
   assert_contains "$(cat "$report")" "## Structure audit (instrument)" "the report carries the structure audit"
+  assert_not_contains "$(cat "$report")" "skipped_cap" "the sweep coverage has no cap reporting"
   assert_contains "$(cat "$report")" "pending qualitative audit" "the qualitative sections are visibly pending"
   assert_contains "$(cat "$report")" "This build delivered the initial Phase 1 slices" "the report records Phase 1 delivery"
   assert_contains "$(cat "$report")" "three pending receipts: a green test suite, zero broken imports" "the report keeps the Phase 1 receipts pending"
@@ -812,7 +835,7 @@ test_mine_marks_session_enumeration_failures_unreadable
 test_mine_marks_opencode_processing_failures_unreadable
 test_mine_marks_codex_projection_failures_unreadable
 test_mine_marks_malformed_candidates_unreadable
-test_codex_uses_mtime_for_window_and_cap_order
+test_completed_cohort_uses_completion_time_for_all_rollouts
 test_mine_marks_codex_find_failures_unreadable
 test_artifact_writers_fail_before_success_messages
 test_sweep_writes_report_and_refuses_overwrite

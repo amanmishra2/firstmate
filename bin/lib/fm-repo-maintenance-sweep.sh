@@ -115,7 +115,7 @@ EOF
     if [ -n "$metrics" ]; then
       printf -- "- Metrics: \`%s\`\n" "$(rm_sanitize_path "$metrics")"
       jq -r '"  - Window: \(.window.start) to \(.window.end) (\(.window.days) days); tasks mined: \(.tasks | length)"' "$metrics" 2>/dev/null
-      jq -r '.coverage[] | if .status == "outside-home" then "  - \(.source): skipped because the source store is outside firstmate home" else "  - \(.source): \(.status), sessions mined \(.sessions_mined) of \(.sessions_seen) seen (cap \(.skipped_cap), empty \(.skipped_empty), error \(.skipped_error), out of scope \(.skipped_scope // 0))" end' "$metrics" 2>/dev/null
+      jq -r '.coverage[] | if .status == "outside-home" then "  - \(.source): skipped because the source store is outside firstmate home" else "  - \(.source): \(.status), sessions mined \(.sessions_mined) of \(.sessions_seen) seen (empty \(.skipped_empty), error \(.skipped_error), out of scope \(.skipped_scope // 0))" end' "$metrics" 2>/dev/null
     else
       printf -- "- Metrics: none; run \`bin/fm-repo-maintenance.sh mine\` before the next sweep.\n"
     fi
