@@ -108,24 +108,27 @@ INSERT INTO session_message VALUES ('p1', 'ses_in_progress', 'assistant', 1, 179
  '{"tokens":{"input":800,"output":80,"reasoning":0,"cache":{"read":0,"write":0}},"content":[{"type":"tool","name":"read","state":{"status":"completed","input":{"path":"$pool/src/one.py"},"content":[{"type":"text","text":"unfinished"}]}}]}');
 SQL
 
-  # codex fixture: two turns, an apply_patch at turn 2, and token totals.
+  # codex fixture: three turn contexts, an apply_patch at turn 2, and token totals.
   {
     printf '{"timestamp":"2026-10-18T10:00:00.000Z","type":"session_meta","payload":{"session_id":"cdx_a","cwd":"%s","timestamp":"2026-10-18T10:00:00.000Z"}}\n' "$pool"
+    printf '{"timestamp":"2026-10-18T10:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"task-a"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:01.000Z","type":"turn_context","payload":{"turn_id":"t1"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":5000,"input_tokens":5000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":8000,"input_tokens":8000},"last_token_usage":{"input_tokens":3000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.750Z","type":"response_item","payload":{"type":"function_call","call_id":"write-fail","name":"write","arguments":"{}"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:02.800Z","type":"response_item","payload":{"type":"function_call_output","call_id":"write-fail","output":{"success":false}}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:02.900Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"message","call_id":"write-fail","output":"not a completed function call"}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.000Z","type":"turn_context","payload":{"turn_id":"t2"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.500Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-string","name":"exec_command","arguments":"{\\"cmd\\":\\"printf changed > src/one.py\\"}"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.750Z","type":"response_item","payload":{"type":"function_call_output","call_id":"exec-string","output":"command completed"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.875Z","type":"response_item","payload":{"type":"function_call","call_id":"exec-array","name":"exec_command","arguments":"{}"}}\n'
     printf '{"timestamp":"2026-10-18T10:00:03.937Z","type":"response_item","payload":{"type":"function_call_output","call_id":"exec-array","output":[{"type":"text","text":"command completed"}]}}\n'
     printf '{"timestamp":"2026-10-18T10:00:04.000Z","type":"response_item","payload":{"type":"function_call","call_id":"patch-success","name":"apply_patch","arguments":"{}"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call_output","call_id":"patch-success","output":{"success":true}}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:04.500Z","type":"response_item","payload":{"type":"function_call_output","call_id":"patch-success","output":"command completed"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:04.750Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"function_call_output","call_id":"patch-success","output":"command completed"}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:05.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":10000,"input_tokens":10000}}}}\n'
     printf '{"timestamp":"2026-10-18T10:00:06.000Z","type":"turn_context","payload":{"turn_id":"t3"}}\n'
-    printf '{"timestamp":"2026-10-18T10:00:07.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"t3"}}\n'
+    printf '{"timestamp":"2026-10-18T10:00:07.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"task-a"}}\n'
   } > "$home/.codex/sessions/rollout-2026-10-18T10-00-00-fixture.jsonl"
 
   printf '%s\n' "$lab"
@@ -422,7 +425,7 @@ test_mine_codex_session_metrics() {
   assert_equals "0" "$(jq -r '.tasks[] | select(.source=="codex") | .files_read' "$metrics")" "codex contributes no guessed file rows"
   assert_equals "0" "$(jq -r '[.tasks[] | select(.source=="codex" and .files_read > 0)] | length' "$metrics")" "no file rows come from shell-mediated reads"
   assert_not_contains "$(cat "$metrics")" 'cdx_a' "codex session identifiers are not persisted"
-  pass "mine extracts codex session-level metrics without guessing file reads"
+  pass "mine extracts codex task-span metrics without guessing file reads"
 }
 
 test_mine_reports_absent_sources() {
@@ -644,6 +647,7 @@ SH
   chmod +x "$fakebin/jq"
   printf '%s\n' \
     "{\"timestamp\":\"2026-10-18T10:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_projection\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T10:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T10:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"projection"}}' \
     '{"timestamp":"2026-10-18T10:00:01.000Z","type":"turn_context","payload":{"turn_id":"t1"}}' \
     '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
     '{"timestamp":"2026-10-18T10:00:03.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"projection"}}' \
@@ -691,7 +695,7 @@ SQL
 }
 
 test_completed_cohort_uses_completion_time_for_all_rollouts() {
-  local lab codex_dir completed_old completed_new unfinished stale out status=0
+  local lab codex_dir completed_old completed_new unfinished stale multiple out status=0
   lab=$(make_lab codex-completion-cohort)
   codex_dir="$lab/home/codex-completion"
   mkdir -p "$codex_dir"
@@ -699,35 +703,59 @@ test_completed_cohort_uses_completion_time_for_all_rollouts() {
   completed_new="$codex_dir/rollout-completed-new-mtime.jsonl"
   unfinished="$codex_dir/rollout-in-progress.jsonl"
   stale="$codex_dir/rollout-stale-completion.jsonl"
+  multiple="$codex_dir/rollout-multiple-completions.jsonl"
   printf '%s\n' \
     "{\"timestamp\":\"2020-01-01T00:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_completed_old\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"not-a-timestamp\"}}" \
-    '{"timestamp":"2026-10-18T10:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":900,"input_tokens":900}}}}' \
-    '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"old"}}' \
+    '{"timestamp":"2026-10-18T10:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"old-a"}}' \
+    '{"timestamp":"2026-10-18T10:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":900},"last_token_usage":{"input_tokens":100}}}}' \
+    '{"timestamp":"2026-10-18T10:00:01.500Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":900},"last_token_usage":{"input_tokens":200}}}}' \
+    '{"timestamp":"2026-10-18T10:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"old-a"}}' \
+    '{"timestamp":"2026-10-18T10:00:03.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"old-b"}}' \
+    '{"timestamp":"2026-10-18T10:00:04.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":800,"input_tokens":800}}}}' \
     > "$completed_old"
   printf '%s\n' \
     "{\"timestamp\":\"2026-10-18T11:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_completed_new\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T11:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T11:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"new-a"}}' \
     '{"timestamp":"2026-10-18T11:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":100,"input_tokens":100}}}}' \
-    '{"timestamp":"2026-10-18T11:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"new"}}' \
+    '{"timestamp":"2026-10-18T11:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"new-a"}}' \
+    '{"timestamp":"2026-10-18T11:00:03.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"new-b"}}' \
+    '{"timestamp":"2026-10-18T11:00:04.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":200,"input_tokens":200}}}}' \
+    '{"timestamp":"2020-01-01T00:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"new-b"}}' \
     > "$completed_new"
   printf '%s\n' \
     "{\"timestamp\":\"2026-10-18T12:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_in_progress\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T12:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T12:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"unfinished"}}' \
     '{"timestamp":"2026-10-18T12:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":800,"input_tokens":800}}}}' \
     > "$unfinished"
   printf '%s\n' \
     "{\"timestamp\":\"2026-10-18T13:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_stale_completion\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T13:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T13:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"stale"}}' \
     '{"timestamp":"2026-10-18T13:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":700,"input_tokens":700}}}}' \
     '{"timestamp":"2020-01-01T00:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"stale"}}' \
     > "$stale"
+  printf '%s\n' \
+    "{\"timestamp\":\"2026-10-18T14:00:00.000Z\",\"type\":\"session_meta\",\"payload\":{\"session_id\":\"cdx_multiple\",\"cwd\":\"$lab/pool/proj-abc123/1/proj\",\"timestamp\":\"2026-10-18T14:00:00.000Z\"}}" \
+    '{"timestamp":"2026-10-18T14:00:00.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"multi-a"}}' \
+    '{"timestamp":"2026-10-18T14:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":111,"input_tokens":111}}}}' \
+    '{"timestamp":"2026-10-18T14:00:02.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"multi-a"}}' \
+    '{"timestamp":"2026-10-18T14:00:03.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"multi-b"}}' \
+    '{"timestamp":"2026-10-18T14:00:04.000Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":333,"input_tokens":333}}}}' \
+    '{"timestamp":"2026-10-18T14:00:05.000Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"multi-b"}}' \
+    > "$multiple"
   touch -t 2601010000 "$completed_old"
-  touch -t 2610181300 "$completed_new" "$unfinished" "$stale"
+  touch -t 2610181300 "$completed_new" "$unfinished" "$stale" "$multiple"
   lab_env "$lab"
   FM_RM_OPENCODE_DB="$lab/home/no-opencode.db" FM_RM_CODEX_SESSIONS="$codex_dir" \
     "$TOOL" mine --now 1792400300 >"$lab/mine.out" || status=$?
   expect_code 0 "$status" "codex completion cohort mining succeeds"
   out=$(cat "$lab/home/data/repo-maintenance/metrics/2026-10-19.json")
-  assert_equals "2" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_seen')" "only completed rollouts in the window are seen"
-  assert_equals "2" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_mined')" "both completed rollouts are mined"
-  assert_equals "100,900" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex") | .tokens_total] | sort | join(",")')" "completion time admits the old-mtime rollout"
+  assert_equals "3" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_seen')" "only rollouts with completed task spans in the window are seen"
+  assert_equals "3" "$(printf '%s' "$out" | jq -r '.coverage[] | select(.source=="codex") | .sessions_mined')" "each eligible rollout is mined once"
+  assert_equals "100,111,222,900" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex") | .tokens_total] | sort | join(",")')" "completion time admits matching task spans"
+  assert_equals "100:100,111:111,222:222,900:300" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex") | "\(.tokens_total):\(.tokens_exploration)"] | sort | join(",")')" "cumulative token snapshots become per-task deltas and fallback inputs accumulate"
+  assert_equals "4" "$(printf '%s' "$out" | jq -r '[.tasks[] | select(.source=="codex")] | length')" "multiple completed tasks produce separate rows"
+  assert_not_contains "$out" '"tokens_total":800' "unfinished task spans are omitted"
+  assert_not_contains "$out" '"tokens_total":200' "out-of-window task spans are omitted"
   assert_not_contains "$out" "cdx_in_progress" "unfinished rollout identifiers are not persisted"
   pass "codex eligibility uses task completion time and mines all completed rollouts"
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fm-repo-maintenance.sh - aggregate session metrics, rank token heat, audit
+# fm-repo-maintenance.sh - aggregate task metrics, rank token heat, audit
 # repository structure, and compose a weekly maintenance report.
 #
 # Usage:
@@ -42,7 +42,7 @@ Usage:
   fm-repo-maintenance.sh sweep <project> [--date YYYY-MM-DD]
   fm-repo-maintenance.sh --help
 
-mine writes aggregate session metrics for the fixed seven-day, all-source window.
+mine writes aggregate task metrics for the fixed seven-day, all-source window.
 rank prints the repeat-read Token Heat Index from the newest metrics.
 structure audits a git work tree against the structure standard (read-only).
 sweep composes "$FM_HOME/data/repo-maintenance/<project>/<date>/report.md" and refuses to replace an existing report.

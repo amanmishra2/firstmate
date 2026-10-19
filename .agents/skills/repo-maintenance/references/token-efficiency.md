@@ -5,7 +5,7 @@ The mechanics - flags, environment seams, paths, and output schemas - live in th
 
 ## Per-task metrics
 
-`mine` records these aggregates for every task session it can attribute inside the window:
+`mine` records these aggregates for every completed task span it can attribute inside the window:
 
 - `files_read` / `unique_files` - total and distinct named file-read events (files opened).
 - `reread_reads` - repeat read events after the first read of each file in one task; `three_plus_read_files` is a separate count of files read at least three times.
@@ -14,8 +14,8 @@ The mechanics - flags, environment seams, paths, and output schemas - live in th
 - `dir` - the task's working directory as a sanitized label.
 
 A session counts only when its working directory is under the home, a project clone, or a configured pool root, so personal and foreign sessions never enter the aggregates.
-The weekly window selects completed sessions by completion time: OpenCode uses `time_idle` with `idle_outcome`, and Codex uses the `task_complete` event timestamp. Once selected, the whole transcript contributes, including turns before the window.
-Codex sessions contribute session-level metrics only: codex reads files through the shell, which carries no structured file attribution, and the instrument never guesses paths out of command text.
+The weekly window selects completed work by completion time: OpenCode uses `time_idle` with `idle_outcome`, and Codex uses each paired `task_complete` event timestamp. Once a task span is selected, its events contribute, including turns before the window.
+Codex rollouts contribute one metric row for each completed task span: unfinished task spans are omitted, while codex reads files through the shell, which carries no structured file attribution, and the instrument never guesses paths out of command text.
 The OpenCode database and Codex sessions directory must resolve inside the physical `FM_HOME`; an external source override is skipped before enumeration and recorded only as `<EXTERNAL>` with status `outside-home`.
 
 ## Token Heat Index
