@@ -1,4 +1,6 @@
 # Codex rollout projection and task-span mining.
+# Keep rollout projection streaming with `jq inputs`; never slurp historical JSONL rollouts.
+# Correlate task events incrementally and emit only completed spans inside the window.
 
 rm_mine_codex_metadata_projection() {
   jq -r '

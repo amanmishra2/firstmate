@@ -29,13 +29,11 @@ Files under `references/` are resources of this skill, not additional catalogued
 
 ## The weekly sweep
 
-1. Mine the week's session logs once, fleet-wide:
-   `bin/fm-repo-maintenance.sh mine`
-   The instrument is aggregate-only and read-only; its sources, scope, and schema are owned by its own header.
-2. Sweep each registered project (`data/projects.md`) and this repository itself:
-   `bin/fm-repo-maintenance.sh sweep <project>`
-   Each sweep writes `data/repo-maintenance/<project>/<date>/report.md` with the instrument sections complete and the qualitative sections pending.
-   Re-running the same date refuses when its report already exists.
+1. Mine the week's session logs once, fleet-wide, before the per-project sweeps.
+   The instrument header and help own its invocation, source scope, and output schema.
+2. Sweep each registered project (`data/projects.md`) and this repository itself.
+   Each sweep report starts with the instrument sections; the audit playbook owns completion of its qualitative sections.
+   The instrument header and help own the report path and replacement behavior.
 3. Complete each report's pending sections through `references/audit-playbook.md`, which owns their contract.
 4. File confirmed findings and slices into the backlog using the audit playbook's filing rule and exact command; the top-three "fix next" files guide priority, not filing volume.
    Never dispatch from the sweep itself; implementation ships later through the normal task lifecycle, with the report as its evidence.
@@ -53,7 +51,7 @@ Files under `references/` are resources of this skill, not additional catalogued
 
 - No standalone daemons, watchers, databases, dashboards, or runtime token-interception proxies.
   The sweep is a bounded, on-demand run on the existing review cadence.
-- Instrument outputs hold aggregates only: no prompts, diffs, message text, or tool output, and local paths outside the home and pool roots are counted, never recorded.
+- Follow the privacy guard in [`references/token-efficiency.md`](references/token-efficiency.md).
 - The instrument and the audit never modify a project; they report.
   Every code change ships as its own task through the normal lifecycle with the report as evidence.
 - A report is evidence, not authorization: findings enter the backlog, and the backlog's own intake, delivery mode, and merge authority rules apply unchanged.

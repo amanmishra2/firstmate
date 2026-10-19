@@ -9,7 +9,7 @@ The mechanics - flags, environment seams, paths, and output schemas - live in th
 
 - `files_read` / `unique_files` - total and distinct named file-read events (files opened).
 - `reread_reads` - repeat read events after the first read of each file in one task; `three_plus_read_files` is a separate count of files read at least three times.
-- `tokens_total` / `tokens_exploration` - the session's total usage counter, and prompt/input tokens before the first successful named edit. Output, reasoning, cache, and total usage counters do not enter `tokens_exploration`.
+- `tokens_total` / `tokens_exploration` - the task span's total usage, and prompt/input tokens before the first successful named edit. Output, reasoning, cache, and total usage counters do not enter `tokens_exploration`.
 - `first_edit_turn` / `turns` - the turn index where the first named edit succeeds, and the task's turn count (time to first edit).
 - `dir` - the task's working directory as a sanitized label.
 
@@ -32,6 +32,7 @@ For each recorded file inside the window:
 A ranked file is `prioritized` when it exceeds the 500-line soft ceiling or its folder carries no `SUMMARY.md`.
 The top three prioritized files are the sweep's "fix next" set and lead the weekly backlog intake.
 The folder table aggregates THI per folder so a hot subsystem is visible even when no single file dominates.
+Compare rankings week over week: a file that stays hot after its fix is evidence the fix missed the real seam.
 
 Read the ranking as a work queue, not a verdict: a hot file that is cold, stable, and heavily tested is a `DO NOT DO` under the audit playbook's tri-state rules, while a hot file with no navigation and no summary is usually a `DO FIRST` structure fix.
 
@@ -53,10 +54,3 @@ When a source is absent or unreadable, say so in the report and in any captain-f
 A rising `skipped_empty` is normal, while a rising `skipped_error` means the store shape changed or candidate metadata was malformed and the adapter needs attention.
 
 File coverage is intentionally narrow: only successful tool-attributed named `read` events are counted. Codex shell reads and shell-mediated edits are excluded, so an absent or zero row is not evidence that a path was inactive. First edit timing recognizes named edit tools after a positive outcome (OpenCode edit/write/patch/apply_patch; Codex `FileChange` status `completed`, `DynamicToolCall` completion with `success: true`, or a named `write` / `apply_patch` call with a matching completed `FunctionCallOutput` item whose output does not carry an explicit error or rejection message). The completed output item is the persisted success signal for that call when no error or rejection is present, even when its body is a string or array without a success field.
-
-## Weekly rhythm
-
-1. Run `mine` once at the weekly boundary, before the per-project sweeps, so every project ranks against the same window.
-2. Sweep each project and read its `fix next` list against the tri-state rules.
-3. File every confirmed finding and slice per the audit playbook's filing rule; use the top-three ranking to order the backlog, not to cap filing.
-4. Compare rankings week over week: a file that stays hot after its fix is evidence the fix missed the real seam.

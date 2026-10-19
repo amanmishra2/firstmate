@@ -78,7 +78,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Project and secondmate registries.
 - Captain preferences and optional shared captain preferences.
 - Learnings, backlog, briefs, scout reports, and the optional per-task no-mistakes pipeline-spend ledger.
-- Weekly repo-maintenance instrument records: aggregate session read metrics under `data/repo-maintenance/metrics/` and per-project sweep reports under `data/repo-maintenance/<project>/<date>/report.md`.
+- Weekly repo-maintenance records; the instrument header and help own their exact locations and schemas.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 
 `state/` holds runtime records:
