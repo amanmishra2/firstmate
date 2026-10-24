@@ -104,6 +104,29 @@ def is_placeholder(value: str) -> bool:
     return bool(re.fullmatch(r"(tbd|todo|tba|\?+)\.?", value, re.IGNORECASE))
 
 
+_TREE_CACHE: dict[tuple[str, str], list[str]] = {}
+
+
+def repo_paths(project: Path, ref: str) -> list[str]:
+    """Return every path at the base revision, cached for this process."""
+    key = (str(project), ref)
+    if key not in _TREE_CACHE:
+        proc = subprocess.run(
+            ["git", "-C", str(project), "ls-tree", "-r", "--name-only", ref],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        _TREE_CACHE[key] = proc.stdout.decode("utf-8", "replace").splitlines() if proc.returncode == 0 else []
+    return _TREE_CACHE[key]
+
+
+def unique_basename_match(project: Path, ref: str, token: str) -> str | None:
+    """Return the single repository path whose basename matches a bare token."""
+    matches = [path for path in repo_paths(project, ref) if path.rsplit("/", 1)[-1] == token]
+    return matches[0] if len(matches) == 1 else None
+
+
 def candidate_paths(value: str, project: Path | None, ref: str) -> list[str]:
     """Extract repo-relative path tokens from a labelled line."""
     tokens: list[str] = []
@@ -124,12 +147,16 @@ def candidate_paths(value: str, project: Path | None, ref: str) -> list[str]:
             result.append(token)
             continue
         # A bare token counts as a filename only when it looks like one, so
-        # prose words and version strings are never resolved as paths.
-        if "." in token and ("-" in token or "_" in token):
-            result.append(token)
-            continue
-        if project is not None and "." in token and git_path_exists(project, ref, token):
-            result.append(token)
+        # prose words and version strings are never resolved as paths. A
+        # unique basename elsewhere in the tree is accepted, so shorthand such
+        # as `fm-brief.sh` for `bin/fm-brief.sh` is not a false failure.
+        if project is not None and "." in token:
+            if git_path_exists(project, ref, token):
+                result.append(token)
+                continue
+            resolved = unique_basename_match(project, ref, token)
+            if resolved:
+                result.append(resolved)
     return list(dict.fromkeys(result))
 
 

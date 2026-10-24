@@ -136,6 +136,30 @@ FINDINGS = {
 conn.execute(
     "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     (
+        "run-delta-0001",
+        "repo-alpha",
+        "fm/task-delta",
+        "f" * 40,
+        "a" * 40,
+        "f" * 40,
+        None,
+        None,
+        "completed",
+        None,
+        None,
+        0,
+        None,
+        1790006000,
+        1790006600,
+    ),
+)
+conn.execute(
+    "INSERT INTO step_results VALUES (?,?,?,?,?)",
+    ("sr-delta-review", "run-delta-0001", "review", "completed", None),
+)
+conn.execute(
+    "INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    (
         "run-alpha-0001",
         "repo-alpha",
         "fm/task-alpha",
@@ -257,7 +281,7 @@ test_backfill_is_idempotent_and_skips_nonterminal_runs() {
   run_exporter backfill --ledger "$ledger" --until 1790100000 --quiet 2>"$TMP_ROOT/backfill.err"
   expect_code 0 "$?" "backfill must succeed on the fixture state database"
   rows=$(wc -l < "$ledger" | tr -d ' ')
-  [ "$rows" = "2" ] || fail "backfill must write exactly the two terminal runs, wrote $rows"
+  [ "$rows" = "3" ] || fail "backfill must write exactly the three terminal runs, wrote $rows"
   grep -q 'run-gamma-0001' "$ledger" && fail "backfill must skip a run that has not reached a terminal state"
   grep -q 'run-alpha-0001' "$ledger" || fail "backfill dropped the completed run"
 
@@ -272,7 +296,7 @@ test_backfill_is_idempotent_and_skips_nonterminal_runs() {
 test_row_shape_matches_the_schema() {
   local ledger
   ledger=$(fixture_ledger fixture)
-  python3 - "$ledger" <<'PY' || exit 1
+  python3 - "$ledger" <<'PY' || fail "row shape drifted from the schema"
 import json
 import sys
 
@@ -282,7 +306,7 @@ fields = [
     "wall_time_s", "observed_at", "source", "gaps",
 ]
 rows = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
-assert len(rows) == 2, rows
+assert len(rows) == 3, rows
 for row in rows:
     assert list(row) == fields, list(row)
 alpha = next(row for row in rows if row["run_id"] == "run-alpha-0001")
@@ -302,6 +326,9 @@ beta = next(row for row in rows if row["run_id"] == "run-beta-0001")
 assert beta["ci_result"] == "not-run", beta["ci_result"]
 assert "run:environment-failure" in beta["gaps"], beta["gaps"]
 assert "start_head:unrecorded" in beta["gaps"], beta["gaps"]
+delta = next(row for row in rows if row["run_id"] == "run-delta-0001")
+assert delta["ci_result"] == "unknown", delta["ci_result"]
+assert "ci_result:unrecorded" in delta["gaps"], delta["gaps"]
 PY
   [ "$?" = "0" ] || fail "row shape or recovered values drifted from the schema"
   pass "fm-prevention-ledger.py backfill: row fields, decisions, and gaps"
@@ -318,7 +345,7 @@ test_unclassified_findings_become_gaps_not_guesses() {
   "$EXPORTER" backfill --root "$base/home" --nm-data "$base/nm" --ledger "$ledger" \
     --until 1790100000 --quiet
   expect_code 0 "$?" "backfill must succeed without a reviewed classification table"
-  python3 - "$ledger" <<'PY' || exit 1
+  python3 - "$ledger" <<'PY' || fail "an unreviewed finding must carry a null category plus a gap token"
 import json
 import sys
 
@@ -418,7 +445,7 @@ EOF
   PATH="$base/bin:$PATH" "$EXPORTER" backfill --root "$TMP_ROOT/fixture/home" \
     --nm-data "$TMP_ROOT/fixture/nm" --ledger "$ledger" --until 1790100000 --gh --quiet
   expect_code 0 "$?" "backfill --gh must succeed against a readable forge"
-  python3 - "$ledger" <<'PY' || exit 1
+  python3 - "$ledger" <<'PY' || fail "--gh did not record forge evidence only for runs with a pull request"
 import json
 import sys
 
@@ -440,7 +467,10 @@ test_stats_reports_the_category_mix() {
   printf '%s' "$out" | python3 -c '
 import json, sys
 payload = json.load(sys.stdin)
-assert payload["rows"] == 2, payload
+assert payload["rows"] == 3, payload
+assert payload["completed_rows"] == 1, payload
+assert payload["first_pass_rows"] == 0, payload
+assert payload["ci_results"]["unknown"] == 1, payload
 assert payload["findings"] == 3, payload
 assert payload["categories"]["missing contract"]["count"] == 1, payload
 assert payload["categories"]["unsafe edge/rollback"]["count"] == 1, payload
@@ -610,7 +640,7 @@ test_preflight_records_adoption() {
   "$PREFLIGHT" --brief "$brief" --project "$ROOT" --record "$record" >/dev/null 2>&1
   expect_code 1 "$?" "the recorded run must still fail on the missing edge-cases line"
   [ -s "$record" ] || fail "--record wrote no adoption line"
-  python3 - "$record" <<'PY' || exit 1
+  python3 - "$record" <<'PY' || fail "the adoption record did not describe the failed check"
 import json
 import sys
 

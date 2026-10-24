@@ -57,6 +57,7 @@ import os
 import re
 import shutil
 import sqlite3
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -550,6 +551,7 @@ def enrich_with_gh(row: dict) -> dict:
         row["gaps"] = sorted(set(row["gaps"]) | {"ci_result:gh-unreadable"})
         return row
     row["ci_result"] = live
+    row["gaps"] = sorted(gap for gap in row["gaps"] if gap != "ci_result:unrecorded")
     row["source"] = "+".join(dict.fromkeys([*row["source"].split("+"), "gh-axi"]))
     return row
 
@@ -701,10 +703,14 @@ def default_ledger_path(root: Path) -> Path:
 
 
 def read_ledger(path: Path) -> list[dict]:
+    """Read the ledger, distinguishing a missing file from an unreadable one."""
+    if not path.exists():
+        return []
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise LedgerError(f"ledger unreadable: {path}: {exc}") from exc
     rows: list[dict] = []
-    text = read_text(path)
-    if text is None:
-        return rows
     for lineno, line in enumerate(text.splitlines(), start=1):
         if not line.strip():
             continue
@@ -718,22 +724,34 @@ def read_ledger(path: Path) -> list[dict]:
     return rows
 
 
-def append_rows(path: Path, rows: list[dict]) -> None:
-    """Append rows under an exclusive lock so two exporters cannot interleave."""
+def ledger_keys(rows: list[dict]) -> set[tuple[str, str]]:
+    return {(row.get("project"), row.get("run_id")) for row in rows}
+
+
+def append_new_rows(path: Path, rows: list[dict]) -> int:
+    """Append only rows whose key is absent, deciding and writing under one lock.
+
+    Reading and appending share one exclusive lock so two concurrent exporters
+    cannot both observe an empty ledger and append the same rows.
+    """
     if not rows:
-        return
+        return 0
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
+    with path.open("a+", encoding="utf-8") as handle:
         if fcntl is not None:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         try:
-            for row in rows:
+            handle.seek(0)
+            existing = ledger_keys(read_ledger(path)) if path.stat().st_size else set()
+            fresh = [row for row in rows if (row["project"], row["run_id"]) not in existing]
+            for row in fresh:
                 handle.write(json.dumps(row, sort_keys=False, separators=(",", ":")) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
         finally:
             if fcntl is not None:
                 fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    return len(fresh)
 
 
 # ---------------------------------------------------------------------------
@@ -815,17 +833,17 @@ def gather(args) -> tuple[Path, list[dict], Path]:
 
 def cmd_backfill(args) -> int:
     ledger, rows, _root = gather(args)
-    existing = {(row.get("project"), row.get("run_id")) for row in read_ledger(ledger)}
-    fresh = [row for row in rows if (row["project"], row["run_id"]) not in existing]
-    fresh.sort(key=lambda row: (row["observed_at"], row["project"], row["run_id"]))
+    rows.sort(key=lambda row: (row["observed_at"], row["project"], row["run_id"]))
     if args.dry_run:
+        existing = ledger_keys(read_ledger(ledger))
+        fresh = [row for row in rows if (row["project"], row["run_id"]) not in existing]
         for row in fresh:
             print(json.dumps(row, sort_keys=False, separators=(",", ":")))
         print(f"would append {len(fresh)} rows to {ledger}", file=sys.stderr)
         return 0
-    append_rows(ledger, fresh)
+    appended = append_new_rows(ledger, rows)
     if not args.quiet:
-        print(f"backfill: appended {len(fresh)} rows, skipped {len(rows) - len(fresh)} existing, ledger {ledger}")
+        print(f"backfill: appended {appended} rows, skipped {len(rows) - appended} existing, ledger {ledger}")
     return 0
 
 
@@ -835,12 +853,10 @@ def cmd_export(args) -> int:
     selected = [row for row in rows if row["task"] == task]
     if not selected:
         raise LedgerError(f"no terminal runs for task {task!r}")
-    existing = {(row.get("project"), row.get("run_id")) for row in read_ledger(ledger)}
-    fresh = [row for row in selected if (row["project"], row["run_id"]) not in existing]
-    fresh.sort(key=lambda row: (row["observed_at"], row["project"], row["run_id"]))
-    append_rows(ledger, fresh)
+    selected.sort(key=lambda row: (row["observed_at"], row["project"], row["run_id"]))
+    appended = append_new_rows(ledger, selected)
     if not args.quiet:
-        print(f"export: task {task}, appended {len(fresh)} rows, skipped {len(selected) - len(fresh)} existing")
+        print(f"export: task {task}, appended {appended} rows, skipped {len(selected) - appended} existing")
     return 0
 
 
@@ -921,6 +937,8 @@ def cmd_validate(args) -> int:
     if not path.is_file():
         raise LedgerError(f"ledger not found: {path}")
     rows = read_ledger(path)
+    if not rows:
+        raise LedgerError(f"ledger holds no rows: {path}")
     problems = validate_rows(rows)
     if problems:
         for problem in problems:
@@ -953,6 +971,7 @@ def cmd_stats(args) -> int:
     if args.since:
         rows = [row for row in rows if row["observed_at"] >= args.since]
     counts: Counter[str] = Counter()
+    ci_counts: Counter[str] = Counter()
     per_project: Counter[str] = Counter()
     tasks: set[str] = set()
     completed = 0
@@ -966,6 +985,7 @@ def cmd_stats(args) -> int:
         tasks.add(row["task"])
         walls.append(row["wall_time_s"])
         rounds.append(row["rounds"])
+        ci_counts[row["ci_result"]] += 1
         errors += sum(1 for finding in row["findings"] if finding["severity"] == "error")
         if row["ci_result"] in ("green", "no-ci"):
             completed += 1
@@ -985,11 +1005,12 @@ def cmd_stats(args) -> int:
         "findings_per_task": round(total / len(tasks), 2) if tasks else 0.0,
         "errors_per_review_entering_row": round(errors / reviewed, 2) if reviewed else 0.0,
         "completed_rows": completed,
+        "ci_results": dict(sorted(ci_counts.items())),
         "first_pass_rows": first_pass,
         "first_pass_rate": round(first_pass / completed, 4) if completed else 0.0,
         "rework_commits_per_completed_row": round(rework / completed, 2) if completed else 0.0,
-        "median_wall_time_s": sorted(walls)[len(walls) // 2] if walls else 0,
-        "median_rounds": sorted(rounds)[len(rounds) // 2] if rounds else 0,
+        "median_wall_time_s": int(statistics.median(walls)) if walls else 0,
+        "median_rounds": int(statistics.median(rounds)) if rounds else 0,
         "max_rounds": max(rounds) if rounds else 0,
         "unclassified": counts.get("unclassified", 0),
         "categories": {
@@ -1008,6 +1029,7 @@ def cmd_stats(args) -> int:
         f"rows: {payload['rows']}  tasks: {payload['tasks']}  findings: {total}  "
         f"first-pass rows: {first_pass}/{completed} completed"
     )
+    print("  ci_result: " + ", ".join(f"{name}={count}" for name, count in payload["ci_results"].items()))
     print(
         f"  findings/task {payload['findings_per_task']}  "
         f"errors/review-entering row {payload['errors_per_review_entering_row']}  "
