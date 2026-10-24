@@ -67,14 +67,13 @@
 # mid-observation, that URL's records stay untouched and the poll moves to the
 # next URL that still has a full observation reserve; only a genuine forge
 # failure or head change records an error.
-# A failed read is retried once inside the same observation reserve before its
-# error is recorded, so one transient rate-limit, DNS, or vendor-CLI failure
-# cannot open a failure episode on its own.
 # The forge CLI is resolved once from FM_GH_BIN, then PATH, then the usual
 # install locations, because the check runs in a background watcher whose PATH
 # can be a minimal non-login one while an interactive shell finds the same CLI.
-# An environment where it truly cannot be resolved records `no gh CLI available
-# to this environment` verbatim on the affected records instead of reporting a
+# A configured FM_GH_BIN that is not executable falls through to those same
+# sources rather than disabling every read. An environment where the CLI truly
+# cannot be resolved records `no gh CLI available to this environment` verbatim
+# on the affected records, once per failure episode, instead of reporting a
 # forge outage for contributions that read fine by hand.
 # An observation is valid for every reviewDecision the forge can return
 # (APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, DISMISSED, COMMENTED, PENDING,
@@ -146,9 +145,11 @@ BUDGET_CAP=$((CHECK_TIMEOUT - 3))
 # working home. FM_GH_BIN wins, then PATH, then the usual install locations.
 resolve_gh() {
   local candidate
-  if [ -n "${FM_GH_BIN:-}" ]; then
-    [ -x "$FM_GH_BIN" ] && { printf '%s' "$FM_GH_BIN"; return 0; }
-    return 1
+  # An explicit pin wins only when it actually works: a stale or misspelled
+  # FM_GH_BIN must not take every contribution read dark.
+  if [ -n "${FM_GH_BIN:-}" ] && [ -x "$FM_GH_BIN" ]; then
+    printf '%s' "$FM_GH_BIN"
+    return 0
   fi
   candidate=$(command -v gh 2>/dev/null || true)
   [ -n "$candidate" ] && [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }

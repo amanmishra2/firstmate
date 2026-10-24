@@ -100,11 +100,15 @@ SH
   printf '%s\n' "$lab"
 }
 
-run_driver() { # <lab> <driver-file>
+run_driver() { # <lab> <driver-file> [extra env assignment...]
   local lab=$1 driver=$2 out
-  out=$(cd "$TMP_ROOT" && LAB="$lab" PLUGIN="$PLUGIN" \
+  shift 2
+  # Clear the ambient home overrides: the plugin under test must resolve this
+  # lab, never whichever home happened to start the suite.
+  out=$(cd "$TMP_ROOT" && env -u FM_HOME -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE \
+    -u FM_CONFIG_OVERRIDE LAB="$lab" PLUGIN="$PLUGIN" \
     FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 \
-    FM_WATCH_REARM_RETRY_LIMIT=2 node "$driver" 2>&1)
+    FM_WATCH_REARM_RETRY_LIMIT=2 "$@" node "$driver" 2>&1)
   printf '%s' "$out"
 }
 
@@ -173,12 +177,17 @@ test_readiness_budget_follows_the_arm_confirmation_budget() {
 import { hooks, promptRef, waitFor } from "./harness.mjs";
 
 await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_test" } } });
-if (await waitFor(async () => promptRef.text.length > 0, 3000)) {
+if (await waitFor(async () => promptRef.text.length > 0, 4000)) {
   console.error("a slow-but-successful starter was reported as a continuity failure: " + promptRef.text);
   process.exit(1);
 }
 JS
-  out=$(FM_ARM_CONFIRM_TIMEOUT=1 run_driver "$lab" "$driver") || fail "readiness driver failed: $out"
+  # A tiny explicit ready override plus a starter slower than that override:
+  # pre-fix the plugin used the override verbatim, declared the still-starting
+  # arm a timeout, and reported a continuity failure. Post-fix its budget is
+  # floored by the arm's own confirmation window, so the same starter is armed.
+  out=$(run_driver "$lab" "$driver" FM_ARM_CONFIRM_TIMEOUT=1 FM_OPENCODE_ARM_READY_TIMEOUT_MS=1500) \
+    || fail "readiness driver failed: $out"
   grep -qx 'confirm=1' "$lab/arm-env" \
     || fail "the plugin did not pass its confirmation budget to the arm: $(cat "$lab/arm-env")"
   if grep -q 'FAILED' "$lab/arm-calls"; then

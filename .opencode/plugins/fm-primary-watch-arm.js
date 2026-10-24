@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   existsSync,
   mkdirSync,
@@ -30,7 +31,13 @@ const COORDINATOR_KEY = "__firstmateOpenCodeWatchArm";
 // the arm uses: a plugin budget below the arm's confirmation window reports a
 // healthy starter as a timeout, retires it, and starts the churn this file
 // exists to prevent.
-const ARM_CONFIRM_SECONDS = positiveInteger("FM_ARM_CONFIRM_TIMEOUT", 10);
+// Git Bash/MSYS pays a much higher fork cost, and bin/fm-watch-arm.sh's own
+// default there is 30s; the plugin must never derive a smaller budget than the
+// platform default it is reasoning about.
+const ARM_CONFIRM_SECONDS = positiveInteger(
+  "FM_ARM_CONFIRM_TIMEOUT",
+  process.platform === "win32" ? 30 : 10,
+);
 // Time allowed for a forked arm to report `watcher: started|attached` after its
 // own confirmation budget. Conditioned on win32 so a slow Git Bash cold start
 // keeps its historical headroom.
@@ -63,6 +70,11 @@ const REARM_RETRY_LIMIT = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
 // instances cannot see each other's `child` handle.
 const SUCCESSION_CLAIM = ".watch-succession";
 const SUCCESSION_CLAIM_TTL_MS = Math.max(60000, ARM_READY_TIMEOUT_MS * 2);
+// This plugin instance's claim identity. Keying the claim on process.pid alone
+// let a second instance in the SAME process (two loader passes, or the
+// turn-end guard's coordinator from another module copy) treat another
+// instance's live claim as its own and release it mid-succession.
+const SUCCESSION_OWNER = randomUUID();
 
 let child = null;
 let armStatus = "idle";
@@ -257,6 +269,16 @@ function classifyArmClose(paths, hostMode, stdout, stderr, code, signal) {
       message: `watcher: FAILED - OpenCode arm child found an external healthy watcher instead of owning wake delivery\n${healthy}`,
     };
   }
+  // The arm's typed stalled-holder line is the one close the plugin must
+  // answer with a force-restart: the holder is alive but its beacon passed the
+  // watcher's own eviction bound, so a plain attach-or-start successor would
+  // re-attach to the same wedged cycle forever. `--restart` is home-scoped
+  // (bin/fm-watch-arm.sh stops only this home's locked watcher), and this is
+  // the only path allowed to use it.
+  const stalled = combined
+    .split(/\r?\n/)
+    .find((line) => /^watcher: FAILED - attached watcher pid=[0-9]+ stalled\b/.test(line));
+  if (stalled) return { kind: "stalled", message: stalled };
   const failed = combined.split(/\r?\n/).find((line) => /^watcher: FAILED/.test(line));
   if (failed) return { kind: "failure", message: failed };
   if (signal) {
@@ -412,7 +434,14 @@ function claimIsLive(paths) {
   } catch {
     return false;
   }
+  // The TTL bounds every claim, including our own: a claim left behind by a
+  // crashed succession must expire rather than suppress supervision forever.
   if (!(ageMs < SUCCESSION_CLAIM_TTL_MS)) return false;
+  if (fields.get("owner") === SUCCESSION_OWNER) {
+    // Our own claim, still inside its TTL: a concurrent caller joins it
+    // instead of starting a duplicate successor.
+    return true;
+  }
   try {
     process.kill(pid, 0);
   } catch {
@@ -426,7 +455,10 @@ function claimSuccession(paths, predecessorArmPid) {
   const temp = `${path}.${process.pid}`;
   try {
     mkdirSync(paths.state, { recursive: true });
-    writeFileSync(temp, `pid=${process.pid}\nat=${Date.now()}\npredecessor=${predecessorArmPid || ""}\n`);
+    writeFileSync(
+      temp,
+      `owner=${SUCCESSION_OWNER}\npid=${process.pid}\nat=${Date.now()}\npredecessor=${predecessorArmPid || ""}\n`,
+    );
     renameSync(temp, path);
     return true;
   } catch {
@@ -440,7 +472,9 @@ function claimSuccession(paths, predecessorArmPid) {
 function releaseSuccession(paths) {
   try {
     const raw = readFileSync(claimPathOf(paths), "utf8");
-    if (!raw.split(/\r?\n/).includes(`pid=${process.pid}`)) return;
+    // Only this instance may release its own claim: another instance in the
+    // same process shares our pid but not our owner token.
+    if (!raw.split(/\r?\n/).includes(`owner=${SUCCESSION_OWNER}`)) return;
   } catch {
     return;
   }
@@ -539,7 +573,7 @@ async function restoreAfterActionableClose(paths, sessionID, client, predecessor
   };
 }
 
-async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid) {
+async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid, force = false) {
   if (child || retryTimer) return;
   if (!(await sessionOwnsLock(paths))) {
     setArmStatus("failed");
@@ -555,7 +589,7 @@ async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid
   setArmStatus("retrying");
   const timer = setTimeout(() => {
     if (retryTimer === timer) retryTimer = null;
-    void ensureArm(paths, sessionID, client, predecessorArmPid).then((status) => {
+    void ensureArm(paths, sessionID, client, predecessorArmPid, false, force).then((status) => {
       // A status this set owns is a healthy club: armed/wake means a verified
       // successor, and existing/retrying means another caller is already
       // starting one, so this retry must neither announce a failure nor start
@@ -568,7 +602,7 @@ async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid
   retryTimer = timer;
 }
 
-function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
+function spawnArm(paths, sessionID, client, predecessorArmPid = "", force = false) {
   setArmStatus("starting");
   const hostMode = hostModeEnabled(paths);
   const env = {
@@ -580,10 +614,15 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
   if (hostMode) env.FM_SUPERVISION_HOST_PRIMARY = "opencode";
-  // Attach-or-start, never `--restart` (see restoreAfterActionableClose): the
-  // plugin owns succession by starting a successor that joins a healthy cycle
-  // rather than replacing it.
-  const command = hostMode ? '"$FM_ROOT_OVERRIDE/bin/fm-supervision-host.sh" park --restart' : '"$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" --arm';
+  // Attach-or-start by default (see restoreAfterActionableClose): the plugin
+  // owns succession by starting a successor that joins a healthy cycle rather
+  // than replacing it. `force` is set only for the arm's own typed
+  // stalled-holder close, where the live holder is provably wedged past the
+  // watcher's eviction bound and a plain attach would re-follow it forever.
+  const armMode = force && !hostMode ? "--restart" : "--arm";
+  const command = hostMode
+    ? '"$FM_ROOT_OVERRIDE/bin/fm-supervision-host.sh" park --restart'
+    : `"$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" ${armMode}`;
   const armChild = spawn("bash", ["-lc", `config_dir="\${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec ${command}`], {
     cwd: paths.root,
     env,
@@ -650,9 +689,19 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
       restorationInFlight = restoration;
       void restoration.then(async (result) => {
         try {
-          const pending = pendingWakeMessages.splice(0);
-          const message = [classification.message, ...pending, result.failure].filter(Boolean).join("\n\n");
-          await deliverActionableWake(paths, client, sessionID, message, result.recovery);
+          // Drain the pending queue only AFTER each delivery. Splicing before
+          // the await silently dropped a wake that arrived while the prompt
+          // was being sent, because the close handler appends to this array.
+          let leader = classification.message;
+          let failure = result.failure;
+          let recovery = result.recovery;
+          do {
+            const message = [leader, ...pendingWakeMessages.splice(0), failure].filter(Boolean).join("\n\n");
+            leader = "";
+            failure = "";
+            await deliverActionableWake(paths, client, sessionID, message, recovery);
+            recovery = null;
+          } while (pendingWakeMessages.length > 0);
         } finally {
           if (restorationInFlight === restoration) restorationInFlight = null;
         }
@@ -673,7 +722,14 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
       setArmStatus("failed");
       return;
     }
-    void scheduleRetry(paths, sessionID, client, classification.message, predecessor);
+    void scheduleRetry(
+      paths,
+      sessionID,
+      client,
+      classification.message,
+      predecessor,
+      classification.kind === "stalled",
+    );
   });
   armChild.on("error", (error) => {
     if (settled) return;
@@ -694,6 +750,13 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     );
   });
   return armChild;
+}
+
+function directoryWithin(directory, base) {
+  if (!base) return false;
+  const dir = resolvePath(directory);
+  const root = resolvePath(base);
+  return dir === root || dir.startsWith(root.endsWith("/") ? root : `${root}/`);
 }
 
 function sessionDirectoryOf(info) {
@@ -722,14 +785,16 @@ async function sessionBelongsToHome(paths, client, sessionID) {
   const directory = sessionDirectoryOf(result?.data ?? result);
   if (!directory) return true;
   try {
-    return resolvePath(directory) === resolvePath(paths.root);
+    // A TUI opened in a subdirectory of the home is still this home's session.
+    // Exact equality alone left such a session never arming supervision.
+    return [paths.root, paths.home].some((base) => directoryWithin(directory, base));
   } catch {
     return true;
   }
 }
 
 
-async function beginArm(paths, sessionID, client, predecessorArmPid) {
+async function beginArm(paths, sessionID, client, predecessorArmPid, force = false) {
   if (!sessionID) return { status: "skipped", armChild: null };
   if (!(await sessionBelongsToHome(paths, client, sessionID))) {
     return { status: "foreign-session", armChild: null };
@@ -747,17 +812,17 @@ async function beginArm(paths, sessionID, client, predecessorArmPid) {
     // An unwritable claim must not take supervision dark: continuity outranks
     // duplicate suppression, and a duplicate arm only attaches to the cycle.
   }
-  return { status: "spawned", armChild: spawnArm(paths, sessionID, client, predecessorArmPid) };
+  return { status: "spawned", armChild: spawnArm(paths, sessionID, client, predecessorArmPid, force) };
 }
 
 function armAttempt(status, armChild, includeArmChild) {
   return includeArmChild ? { status, armChild } : status;
 }
 
-async function ensureArm(paths, sessionID, client, predecessorArmPid = "", includeArmChild = false) {
+async function ensureArm(paths, sessionID, client, predecessorArmPid = "", includeArmChild = false, force = false) {
   let launchResult = null;
   if (!launchInFlight) {
-    const launch = beginArm(paths, sessionID, client, predecessorArmPid);
+    const launch = beginArm(paths, sessionID, client, predecessorArmPid, force);
     launchInFlight = launch;
     try {
       launchResult = await launch;

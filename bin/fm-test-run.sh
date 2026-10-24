@@ -318,6 +318,7 @@ family_for_basename() {
     fm-turnend-foreign-owner-arm-fix.test.sh|\
     fm-wake-queue.test.sh|fm-watch-arm.test.sh|fm-watch-checkpoint.test.sh|fm-watch-recovery-loop.test.sh|\
     fm-watch-triage.test.sh|fm-task-inbox.test.sh|\
+    fm-opencode-watch-arm-succession.test.sh|fm-wake-drain-bounded.test.sh|\
     fm-watcher-lock.test.sh|fm-inactive-reconcile.test.sh)
       printf '%s\n' watcher-wake-lock
       ;;
@@ -1479,6 +1480,15 @@ families_for_changed_path() {
     bin/fm-watch*|bin/fm-wake*|bin/fm-inactive-reconcile.sh|\
     bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
       printf '%s\n' watcher-wake-lock
+      ;;
+    .opencode/plugins/fm-primary-watch-arm.js|.opencode/plugins/lib/fm-opencode-v2-adapter.js)
+      # The OpenCode re-arm owner: the succession simulation and the turn-end
+      # guard share its coordinator and adapter.
+      printf '%s\n' "__script__:fm-opencode-watch-arm-succession.test.sh"
+      printf '%s\n' "__script__:fm-turnend-guard.test.sh"
+      ;;
+    .opencode/plugins/fm-primary-turnend-guard.js)
+      printf '%s\n' "__script__:fm-turnend-guard.test.sh"
       ;;
     bin/fm-afk*)
       printf '%s\n' afk

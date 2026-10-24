@@ -1071,28 +1071,21 @@ test_provider_review_decisions_are_observable() { # every ReviewDecision the for
   pass 'every provider reviewDecision is observable and leaves a valid record'
 }
 
-test_unresolvable_forge_cli_reports_its_own_cause() {
-  local home out line='contributions: observation unavailable for https://github.com/o/r/pull/8'
-  home=$(new_home forge-cli-missing)
+test_unusable_forge_cli_pin_falls_through_to_the_working_cli() {
+  local home out
+  home=$(new_home forge-cli-pin)
   forge_home "$home"
   with_home "$home" "$ROOT/bin/fm-pr-check.sh" delivery https://github.com/o/r/pull/8 >/dev/null \
-    || fail 'could not register the PR before the missing-CLI case'
-  # A background watcher can run with a minimal non-login PATH while the same
-  # CLI is available to an interactive shell. That environment cannot observe
-  # anything, and it must say so instead of reporting a forge outage per PR.
-  out=$(with_home "$home" env FM_GH_BIN=/nonexistent "$ROOT/bin/fm-contributions.sh" poll) \
-    || fail 'an unresolvable forge CLI failed the poll instead of recording its cause'
-  [ "$out" = "$line" ] || fail "a missing forge CLI did not wake once: $out"
-  jq -e '.records[0].error == "no gh CLI available to this environment"' \
+    || fail 'could not register the PR before the unusable-pin case'
+  # A stale or misspelled pin must not take every contribution read dark: the
+  # resolver falls through to PATH and the standard install locations.
+  out=$(with_home "$home" env FM_GH_BIN=/nonexistent/gh "$ROOT/bin/fm-contributions.sh" poll) \
+    || fail 'an unusable FM_GH_BIN failed the poll instead of falling through'
+  [ -z "$out" ] || fail "an unusable FM_GH_BIN produced a spurious wake: $out"
+  jq -e '.records[0].error == null and .records[0].observation.head != null' \
     "$home/data/delivery/contributions.json" >/dev/null \
-    || fail "the recorded cause was not the missing CLI: $(cat "$home/data/delivery/contributions.json")"
-  out=$(with_home "$home" env FM_GH_BIN=/nonexistent "$ROOT/bin/fm-contributions.sh" poll)
-  [ -z "$out" ] || fail "a repeated missing-CLI episode woke again: $out"
-  out=$(with_home "$home" "$ROOT/bin/fm-contributions.sh" poll)
-  [ -z "$out" ] || fail "a successful read printed: $out"
-  jq -e '.records[0].error == null' "$home/data/delivery/contributions.json" >/dev/null \
-    || fail 'a successful read did not end the missing-CLI episode'
-  pass 'a forge CLI this environment cannot resolve is reported as that cause, once per episode'
+    || fail "the fall-through read did not observe the contribution: $(cat "$home/data/delivery/contributions.json")"
+  pass 'an unusable forge CLI pin falls through to the working CLI instead of blinding observation'
 }
 
 test_unavailable_forge_records_error_and_wakes_once_per_episode() { # genuine outage, two consecutive cycles
@@ -1232,7 +1225,7 @@ test_retire_is_idempotent_and_refuses_unknown_pairs() {
 }
 
 failures=0
-for test_name in test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_provider_review_decisions_are_observable test_unresolvable_forge_cli_reports_its_own_cause test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs; do
+for test_name in test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_provider_review_decisions_are_observable test_unusable_forge_cli_pin_falls_through_to_the_working_cli test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 [ "$failures" -eq 0 ] || fail "$failures contribution regressions"

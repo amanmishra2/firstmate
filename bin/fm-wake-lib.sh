@@ -110,7 +110,29 @@ fm_pid_identity() {
   # while its beacon was fresh seconds old, which fired the false turn-end
   # guard banner and let the arm start a duplicate watcher. UTC is stable
   # across all of those.
-  out=$(COLUMNS=10000 LC_ALL=C TZ=UTC ps -p "$pid" -o lstart= -o command= 2>/dev/null) || return 1
+  fm_pid_identity_ps "$pid" UTC
+}
+
+# The pre-pin rendering of the same identity, in the READING process's own
+# timezone. Only fm_watcher_lock_matches_pid consults it, and only to accept a
+# lock an older build wrote, so an upgrade does not read a live watcher as down
+# for the seconds until that watcher next publishes its identity. Nothing may
+# WRITE this form: it is deliberately unstable across TZ and DST.
+fm_pid_identity_legacy() {
+  local pid=$1
+  case "$pid" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  fm_pid_identity_ps "$pid" ambient
+}
+
+fm_pid_identity_ps() {  # <pid> <UTC|ambient>
+  local pid=$1 zone=$2 out
+  if [ "$zone" = UTC ]; then
+    out=$(COLUMNS=10000 LC_ALL=C TZ=UTC ps -p "$pid" -o lstart= -o command= 2>/dev/null) || return 1
+  else
+    out=$(COLUMNS=10000 LC_ALL=C ps -p "$pid" -o lstart= -o command= 2>/dev/null) || return 1
+  fi
   [ -n "$out" ] || return 1
   printf '%s\n' "$out" | sed 's/^[[:space:]]*//'
 }
@@ -186,7 +208,15 @@ fm_watcher_lock_matches_pid() {
   [ "$lock_path" = "$watch_path" ] || return 1
   [ -n "$lock_identity" ] || return 1
   current_identity=$(fm_pid_identity "$pid") || return 1
-  [ "$current_identity" = "$lock_identity" ] || return 1
+  if [ "$current_identity" != "$lock_identity" ]; then
+    # Upgrade transition: a lock written before the TZ pin carries the local
+    # rendering of the same live process. Accept exactly that legacy value so
+    # the upgrade does not evict a healthy watcher; the next watcher start
+    # rewrites the lock with the stable identity.
+    local legacy_identity
+    legacy_identity=$(fm_pid_identity_legacy "$pid" 2>/dev/null) || legacy_identity=
+    [ -n "$legacy_identity" ] && [ "$legacy_identity" = "$lock_identity" ] || return 1
+  fi
   FM_WATCHER_MATCHED_IDENTITY=$lock_identity
 }
 
