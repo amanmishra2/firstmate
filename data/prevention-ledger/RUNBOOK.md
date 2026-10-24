@@ -45,7 +45,7 @@ Outputs, in this order, and no others:
 
 The one action is the whole output.
 A review that ends with a list of observations and no action has failed and should be reported as such.
-Refuse to call a category "improved" on one week: a weekly cohort is roughly 25 review-bearing runs, and an eight-point share move is inside sampling noise at that size.
+Refuse to call a category "improved" on one week: a weekly cohort is roughly 23 completed runs, and an eight-point share move is inside sampling noise at that size.
 
 Record the review as one note with the `stats` output pasted in, the three outputs above, and the date.
 No dashboard, no chart, no database.
