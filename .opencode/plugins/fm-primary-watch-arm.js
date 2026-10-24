@@ -1,5 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve } from "node:path";
 import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 import { createSessionScope } from "./lib/fm-session-scope.js";
@@ -16,11 +25,22 @@ import { createSessionScope } from "./lib/fm-session-scope.js";
 // as they do for the arm, with a longer readiness budget for the host's own
 // startup. On a home that does not run the host nothing below changes.
 const COORDINATOR_KEY = "__firstmateOpenCodeWatchArm";
-// 35s on Windows so the budget stays above arm's MSYS confirm default (30s in
-// bin/fm-watch-arm.sh): a slow but successful Git Bash cold start must not be
-// SIGTERMed mid-confirmation. Conditioned on win32 so other platforms keep 12s.
-const ARM_READY_TIMEOUT_DEFAULT_MS = process.platform === "win32" ? 35000 : 12000;
-const ARM_READY_TIMEOUT_MS = positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", ARM_READY_TIMEOUT_DEFAULT_MS);
+// The arm's own startup confirmation budget. It is passed to every arm child
+// explicitly so the plugin's readiness budget is derived from the SAME number
+// the arm uses: a plugin budget below the arm's confirmation window reports a
+// healthy starter as a timeout, retires it, and starts the churn this file
+// exists to prevent.
+const ARM_CONFIRM_SECONDS = positiveInteger("FM_ARM_CONFIRM_TIMEOUT", 10);
+// Time allowed for a forked arm to report `watcher: started|attached` after its
+// own confirmation budget. Conditioned on win32 so a slow Git Bash cold start
+// keeps its historical headroom.
+const ARM_READY_MARGIN_MS = process.platform === "win32" ? 25000 : 5000;
+const ARM_READY_TIMEOUT_DEFAULT_MS =
+  process.platform === "win32" ? 35000 : 12000;
+const ARM_READY_TIMEOUT_MS = Math.max(
+  positiveInteger("FM_OPENCODE_ARM_READY_TIMEOUT_MS", ARM_READY_TIMEOUT_DEFAULT_MS),
+  ARM_CONFIRM_SECONDS * 1000 + ARM_READY_MARGIN_MS,
+);
 const HOST_READY_TIMEOUT_MS = Math.max(ARM_READY_TIMEOUT_MS, 30000);
 const WAKE_LINE = /^(signal:|stale:|check:|heartbeat($|:))/;
 const HOST_LINE = /^supervision-host:/;
@@ -37,6 +57,12 @@ const ARM_RETIRE_TIMEOUT_MS = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 
 const REARM_RETRY_BASE_MS = positiveInteger("FM_WATCH_REARM_RETRY_BASE_MS", 250);
 const REARM_RETRY_MAX_MS = positiveInteger("FM_WATCH_REARM_RETRY_MAX_MS", 4000);
 const REARM_RETRY_LIMIT = positiveInteger("FM_WATCH_REARM_RETRY_LIMIT", 5);
+// One succession at a time across every plugin instance and every coordinator
+// caller. The claim is durable (a file under this home's state directory)
+// because the duplicate-succession bug is exactly the case where two JS module
+// instances cannot see each other's `child` handle.
+const SUCCESSION_CLAIM = ".watch-succession";
+const SUCCESSION_CLAIM_TTL_MS = Math.max(60000, ARM_READY_TIMEOUT_MS * 2);
 
 let child = null;
 let armStatus = "idle";
@@ -44,6 +70,7 @@ let retryTimer = null;
 let retryFailures = 0;
 let launchInFlight = null;
 let restorationInFlight = null;
+let pendingWakeMessages = [];
 let armClose = new WeakMap();
 let armReadiness = new WeakMap();
 let armRecovery = new WeakMap();
@@ -339,8 +366,87 @@ function surfaceFailure(paths, client, sessionID, reason) {
   });
 }
 
+// Statuses that mean "a watcher is verified, or a succession is already under
+// way". A retry or a readiness poll that lands on one of these must stay silent
+// instead of announcing a continuity failure or starting a duplicate arm.
+const SETTLED_OR_IN_FLIGHT_STATUSES = new Set([
+  "armed",
+  "wake",
+  "existing",
+  "retrying",
+  "starting",
+]);
+
 function retryDelay(attempt) {
   return Math.min(REARM_RETRY_MAX_MS, REARM_RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1));
+}
+
+// One succession at a time, home-scoped and durable.
+//
+// After an actionable close the plugin's `child` handle is already clear, so a
+// second coordinator caller (the turn-end guard's ensureArmed, a second plugin
+// instance, or a retry) sees an empty slot and starts its own successor. Those
+// duplicates used to pile up as extra arms that each attached to, or restarted,
+// this home's one watcher. The claim file makes the slot visible to every
+// caller: a live, unexpired claim means a succession is already under way.
+const claimPathOf = (paths) => `${paths.state}/${SUCCESSION_CLAIM}`;
+
+function claimIsLive(paths) {
+  const path = claimPathOf(paths);
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return false;
+  }
+  const fields = new Map();
+  for (const line of raw.split(/\r?\n/)) {
+    const index = line.indexOf("=");
+    if (index > 0) fields.set(line.slice(0, index), line.slice(index + 1));
+  }
+  const pid = Number(fields.get("pid"));
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  let ageMs = Number.POSITIVE_INFINITY;
+  try {
+    ageMs = Date.now() - statSync(path).mtimeMs;
+  } catch {
+    return false;
+  }
+  if (!(ageMs < SUCCESSION_CLAIM_TTL_MS)) return false;
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+function claimSuccession(paths, predecessorArmPid) {
+  const path = claimPathOf(paths);
+  const temp = `${path}.${process.pid}`;
+  try {
+    mkdirSync(paths.state, { recursive: true });
+    writeFileSync(temp, `pid=${process.pid}\nat=${Date.now()}\npredecessor=${predecessorArmPid || ""}\n`);
+    renameSync(temp, path);
+    return true;
+  } catch {
+    try {
+      unlinkSync(temp);
+    } catch {}
+    return false;
+  }
+}
+
+function releaseSuccession(paths) {
+  try {
+    const raw = readFileSync(claimPathOf(paths), "utf8");
+    if (!raw.split(/\r?\n/).includes(`pid=${process.pid}`)) return;
+  } catch {
+    return;
+  }
+  try {
+    unlinkSync(claimPathOf(paths));
+  } catch {}
 }
 
 function waitForRetry(attempt) {
@@ -372,25 +478,65 @@ function restorationFailure(status) {
   return `watcher: FAILED - OpenCode could not verify a ready successor watcher (${status || "idle"})`;
 }
 
+// Statuses that mean "someone else already owns, or there is nothing to own".
+// None of them is a continuity failure: `foreign-session` is another session's
+// idle event on this server, `not-needed` is a home that no longer needs
+// supervision, `read-only`/`not-primary`/`skipped` are ownership boundaries, and
+// `existing`/`retrying` mean a succession this caller did not start is already
+// running. Treating any of them as a failure is what produced the repeated
+// `could not restore watcher continuity after 5 retries` line.
+const NON_FAILURE_STATUSES = new Set([
+  "existing",
+  "retrying",
+  "not-needed",
+  "foreign-session",
+  "read-only",
+  "not-primary",
+  "skipped",
+]);
+
+// Succession is idempotent. A successor started here runs in attach-or-start
+// mode, never `--restart`: a duplicate that lands while a healthy watcher still
+// holds this home's lock must follow that cycle instead of force-stopping it.
+// `--restart` stays owned by explicit owner requests (an operator re-arm, the
+// supervision host's own hand-back), so plugin-driven continuity can never kill
+// a live watcher.
 async function restoreAfterActionableClose(paths, sessionID, client, predecessorArmPid) {
   let failure = "";
   for (let attempt = 0; attempt <= REARM_RETRY_LIMIT; attempt += 1) {
     const { status, armChild } = await ensureArm(paths, sessionID, client, predecessorArmPid, true);
-    if (status === "armed") return { failure: "", recovery: armRecovery.get(armChild) };
-    // An actionable line belongs to this arm's close handler.
-    // Do not retire it before that handler can start the successor cycle.
-    if (status === "wake") return { failure: "", recovery: armRecovery.get(armChild) };
+    if (status === "armed" || status === "wake") {
+      releaseSuccession(paths);
+      return { failure: "", recovery: armRecovery.get(armChild) };
+    }
+    if (NON_FAILURE_STATUSES.has(status)) {
+      // Ownership decided elsewhere: report nothing and stay silent about
+      // continuity. A `read-only` lock really cannot be repaired from here, so
+      // that one keeps its typed line.
+      releaseSuccession(paths);
+      return {
+        failure: status === "read-only" ? restorationFailure(status) : "",
+        recovery: null,
+      };
+    }
     failure = restorationFailure(status);
+    if (attempt === REARM_RETRY_LIMIT) break;
     if (!(await retireArm(armChild))) {
       setArmStatus("failed");
-      return { failure: `${failure}\nwatcher: FAILED - OpenCode could not restore watcher continuity because the unready successor arm did not exit within ${ARM_RETIRE_TIMEOUT_MS}ms` };
+      releaseSuccession(paths);
+      return {
+        failure: `${failure}\nwatcher: FAILED - OpenCode could not restore watcher continuity because the unready successor arm did not exit within ${ARM_RETIRE_TIMEOUT_MS}ms`,
+        recovery: null,
+      };
     }
-    if (status === "read-only" || status === "not-primary" || status === "skipped") break;
-    if (attempt === REARM_RETRY_LIMIT) break;
     await waitForRetry(attempt + 1);
   }
   setArmStatus("failed");
-  return { failure: `${failure}\nwatcher: FAILED - OpenCode could not restore watcher continuity after ${REARM_RETRY_LIMIT} retries` };
+  releaseSuccession(paths);
+  return {
+    failure: `${failure}\nwatcher: FAILED - OpenCode could not restore watcher continuity after ${REARM_RETRY_LIMIT} retries`,
+    recovery: null,
+  };
 }
 
 async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid) {
@@ -410,7 +556,11 @@ async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid
   const timer = setTimeout(() => {
     if (retryTimer === timer) retryTimer = null;
     void ensureArm(paths, sessionID, client, predecessorArmPid).then((status) => {
-      if (["armed", "starting", "wake"].includes(status)) return;
+      // A status this set owns is a healthy club: armed/wake means a verified
+      // successor, and existing/retrying means another caller is already
+      // starting one, so this retry must neither announce a failure nor start
+      // a duplicate.
+      if (SETTLED_OR_IN_FLIGHT_STATUSES.has(status)) return;
       surfaceFailure(paths, client, sessionID, `watcher: FAILED - OpenCode could not launch a continuity retry (${status})`);
     });
   }, retryDelay(retryFailures));
@@ -426,10 +576,14 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     FM_HOME: paths.home,
     FM_ROOT_OVERRIDE: paths.root,
     FM_CONFIG_OVERRIDE: paths.config,
+    FM_ARM_CONFIRM_TIMEOUT: String(ARM_CONFIRM_SECONDS),
     FM_WATCH_PREDECESSOR_ARM_PID: predecessorArmPid,
   };
   if (hostMode) env.FM_SUPERVISION_HOST_PRIMARY = "opencode";
-  const command = hostMode ? '"$FM_ROOT_OVERRIDE/bin/fm-supervision-host.sh" park --restart' : '"$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" --restart';
+  // Attach-or-start, never `--restart` (see restoreAfterActionableClose): the
+  // plugin owns succession by starting a successor that joins a healthy cycle
+  // rather than replacing it.
+  const command = hostMode ? '"$FM_ROOT_OVERRIDE/bin/fm-supervision-host.sh" park --restart' : '"$FM_ROOT_OVERRIDE/bin/fm-watch-arm.sh" --arm';
   const armChild = spawn("bash", ["-lc", `config_dir="\${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"; [ -f "$config_dir/x-mode.env" ] && . "$config_dir/x-mode.env"; exec ${command}`], {
     cwd: paths.root,
     env,
@@ -482,14 +636,22 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     settleReadiness(classification.kind === "actionable" ? "wake" : "failed");
     const predecessor = String(armChild.pid ?? "");
     if (classification.kind === "actionable") {
-      if (restorationInFlight) return;
+      if (restorationInFlight) {
+        // A later cycle closed for its own actionable reason while the earlier
+        // one was still restoring. Dropping it swallowed that wake outright;
+        // keep it and let the in-flight delivery carry both.
+        pendingWakeMessages.push(classification.message);
+        setArmStatus("wake");
+        return;
+      }
       retryFailures = 0;
       setArmStatus("wake");
       const restoration = restoreAfterActionableClose(paths, sessionID, client, predecessor);
       restorationInFlight = restoration;
       void restoration.then(async (result) => {
         try {
-          const message = result.failure ? `${classification.message}\n\n${result.failure}` : classification.message;
+          const pending = pendingWakeMessages.splice(0);
+          const message = [classification.message, ...pending, result.failure].filter(Boolean).join("\n\n");
           await deliverActionableWake(paths, client, sessionID, message, result.recovery);
         } finally {
           if (restorationInFlight === restoration) restorationInFlight = null;
@@ -506,6 +668,8 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
       return;
     }
     if (restorationInFlight) {
+      // A non-actionable close during restoration is that restoration's own
+      // retry material, not a second failure to surface.
       setArmStatus("failed");
       return;
     }
@@ -532,13 +696,57 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
   return armChild;
 }
 
+function sessionDirectoryOf(info) {
+  return (
+    info?.directory ??
+    info?.location?.directory ??
+    info?.project?.directory ??
+    ""
+  );
+}
+
+// OpenCode v2's event stream is server-wide, so an idle event can originate
+// from any session this server serves (every crewmate shares the server). Arming
+// against a foreign session binds the supervision wake channel to it and
+// delivers firstmate's notifications into a crewmate's window. Only arm for a
+// session at this home's location; an unreadable session keeps the previous
+// behavior so supervision never goes dark on a failed lookup.
+async function sessionBelongsToHome(paths, client, sessionID) {
+  if (!client || typeof client.session?.get !== "function") return true;
+  let result;
+  try {
+    result = await client.session.get({ path: { id: sessionID } });
+  } catch {
+    return true;
+  }
+  const directory = sessionDirectoryOf(result?.data ?? result);
+  if (!directory) return true;
+  try {
+    return resolvePath(directory) === resolvePath(paths.root);
+  } catch {
+    return true;
+  }
+}
+
+
 async function beginArm(paths, sessionID, client, predecessorArmPid) {
   if (!sessionID) return { status: "skipped", armChild: null };
+  if (!(await sessionBelongsToHome(paths, client, sessionID))) {
+    return { status: "foreign-session", armChild: null };
+  }
   if (!(await isPrimaryRoot(paths.root, paths.home))) return { status: "not-primary", armChild: null };
   if (!(await sessionOwnsLock(paths))) return { status: "read-only", armChild: null };
   if (child) return { status: "existing", armChild: child };
   if (retryTimer) return { status: "retrying", armChild: null };
   if (!shouldArm(paths)) return { status: "not-needed", armChild: null };
+  // One succession at a time, whoever asks (see claimSuccession). A live claim
+  // means another caller is already starting the successor for this close, so
+  // this caller joins rather than starting a duplicate arm.
+  if (claimIsLive(paths)) return { status: "retrying", armChild: null };
+  if (!claimSuccession(paths, predecessorArmPid)) {
+    // An unwritable claim must not take supervision dark: continuity outranks
+    // duplicate suppression, and a duplicate arm only attaches to the cycle.
+  }
   return { status: "spawned", armChild: spawnArm(paths, sessionID, client, predecessorArmPid) };
 }
 
@@ -563,7 +771,12 @@ async function ensureArm(paths, sessionID, client, predecessorArmPid = "", inclu
   if (!armChild) {
     return armAttempt(launchResult.status, null, includeArmChild);
   }
-  return armAttempt(await waitForArmReady(armChild), armChild, includeArmChild);
+  const readiness = await waitForArmReady(armChild);
+  // The spawned arm now owns the slot (it is `child`), so the durable claim
+  // exists only to cover the window between an empty slot and this point. A
+  // claim left behind would suppress the next succession for its whole TTL.
+  releaseSuccession(paths);
+  return armAttempt(readiness, armChild, includeArmChild);
 }
 
 // One coordinator per location on a shared Map: OpenCode 2 runs every

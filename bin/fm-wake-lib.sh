@@ -102,7 +102,15 @@ fm_pid_identity() {
   # narrow-COLUMNS hook, where a truncated command would likewise reject a live
   # watcher (issue #799). This mirrors fm_pending_reply_pid_identity, which pins the
   # same width for the same reason.
-  out=$(COLUMNS=10000 LC_ALL=C ps -p "$pid" -o lstart= -o command= 2>/dev/null) || return 1
+  # Pin TZ=UTC for the same class of reason: lstart renders in the READING
+  # process's timezone, so an identity written by the watcher and re-read by a
+  # hook, cron/launchd context, SSH or test session with a different TZ - or by
+  # any reader after a DST transition - named a different string for the same
+  # live pid. Every reader then saw a live identity-matched watcher as down
+  # while its beacon was fresh seconds old, which fired the false turn-end
+  # guard banner and let the arm start a duplicate watcher. UTC is stable
+  # across all of those.
+  out=$(COLUMNS=10000 LC_ALL=C TZ=UTC ps -p "$pid" -o lstart= -o command= 2>/dev/null) || return 1
   [ -n "$out" ] || return 1
   printf '%s\n' "$out" | sed 's/^[[:space:]]*//'
 }

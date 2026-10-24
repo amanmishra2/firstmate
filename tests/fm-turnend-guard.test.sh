@@ -412,6 +412,35 @@ EOF
   pass "fm-turnend-guard: healthy non-Claude harness paths ignore Claude episode contention"
 }
 
+# The watcher records its lock identity at startup and every later reader -
+# the guard, the arm, the drain - recomputes it from `ps`. Those two reads must
+# not depend on the READER's timezone: `ps -o lstart=` renders in local time, so
+# a background watcher, a hook in another TZ, or any process after a DST
+# transition used to see a live identity-matched watcher as down while its
+# beacon was seconds old (the false "WATCHER DOWN" banner and false turn-end
+# block). Pin the behaviour: an identity written under one TZ is matched by a
+# reader in another.
+test_hook_silent_with_identity_written_in_another_timezone() {
+  local dir pid identity out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-identity-tz")
+  : > "$dir/state/task1.meta"
+  sleep 60 &
+  pid=$!
+  identity=$(TZ=America/Chicago watcher_identity "$dir" "$pid") || {
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "could not identify live watcher holder"
+  }
+  record_watcher_lock "$dir" "$pid" "$identity"
+  touch "$dir/state/.last-watcher-beat"
+  out=$(TZ=Asia/Tokyo run_hook "$dir" false); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$status" "a live identity-matched watcher with a fresh beacon must not block across a timezone difference: $out"
+  [ -z "$out" ] || fail "a timezone difference produced a false supervision alarm: $out"
+  pass "fm-turnend-guard: silent when the lock identity was written under another timezone"
+}
+
 test_hook_blocks_with_live_lock_and_stale_beacon() {
   local dir pid identity out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-live-lock-stale")
@@ -2356,6 +2385,7 @@ test_hook_blocks_source_only_home
 test_hook_blocks_when_dead_lock_has_fresh_beacon
 test_hook_silent_with_live_lock_and_fresh_beacon
 test_hook_non_claude_health_ignores_claude_budget_contention
+test_hook_silent_with_identity_written_in_another_timezone
 test_hook_blocks_with_live_lock_and_stale_beacon
 test_hook_blocks_when_unhealthy_in_primary
 test_hook_blocks_from_fm_home_state

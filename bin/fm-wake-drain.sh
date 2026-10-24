@@ -219,6 +219,9 @@ presented_max_row() { # <rows-file>
 
 case "${1:-}" in
   '') ;;
+  # Internal bounded-presentation child; dispatched after the section functions
+  # below are defined (see run_status_presentation).
+  --print-status-presentation) ;;
   --ack-through)
     ACK_THROUGH=${2:-}
     case "$ACK_THROUGH" in ''|*[!0-9]*) echo "wake drain: invalid acknowledgement sequence" >&2; exit 2 ;; esac
@@ -243,9 +246,17 @@ esac
 # the Pi extension model, a fresh beacon also stays silent during a genuinely
 # unheld-lock hand-off only while the live session proves extension ownership.
 # Persistent-watcher models still require the live identity-matched watcher.
-# Never let a guard hiccup change the drain's exit status.
+# Never let a guard hiccup change the drain's exit status, and never let one
+# wedge the drain: the helper is advisory (it prints a banner), so it is bounded
+# and a bound is reported as one deferral line instead of stalling the turn.
 assert_watcher_liveness() {
-  "$SCRIPT_DIR/fm-guard.sh" || true
+  local rc=0
+  fm_run_timed "$HELPER_TIMEOUT" "$SCRIPT_DIR/fm-guard.sh" || rc=$?
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+    printf 'WATCHER LIVENESS CHECK DEFERRED: fm-guard.sh did not finish within %ss; run it directly if supervision looks off.\n' \
+      "$HELPER_TIMEOUT"
+  fi
+  return 0
 }
 
 # Mark presentation-stage inactive terminal outcomes only after the handling
@@ -266,10 +277,20 @@ inactive_outcome_fingerprints() { # <sequence> <key-prefix> [<rows-file>]
 }
 
 acknowledge_inactive_outcomes() { # <mode> <newline-separated-fingerprints>
-  local mode=$1 fingerprints=$2 fingerprint
+  local mode=$1 fingerprints=$2 fingerprint rc
   while IFS= read -r fingerprint; do
     [ -n "$fingerprint" ] || continue
-    "$SCRIPT_DIR/fm-inactive-reconcile.sh" "$mode" "$fingerprint" || return 1
+    rc=0
+    fm_run_timed "$HELPER_TIMEOUT" "$SCRIPT_DIR/fm-inactive-reconcile.sh" "$mode" "$fingerprint" || rc=$?
+    # A bound is not a receipt: leaving it unrecorded keeps the next drain
+    # retrying the same fingerprint, which is the safe direction (a repeated
+    # scan, never a silently dropped outcome).
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+      printf 'wake drain: inactive outcome receipt deferred (fm-inactive-reconcile.sh exceeded %ss); it stays retriable.\n' \
+        "$HELPER_TIMEOUT" >&2
+      continue
+    fi
+    [ "$rc" -eq 0 ] || return 1
   done <<< "$fingerprints"
 }
 
@@ -626,8 +647,9 @@ print_branch_outcomes_section() {
     printf 'BRANCH OUTCOMES SKIPPED: jq is not installed, so the outcome store cannot be presented; nothing was marked read, and these outcomes are presented once jq is back.\n' >&2
     return 1
   fi
-  if ! rows=$("$SCRIPT_DIR/fm-branch-outcome.sh" present 2>/dev/null); then
-    printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely; repair it before relying on this section.\n' >&2
+  if ! rows=$(fm_run_timed "$HELPER_TIMEOUT" "$SCRIPT_DIR/fm-branch-outcome.sh" present 2>/dev/null); then
+    printf 'BRANCH OUTCOMES SKIPPED: the outcome store could not be read safely within %ss; nothing was marked read, so these outcomes are presented again on the next drain.\n' \
+      "$HELPER_TIMEOUT" >&2
     return 1
   fi
   [ -n "$rows" ] || return 0
@@ -714,7 +736,7 @@ ROWS
     printf '%s' "$text" || return 1
   fi
   [ "$through" -gt 0 ] || return 0
-  if ! "$SCRIPT_DIR/fm-branch-outcome.sh" mark-read --through "$through" >/dev/null 2>&1; then
+  if ! fm_run_timed "$HELPER_TIMEOUT" "$SCRIPT_DIR/fm-branch-outcome.sh" mark-read --through "$through" >/dev/null 2>&1; then
     printf 'BRANCH OUTCOMES: the store could not record this presentation, so these outcomes are presented again on the next drain and an acknowledgement above is refused until then.\n' >&2
     return 1
   fi
@@ -809,11 +831,43 @@ print_status_presentation() {  # [<deduped-raw-rows>]
   return "$rc"
 }
 
+# Bounded presentation. The whole phase runs in one child process so a scan that
+# keeps forking per status line is stopped at a hard deadline instead of running
+# to completion; the child commits the presentation cursor only after it has
+# printed, so a deadline kill leaves every row for the next drain (a duplicate
+# presentation, never a lost one). `--print-status-presentation` is that child's
+# entry point and is not part of the operator interface.
+run_status_presentation() {  # [<deduped-raw-rows-file>]
+  local rows_file=${1:-} rc=0
+  if [ -n "$rows_file" ]; then
+    fm_run_timed "$PRESENTATION_TIMEOUT" bash "$SCRIPT_DIR/fm-wake-drain.sh" --print-status-presentation "$rows_file" || rc=$?
+  else
+    fm_run_timed "$PRESENTATION_TIMEOUT" bash "$SCRIPT_DIR/fm-wake-drain.sh" --print-status-presentation || rc=$?
+  fi
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+    printf 'STATUS PRESENTATION DEFERRED: the status scan did not finish within %ss; its rows stay unread and the next drain presents them.\n' \
+      "$PRESENTATION_TIMEOUT"
+    return 1
+  fi
+  return 0
+}
+
+# Every non-wake-durability helper the drain calls is bounded, and the whole
+# status-presentation phase is bounded outright. A drain with a small or empty
+# queue must never sit past these bounds: an unbounded presentation scan (its
+# per-line work forks, so its cost tracks unread status lines, not queue size)
+# and an unbounded helper were what let a small drain exceed ninety seconds.
+PRESENTATION_TIMEOUT=${FM_WAKE_DRAIN_PRESENTATION_TIMEOUT:-20}
+case "$PRESENTATION_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_TIMEOUT=20 ;; esac
+HELPER_TIMEOUT=${FM_WAKE_DRAIN_HELPER_TIMEOUT:-25}
+case "$HELPER_TIMEOUT" in ''|*[!0-9]*|0) HELPER_TIMEOUT=25 ;; esac
+
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$?
   [ -z "$DRAIN_TMP" ] || rm -f -- "$DRAIN_TMP" 2>/dev/null || true
   [ -z "$DRAIN_VIEW_TMP" ] || rm -f -- "$DRAIN_VIEW_TMP" 2>/dev/null || true
+  [ -z "${RAW_ROWS_FILE:-}" ] || rm -f -- "$RAW_ROWS_FILE" 2>/dev/null || true
   if [ "$DRAIN_LOCK_HELD" = true ]; then
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   fi
@@ -823,6 +877,18 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+if [ "${1:-}" = --print-status-presentation ]; then
+  # Internal bounded-presentation child (see run_status_presentation). It takes
+  # no queue lock and mutates no wake row, so a deadline kill here can never
+  # lose durable work.
+  if [ -n "${2:-}" ] && [ -f "${2:-}" ]; then
+    print_status_presentation "$(command cat "$2")"
+  else
+    print_status_presentation
+  fi
+  exit $?
+fi
 
 if [ -n "$ACK_THROUGH" ]; then
   fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK"
@@ -987,7 +1053,7 @@ if [ ! -s "$FM_WAKE_QUEUE" ]; then
   esac
   fm_lock_release "$FM_WAKE_QUEUE_LOCK"
   DRAIN_LOCK_HELD=false
-  (print_status_presentation) || true
+  run_status_presentation || true
   print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
   if [ "$RECOVERY_ACK_REQUIRED" = true ]; then
     printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation %s\n' "${RECOVERY_MARKER_TOKEN##*:}" >&2
@@ -1009,7 +1075,7 @@ if [ "$ACTOR" = main ]; then
     print_branch_held_notice
     fm_lock_release "$FM_WAKE_QUEUE_LOCK"
     DRAIN_LOCK_HELD=false
-    (print_status_presentation) || true
+    run_status_presentation || true
     print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
     assert_watcher_liveness
     exit "$BRANCH_OUTCOMES_RC"
@@ -1072,7 +1138,11 @@ DRAIN_LOCK_HELD=false
 printf 'WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through %s --recovery-generation %s\n' \
   "$ACK_THROUGH" "${RECOVERY_MARKER_TOKEN##*:}" >&2
 
-(print_status_presentation "$RAW_ROWS") || true
+RAW_ROWS_FILE=$(mktemp "$STATE/.wake-drain-rows.XXXXXX") || exit 1
+printf '%s\n' "$RAW_ROWS" > "$RAW_ROWS_FILE" || { rm -f -- "$RAW_ROWS_FILE"; exit 1; }
+run_status_presentation "$RAW_ROWS_FILE" || true
+rm -f -- "$RAW_ROWS_FILE"
+RAW_ROWS_FILE=
 print_branch_outcomes_section || BRANCH_OUTCOMES_RC=1
 assert_watcher_liveness
 exit "$BRANCH_OUTCOMES_RC"

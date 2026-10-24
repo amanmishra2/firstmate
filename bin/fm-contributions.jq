@@ -24,7 +24,7 @@ def valid_record:
         and (.status | type == "string") and (.conclusion == null or (.conclusion | type == "string")))
       and (if $kind == "pr" then (.head | sha) and (.draft | type == "boolean")
         and (.mergeable | IN("mergeable","conflicting","unknown")) and (.can_merge | type == "boolean")
-        and (.review_decision | IN("","APPROVED","CHANGES_REQUESTED","REVIEW_REQUIRED"))
+        and (.review_decision | type == "string")
         else (.ready | type == "boolean") end))))) catch false;
 def known($input; $saved):
   ([($input.tasks // [])[] | select(.kind != "secondmate")
@@ -38,6 +38,13 @@ def known($input; $saved):
   | map(select(. as $pair | any($retired[]; . == $pair) | not));
 def latest_checks:
   group_by(.name) | map(sort_by([(.started_at // ""),(.id // 0)]) | last);
+# One owner of "this record's observation is still current": the same test the
+# projection applies and the one poll uses to decide whether a forge read is
+# needed at all. A merged/closed observation is final and never expires.
+def record_fresh($record; $now; $max_age):
+  (($record.checked_at // "") | try fromdateiso8601 catch null) as $checked
+  | (($record.error == null) and (($record.observation.state? // null) | IN("merged","closed"))) as $final
+  | $final or ($checked != null and ($now - $checked) >= 0 and ($now - $checked) <= $max_age);
 def projected($input; $saved; $now; $max_age):
   known($input; $saved) as $known
   | [$known[] as $k
@@ -51,10 +58,9 @@ def projected($input; $saved; $now; $max_age):
     | ($task.merge_authority // "unknown") as $merge_authority
     | ($record.observation // {}) as $o
     | (if $record.error == null and $record.observation != null and ($o.head | sha) then $o.head else null end) as $observed_head
-    | (($record.checked_at // "") | try fromdateiso8601 catch null) as $checked
     # A merged or closed observation is final; poll never re-reads it, so it never expires.
     | ($record.error == null and ($o.state | IN("merged","closed"))) as $final
-    | (($final or ($checked != null and ($now - $checked) >= 0 and ($now - $checked) <= $max_age))
+    | (record_fresh($record; $now; $max_age)
        and (if $record.kind == "pr" then $observed_head != null
             else $record.error == null and $record.observation != null end)
        and ($k.url | startswith("https://github.com/"))) as $fresh

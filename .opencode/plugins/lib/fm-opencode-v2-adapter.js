@@ -10,6 +10,9 @@ export function clientFromCtx(ctx) {
     session: {
       promptAsync: ({ path, body }) =>
         ctx.session.prompt({ sessionID: path?.id, text: body?.parts?.[0]?.text ?? "" }),
+      // Used by the watch-arm to verify that an idle event belongs to this
+      // plugin instance's location before it binds the supervision channel.
+      get: ({ path }) => ctx.session.get({ sessionID: path?.id }),
     },
   };
 }
