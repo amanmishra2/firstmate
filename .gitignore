@@ -7,7 +7,14 @@ data/*
 # data/ is captain-private except the prevention ledger, whose committed JSONL
 # is the reviewer's comparison target for bin/fm-prevention-ledger.py. The
 # ledger stores no finding description, prompt, transcript, or credential.
+# The negation names each tracked file so nothing else under it becomes public.
 !data/prevention-ledger/
+data/prevention-ledger/*
+!data/prevention-ledger/runs.jsonl
+!data/prevention-ledger/classifications.tsv
+!data/prevention-ledger/SCHEMA.md
+!data/prevention-ledger/RUNBOOK.md
+!data/prevention-ledger/catch-up-2026-10-24.md
 scratchpad*
 .no-mistakes/
 .lavish/

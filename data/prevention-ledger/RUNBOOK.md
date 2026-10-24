@@ -21,16 +21,21 @@ bin/fm-prevention-ledger.py validate --ledger data/prevention-ledger/runs.jsonl
 `backfill` is idempotent, so running it twice is free.
 When `validate` reports an unclassified finding, classify it into `classifications.tsv` before the review; an unclassified finding is a hole in the mix, not a finding to discuss.
 
+The committed ledger is a reviewed snapshot, not a scratch file.
+After a backfill that added rows, read `git diff data/prevention-ledger/runs.jsonl` and confirm every new row is one you expect before committing it.
+Never stage that path with a blanket `git add -A` without reading the diff: that is how unreviewed fleet history would reach a public tree.
+For a working copy you do not intend to publish, pass `--ledger data/prevention-ledger/live.jsonl`, which stays ignored.
+
 ## Weekly: 30 minutes, category deltas and control effectiveness only
 
 Hard scope: new ledger rows since the previous weekly review.
-Nothing else is in scope. Not open PRs, not the backlog, not a project audit.
+Nothing else is in scope: not open PRs, not the backlog, not a project audit.
 
 Inputs:
 
 - `bin/fm-prevention-ledger.py stats --since <previous review epoch>` for the category mix and first-pass rate of the new rows.
 - The previous week's recorded category shares, from last week's `stats` output.
-- Pre-flight outcomes for briefs dispatched that week: pass, fail-then-pass, or `none` declared per check.
+- `state/prevention-preflight.jsonl`, written by `bin/fm-brief-preflight.py --record`, for pass, fail, and declared-`none` counts per check.
 
 Outputs, in this order, and no others:
 
@@ -72,11 +77,16 @@ The ledger keeps every historical row; retiring a control never rewrites history
 
 Stop the loop, and say so, when any of these holds.
 
-- `validate` cannot pass because the no-mistakes state database is unreadable. The ledger is not the problem; the source is.
-- Fewer than five review-bearing runs landed in the cycle. There is no signal to review, so the weekly review is skipped and noted, not padded.
-- More than half of the cycle's runs ended on environment failures. The pipeline is the bottleneck, not authoring, and the review's one action becomes a runtime-reliability item.
-- A control cannot be exercised because briefs are being dispatched without running the pre-flight. That is an adoption failure: report it as the weekly action instead of measuring category shares that the control never touched.
-- The taxonomy needs a ninth category. Stop and change `SCHEMA.md` deliberately; do not invent a category inside a review note.
+- `validate` cannot pass because the no-mistakes state database is unreadable.
+  The ledger is not the problem; the source is.
+- Fewer than five review-bearing runs landed in the cycle.
+  There is no signal to review, so the weekly review is skipped and noted, not padded.
+- More than half of the cycle's runs ended on environment failures.
+  The pipeline is the bottleneck, not authoring, and the review's one action becomes a runtime-reliability item.
+- A control cannot be exercised because briefs are being dispatched without running the pre-flight.
+  That is an adoption failure: report it as the weekly action instead of measuring category shares that the control never touched.
+- The taxonomy needs a ninth category.
+  Stop and change `SCHEMA.md` deliberately; do not invent a category inside a review note.
 
 ## Adding a control
 

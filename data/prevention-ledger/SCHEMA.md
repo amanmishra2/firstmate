@@ -23,7 +23,7 @@ Field order is fixed; the validator rejects a row whose keys or order differ.
 | 9 | `ask_user_answers` | array of objects | One entry per ask-user finding, shape below. |
 | 10 | `fix_commits` | array of strings | `no-mistakes(...)` commits between `start_head` and `end_head`. |
 | 11 | `pr_url` | string or null | Pull request the pipeline opened. |
-| 12 | `ci_result` | enum | `green`, `failed`, `no-ci`, `not-run`, `pending`, or `unknown`. |
+| 12 | `ci_result` | enum | `green`, `failed`, `no-ci`, `not-run`, `pending`, or `unknown`; `green` and `failed` come from the pipeline's recorded CI step, never from the run status alone. |
 | 13 | `rounds` | integer | Number of review rounds recorded for the run. |
 | 14 | `wall_time_s` | integer | Terminal time minus start time, in seconds. |
 | 15 | `observed_at` | integer | The run's own terminal update time; never the export clock. |
@@ -67,12 +67,13 @@ There is no free-text category and no model call anywhere in the classification 
 
 Classification precedence, first match wins:
 
-1. The reviewed mapping in `classifications.tsv`, keyed `project`, `branch`, `finding_id`, one row per observed finding.
+1. The reviewed mapping in `classifications.tsv`, keyed `project`, `branch`, `finding_id`.
+   It holds one row per distinct key: 769 rows cover 866 findings, because re-runs of one task raise the same finding id again and share its row.
 2. An ordered path rule from `PATH_RULES` in the exporter: test and fixture paths, migration and `.sql` paths, CI and lockfile paths.
 3. `category: null` plus a `classification:unclassified:<id>` gap token.
 
 A null category is a recorded gap, not a guess.
-The validator refuses a null category without its matching gap token, and `stats` reports the unclassified count separately from the taxonomy.
+The validator refuses a null category without its matching gap token, and `stats` reports an `unclassified` bucket in the same table as the eight categories, so shares always sum to 100 percent.
 The committed baseline has zero nulls: all 866 findings were classified by review and are listed in `classifications.tsv`.
 
 ### Why the mapping is a table, not a heuristic
@@ -97,9 +98,14 @@ Tokens are sorted and unique, and the prefix names the affected field.
 | `brief:missing` | No brief or launch brief exists for the task under this home. |
 | `meta:missing` | `state/<task>.meta` is gone, usually deleted at task cleanup. |
 | `plan_ref:unrecorded` | Neither the brief nor the backlog item names a plan or report. |
+| `project:unrecorded` | The run's repository row is gone, so the project name is unknown. |
 | `start_head:unrecorded` | The pipeline recorded an all-zero base revision. |
 | `end_head:not-pushed` | The run never pushed, so no terminal head exists. |
+| `end_head:invalid` | The recorded head is not a 40-hex commit id. |
 | `fix_commits:unrecorded` | The proxy repository or the commit range was unavailable. |
+| `fix_commits:not-requested` | The caller passed `--no-git`. |
+| `findings:unparseable` | A recorded findings payload was not valid JSON, so the finding set may be incomplete. |
+| `ci_result:unrecorded` | The pipeline completed without recording a CI verdict; the result is `unknown`. |
 | `ask_user:no-recorded-decision:<id>` | An ask-user finding has no recorded selection and no status escalation. |
 | `classification:unclassified:<id>` | The finding was never reviewed into the taxonomy. |
 | `run:environment-failure` | The run ended on a harness, quota, network, or daemon failure, so its finding set is not a measure of authoring quality. |
@@ -120,9 +126,17 @@ A different host will produce different rows, which is expected: the ledger is e
 ## Tracked-copy carve-out
 
 `data/` is captain-private and gitignored, and this directory is the one documented exception.
-`.gitignore` negates `data/prevention-ledger/` so a reviewer can compare the committed ledger against a fresh export.
-The carve-out is safe because the ledger stores run ids, heads, commits, PR URLs, file paths, finding ids, severities, categories, and actions, and never a finding description, prompt, transcript, or credential.
+`.gitignore` negates this directory and then names exactly five tracked files, so nothing else under it can become public.
+The task order that created this ledger is the approval: it requires an append-only JSONL ledger under a firstmate data directory, backfilled and committed, so a reviewer can compare it against a fresh export.
+The carve-out is safe because the ledger stores run ids, heads, commits, PR URLs, file paths, finding ids, severities, categories, and actions.
+It never stores a finding description, prompt, transcript, or credential.
+Finding ids are pipeline-generated slugs chosen by the reviewer agent, and they are included; a slug can describe the defect it names, so treat the ids as review metadata rather than as neutral labels.
 Every other path under `data/` stays ignored.
+
+## Adoption records
+
+`bin/fm-brief-preflight.py --record <path>` appends one outcome line per invocation with the brief path, the failing check names, the checks that declared `none`, and the observation time.
+The runbook points at `state/prevention-preflight.jsonl` as the default record, and the weekly review reads it to measure whether the controls were exercised at all.
 
 ## Known evidence limits
 

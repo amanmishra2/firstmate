@@ -51,6 +51,7 @@ Exit codes: 0 success, 1 validation or data failure, 2 usage error.
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import re
@@ -61,6 +62,11 @@ import sys
 import tempfile
 from collections import Counter
 from pathlib import Path, PurePosixPath
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-POSIX hosts fall back to an unlocked append
+    fcntl = None
 
 LEDGER_FIELDS = [
     "project",
@@ -219,7 +225,9 @@ def extract_plan_ref(task: str, *texts: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def project_from_path(working_path: str) -> str:
+def project_from_path(working_path: str | None) -> str:
+    if not working_path:
+        return "unknown"
     return PurePosixPath(working_path).name
 
 
@@ -236,6 +244,7 @@ def open_state_db(nm_data: Path) -> tuple[sqlite3.Connection, str]:
     except sqlite3.Error:
         conn.close()
     tmpdir = Path(tempfile.mkdtemp(prefix="fm-prevention-ledger-"))
+    atexit.register(shutil.rmtree, tmpdir, True)
     for suffix in ("", "-wal", "-shm"):
         source = Path(str(db_path) + suffix)
         if source.is_file():
@@ -256,14 +265,17 @@ def load_classifications(path: Path) -> dict[tuple[str, str, str], str]:
         if not line.strip() or line.startswith("#"):
             continue
         fields = line.split("\t")
-        if lineno == 1 and fields[0] == "project":
+        if fields[0] == "project" and fields[1:2] == ["branch"]:
             continue
         if len(fields) != 4:
             raise LedgerError(f"{path}:{lineno}: expected 4 tab-separated fields")
         project, branch, finding_id, category = fields
         if category not in CATEGORIES:
             raise LedgerError(f"{path}:{lineno}: unknown category {category!r}")
-        mapping[(project, branch, finding_id)] = category
+        key = (project, branch, finding_id)
+        if key in mapping:
+            raise LedgerError(f"{path}:{lineno}: duplicate classification for {key}")
+        mapping[key] = category
     return mapping
 
 
@@ -294,7 +306,7 @@ def classify(
 def load_runs(conn: sqlite3.Connection, until: int | None) -> list[dict]:
     query = (
         "SELECT ru.*, rp.working_path FROM runs ru "
-        "JOIN repos rp ON rp.id = ru.repo_id "
+        "LEFT JOIN repos rp ON rp.id = ru.repo_id "
         "ORDER BY ru.created_at, ru.id"
     )
     rows = []
@@ -308,9 +320,10 @@ def load_runs(conn: sqlite3.Connection, until: int | None) -> list[dict]:
     return rows
 
 
-def load_findings(conn: sqlite3.Connection) -> dict[str, dict[str, dict]]:
-    """Return {run_id: {finding_id: finding}} across every review round."""
+def load_findings(conn: sqlite3.Connection) -> tuple[dict[str, dict[str, dict]], set[str]]:
+    """Return ({run_id: {finding_id: finding}}, run ids with unparseable findings)."""
     per_run: dict[str, dict[str, dict]] = {}
+    unparseable: set[str] = set()
 
     def absorb(run_id: str, payload: str | None) -> None:
         if not payload:
@@ -318,16 +331,22 @@ def load_findings(conn: sqlite3.Connection) -> dict[str, dict[str, dict]]:
         try:
             data = json.loads(payload)
         except json.JSONDecodeError:
+            unparseable.add(run_id)
             return
         if isinstance(data, dict):
             items = data.get("findings") or []
         elif isinstance(data, list):
             items = data
         else:
-            items = []
+            unparseable.add(run_id)
+            return
+        if not isinstance(items, list):
+            unparseable.add(run_id)
+            return
         bucket = per_run.setdefault(run_id, {})
         for item in items:
             if not isinstance(item, dict):
+                unparseable.add(run_id)
                 continue
             finding_id = item.get("id")
             if finding_id in (None, ""):
@@ -346,7 +365,7 @@ def load_findings(conn: sqlite3.Connection) -> dict[str, dict[str, dict]]:
         "WHERE step_name = 'review' AND coalesce(findings_json, '') != ''"
     ):
         absorb(row["run_id"], row["findings_json"])
-    return per_run
+    return per_run, unparseable
 
 
 def load_gate_rounds(conn: sqlite3.Connection) -> dict[str, list[dict]]:
@@ -475,15 +494,20 @@ def ask_user_answers(
     return answers, gaps
 
 
-def ci_result_for(run: dict, steps: dict[tuple[str, str], str]) -> str:
-    status = run["status"]
-    if status == "completed":
-        return "no-ci" if run.get("ci_ready_no_ci") else "green"
-    if status == "cancelled":
-        return "not-run"
-    if steps.get((run["id"], "ci")) == "failed":
-        return "failed"
-    return "not-run"
+def ci_result_for(run: dict, steps: dict[tuple[str, str], str]) -> tuple[str, bool]:
+    """Return (ci_result, unrecorded) from the pipeline's own recorded CI step."""
+    if run.get("ci_ready_no_ci"):
+        return "no-ci", False
+    ci = steps.get((run["id"], "ci"))
+    if ci == "completed":
+        return "green", False
+    if ci == "failed":
+        return "failed", False
+    if run["status"] == "cancelled":
+        return "not-run", False
+    if run["status"] == "completed":
+        return "unknown", True
+    return "not-run", False
 
 
 def gh_ci_result(pr_url: str) -> str | None:
@@ -542,11 +566,16 @@ def build_row(
     mapping: dict[tuple[str, str, str], str],
     backlog: dict[str, str],
     use_git: bool,
+    unparseable: bool = False,
 ) -> dict:
     project = project_from_path(run["working_path"])
     task = task_from_branch(run["branch"])
     source: list[str] = ["nm-state"]
     gaps: list[str] = []
+    if project == "unknown":
+        gaps.append("project:unrecorded")
+    if unparseable:
+        gaps.append("findings:unparseable")
 
     meta_path = root / "state" / f"{task}.meta"
     meta = parse_kv(meta_path)
@@ -562,7 +591,8 @@ def build_row(
             break
     if brief_path is None:
         gaps.append("brief:missing")
-    source.append("brief")
+    else:
+        source.append("brief")
 
     plan_ref = meta.get("plan") or None
     plan_source = "task-meta" if plan_ref else None
@@ -585,6 +615,9 @@ def build_row(
     if not end_head:
         end_head = run.get("head_sha") or None
         gaps.append("end_head:not-pushed")
+    if end_head is not None and not (isinstance(end_head, str) and SHA_RE.match(end_head)):
+        end_head = None
+        gaps.append("end_head:invalid")
 
     finding_rows: list[dict] = []
     for finding_id in sorted(findings, key=natural_key):
@@ -609,6 +642,9 @@ def build_row(
     if any(answer["origin"] == "status" for answer in answers):
         source.append("task-status")
     gaps.extend(environment_gaps(run))
+    ci_result, ci_unrecorded = ci_result_for(run, steps)
+    if ci_unrecorded:
+        gaps.append("ci_result:unrecorded")
 
     fix_commits: list[str] | None = None
     if use_git:
@@ -632,7 +668,7 @@ def build_row(
         "ask_user_answers": answers,
         "fix_commits": fix_commits or [],
         "pr_url": run.get("pr_url") or None,
-        "ci_result": ci_result_for(run, steps),
+        "ci_result": ci_result,
         "rounds": review_rounds.get(run["id"], 0),
         "wall_time_s": max(0, int(run["updated_at"]) - int(run["created_at"])),
         "observed_at": int(run["updated_at"]),
@@ -683,10 +719,21 @@ def read_ledger(path: Path) -> list[dict]:
 
 
 def append_rows(path: Path, rows: list[dict]) -> None:
+    """Append rows under an exclusive lock so two exporters cannot interleave."""
+    if not rows:
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
-        for row in rows:
-            handle.write(json.dumps(row, sort_keys=False, separators=(",", ":")) + "\n")
+        if fcntl is not None:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            for row in rows:
+                handle.write(json.dumps(row, sort_keys=False, separators=(",", ":")) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 # ---------------------------------------------------------------------------
@@ -719,7 +766,10 @@ def resolve_nm_data(args) -> Path:
 def resolve_classifications(args, ledger: Path) -> Path:
     """Find the reviewed category table: explicit, ledger-adjacent, then tracked."""
     if getattr(args, "classifications", None):
-        return Path(args.classifications).expanduser().resolve()
+        explicit = Path(args.classifications).expanduser().resolve()
+        if not explicit.is_file():
+            raise LedgerError(f"classification table not found: {explicit}")
+        return explicit
     adjacent = ledger.parent / "classifications.tsv"
     if adjacent.is_file():
         return adjacent
@@ -734,7 +784,7 @@ def gather(args) -> tuple[Path, list[dict], Path]:
     conn, _mode = open_state_db(nm_data)
     try:
         runs = load_runs(conn, args.until)
-        findings = load_findings(conn)
+        findings, unparseable = load_findings(conn)
         gates = load_gate_rounds(conn)
         rounds = load_review_rounds(conn)
         steps = load_step_status(conn)
@@ -753,6 +803,7 @@ def gather(args) -> tuple[Path, list[dict], Path]:
             mapping=mapping,
             backlog=backlog,
             use_git=not args.no_git,
+            unparseable=run["id"] in unparseable,
         )
         for run in runs
     ]
@@ -891,34 +942,62 @@ def cmd_validate(args) -> int:
 
 def cmd_stats(args) -> int:
     path = Path(args.ledger).expanduser().resolve() if args.ledger else default_ledger_path(resolve_root(args))
+    if not path.is_file():
+        raise LedgerError(f"ledger not found: {path}")
     rows = read_ledger(path)
+    problems = validate_rows(rows)
+    if problems:
+        for problem in problems[:5]:
+            print(f"not ok - {problem}", file=sys.stderr)
+        raise LedgerError(f"{len(problems)} schema problem(s) in {path}; run validate")
     if args.since:
         rows = [row for row in rows if row["observed_at"] >= args.since]
     counts: Counter[str] = Counter()
     per_project: Counter[str] = Counter()
+    tasks: set[str] = set()
     completed = 0
     first_pass = 0
+    errors = 0
+    rework = 0
+    walls: list[int] = []
+    rounds: list[int] = []
     for row in rows:
         per_project[row["project"]] += 1
+        tasks.add(row["task"])
+        walls.append(row["wall_time_s"])
+        rounds.append(row["rounds"])
+        errors += sum(1 for finding in row["findings"] if finding["severity"] == "error")
         if row["ci_result"] in ("green", "no-ci"):
             completed += 1
-            if not row["findings"]:
+            rework += len(row["fix_commits"])
+            if not row["findings"] and "findings:unparseable" not in row["gaps"]:
                 first_pass += 1
         for finding in row["findings"]:
             counts[finding["category"] or "unclassified"] += 1
     total = sum(counts.values())
+    reviewed = sum(1 for row in rows if row["rounds"] > 0)
     payload = {
         "rows": len(rows),
+        "tasks": len(tasks),
+        "review_entering_rows": reviewed,
         "findings": total,
+        "error_findings": errors,
+        "findings_per_task": round(total / len(tasks), 2) if tasks else 0.0,
+        "errors_per_review_entering_row": round(errors / reviewed, 2) if reviewed else 0.0,
         "completed_rows": completed,
         "first_pass_rows": first_pass,
         "first_pass_rate": round(first_pass / completed, 4) if completed else 0.0,
+        "rework_commits_per_completed_row": round(rework / completed, 2) if completed else 0.0,
+        "median_wall_time_s": sorted(walls)[len(walls) // 2] if walls else 0,
+        "median_rounds": sorted(rounds)[len(rounds) // 2] if rounds else 0,
+        "max_rounds": max(rounds) if rounds else 0,
+        "unclassified": counts.get("unclassified", 0),
         "categories": {
             name: {
                 "count": counts.get(name, 0),
                 "share": round(counts.get(name, 0) / total, 4) if total else 0.0,
             }
-            for name in CATEGORIES
+            for name in [*CATEGORIES, "unclassified"]
         },
         "projects": dict(sorted(per_project.items())),
     }
@@ -926,10 +1005,17 @@ def cmd_stats(args) -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     print(
-        f"rows: {payload['rows']}  findings: {total}  "
+        f"rows: {payload['rows']}  tasks: {payload['tasks']}  findings: {total}  "
         f"first-pass rows: {first_pass}/{completed} completed"
     )
-    for name in CATEGORIES:
+    print(
+        f"  findings/task {payload['findings_per_task']}  "
+        f"errors/review-entering row {payload['errors_per_review_entering_row']}  "
+        f"rework commits/completed row {payload['rework_commits_per_completed_row']}  "
+        f"median wall {payload['median_wall_time_s']}s  "
+        f"median rounds {payload['median_rounds']} (max {payload['max_rounds']})"
+    )
+    for name in [*CATEGORIES, "unclassified"]:
         entry = payload["categories"][name]
         print(f"  {entry['count']:5d}  {entry['share'] * 100:5.1f}%  {name}")
     for project, count in payload["projects"].items():

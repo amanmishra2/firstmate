@@ -21,5 +21,6 @@ bin/fm-prevention-ledger.py stats --since <previous review epoch>
 
 - Compare against the previous week's shares with the denominator in view, and refuse to call a category improved on one cycle.
 - Report adoption of each shipped control before reporting its category share; an unexercised control cannot have moved anything.
-- Keep escaped defects out of the scorecard until something links a merged PR to a later defect. Reporting zero would be a fabricated improvement.
+- Keep escaped defects out of the scorecard until something links a merged PR to a later defect.
+  Reporting zero would be a fabricated improvement.
 - Route any new control decision to the maintenance roadmap skill, which owns the control set and its cap.

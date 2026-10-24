@@ -31,7 +31,7 @@ mode=no-mistakes
 EOF
   cat > "$home/state/task-alpha.status" <<'EOF'
 working [at=1790000000]: scaffolding
-needs-decision [at=1790000010] [key=nm-run-alpha-review]: ask-user findings=review-2 file=/tmp/x
+needs-decision [at=1790000010] [key=nm-run-alpha-0001-review]: ask-user findings=review-2 file=/tmp/x
 resolved [at=1790000020]: answered
 done [at=1790000030]: ready
 EOF
@@ -123,6 +123,13 @@ FINDINGS = {
         "file": "src/alpha/guard.py",
         "action": "ask-user",
         "description": "fixture decision",
+    },
+    "review-3": {
+        "id": "review-3",
+        "severity": "warning",
+        "file": "docs/guide.md",
+        "action": "ask-user",
+        "description": "fixture escalated decision",
     },
 }
 
@@ -230,6 +237,7 @@ PY
   printf 'project\tbranch\tfinding_id\tcategory\n' > "$base/classifications.tsv"
   printf 'alpha\tfm/task-alpha\treview-1\tunsafe edge/rollback\n' >> "$base/classifications.tsv"
   printf 'alpha\tfm/task-alpha\treview-2\tmissing contract\n' >> "$base/classifications.tsv"
+  printf 'alpha\tfm/task-alpha\treview-3\tstale assumption\n' >> "$base/classifications.tsv"
 }
 
 fixture_ledger() {
@@ -289,6 +297,7 @@ assert alpha["wall_time_s"] == 3600, alpha["wall_time_s"]
 assert alpha["observed_at"] == 1790003600, alpha["observed_at"]
 answers = {a["finding_id"]: a["decision"] for a in alpha["ask_user_answers"]}
 assert answers.get("review-2") == "selected", answers
+assert answers.get("review-3") == "escalated-to-captain", answers
 beta = next(row for row in rows if row["run_id"] == "run-beta-0001")
 assert beta["ci_result"] == "not-run", beta["ci_result"]
 assert "run:environment-failure" in beta["gaps"], beta["gaps"]
@@ -432,7 +441,7 @@ test_stats_reports_the_category_mix() {
 import json, sys
 payload = json.load(sys.stdin)
 assert payload["rows"] == 2, payload
-assert payload["findings"] == 2, payload
+assert payload["findings"] == 3, payload
 assert payload["categories"]["missing contract"]["count"] == 1, payload
 assert payload["categories"]["unsafe edge/rollback"]["count"] == 1, payload
 ' || fail "stats did not report the expected category mix"
@@ -534,6 +543,111 @@ test_brief_scaffold_carries_the_three_plan_lint_lines() {
   pass "fm-brief.sh: scaffold carries the three plan-lint lines"
 }
 
+test_an_existing_row_is_never_rewritten() {
+  local base ledger before first_line
+  base="$TMP_ROOT/append-only"
+  mkdir -p "$base"
+  write_fixture "$base"
+  ledger="$base/runs.jsonl"
+  "$EXPORTER" backfill --root "$base/home" --nm-data "$base/nm" --ledger "$ledger" \
+    --classifications "$base/classifications.tsv" --until 1790100000 --quiet
+  expect_code 0 "$?" "backfill must seed the append-only fixture"
+  before=$(shasum "$ledger" | awk '{print $1}')
+  first_line=$(sed -n '1p' "$ledger" | shasum | awk '{print $1}')
+
+  # Change the source after the row is written: the export must not rewrite it.
+  python3 - "$base/nm/state.sqlite" <<'PY'
+import json
+import sqlite3
+import sys
+
+conn = sqlite3.connect(sys.argv[1])
+current = conn.execute(
+    "SELECT findings_json FROM step_results WHERE id = 'sr-alpha-review'"
+).fetchone()[0]
+payload = json.loads(current)
+payload["findings"][0]["severity"] = "info"
+conn.execute(
+    "UPDATE step_results SET findings_json = ? WHERE id = 'sr-alpha-review'",
+    (json.dumps(payload),),
+)
+conn.commit()
+conn.close()
+PY
+
+  "$EXPORTER" backfill --root "$base/home" --nm-data "$base/nm" --ledger "$ledger" \
+    --classifications "$base/classifications.tsv" --until 1790100000 --quiet
+  expect_code 0 "$?" "replaying backfill over a changed source must succeed"
+  [ "$(shasum "$ledger" | awk '{print $1}')" = "$before" ] \
+    || fail "backfill rewrote the ledger after the source changed; existing rows must be immutable"
+  [ "$(sed -n '1p' "$ledger" | shasum | awk '{print $1}')" = "$first_line" ] \
+    || fail "backfill rewrote the first row's bytes"
+  pass "fm-prevention-ledger.py backfill: an existing row is never rewritten"
+}
+
+test_stats_refuses_a_missing_ledger() {
+  "$EXPORTER" stats --ledger "$TMP_ROOT/does-not-exist.jsonl" --format json >"$TMP_ROOT/stats-missing.out" 2>&1
+  expect_code 1 "$?" "stats must refuse a missing ledger instead of reporting zero rows"
+  grep -q "ledger not found" "$TMP_ROOT/stats-missing.out" || fail "stats did not name the missing ledger"
+  pass "fm-prevention-ledger.py stats: a missing ledger is an error, not an empty result"
+}
+
+test_preflight_refuses_an_unresolvable_base_ref() {
+  local brief
+  brief="$TMP_ROOT/preflight-badref.md"
+  printf '# Task\nContract coverage: none\nEdge cases: none\nStale facts: none\n' > "$brief"
+  "$PREFLIGHT" --brief "$brief" --project "$ROOT" --base-ref no-such-ref >"$TMP_ROOT/preflight-badref.out" 2>&1
+  expect_code 2 "$?" "preflight must treat an unresolvable base ref as a usage error"
+  grep -q "cannot resolve" "$TMP_ROOT/preflight-badref.out" || fail "preflight did not explain the bad ref"
+  pass "fm-brief-preflight.py: an unresolvable base ref is a usage error"
+}
+
+test_preflight_records_adoption() {
+  local brief record
+  brief="$TMP_ROOT/preflight-record.md"
+  record="$TMP_ROOT/preflight-record.jsonl"
+  printf '# Task\nHarden the matcher in `bin/fm-brief.sh`.\nContract coverage: `bin/fm-brief.sh`\nStale facts: none\n' > "$brief"
+  "$PREFLIGHT" --brief "$brief" --project "$ROOT" --record "$record" >/dev/null 2>&1
+  expect_code 1 "$?" "the recorded run must still fail on the missing edge-cases line"
+  [ -s "$record" ] || fail "--record wrote no adoption line"
+  python3 - "$record" <<'PY' || exit 1
+import json
+import sys
+
+lines = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8")]
+assert len(lines) == 1, lines
+record = lines[0]
+assert record["ok"] is False, record
+assert record["failed"] == ["edge-cases"], record
+assert record["declared_none"] == ["stale-facts"], record
+assert record["observed_at"] > 0, record
+PY
+  [ "$?" = "0" ] || fail "the adoption record did not describe the failed check"
+  pass "fm-brief-preflight.py --record: adoption is recorded durably"
+}
+
+test_spec_placeholder_is_caught_with_extra_scaffold_lines() {
+  local brief rc
+  brief="$TMP_ROOT/scaffold-unfilled.md"
+  cat > "$brief" <<'EOF'
+# Task
+## Captain's intent
+A real captain ask.
+
+## Firstmate spec
+{FIRSTMATE_SPEC}
+
+Contract coverage: (fill before dispatch) name each consumer.
+Edge cases: none
+Stale facts: none
+EOF
+  bash -c '. "$1/bin/fm-dod-lib.sh"; fm_brief_task_placeholders_present "$2"' _ "$ROOT" "$brief"
+  rc=$?
+  expect_code 0 "$rc" "the spawn placeholder guard must still see an unfilled spec below the scaffold lines"
+  pass "fm-dod-lib.sh: scaffold lines cannot hide an unfilled spec placeholder"
+}
+
+
 mkdir -p "$TMP_ROOT"
 write_fixture "$TMP_ROOT/fixture"
 cp "$TMP_ROOT/fixture/classifications.tsv" "$TMP_ROOT/classifications.tsv"
@@ -550,4 +664,9 @@ test_preflight_accepts_a_complete_brief
 test_preflight_refuses_missing_and_placeholder_labels
 test_preflight_refuses_a_stale_cited_path
 test_preflight_requires_edge_cases_only_for_risk_surfaces
+test_an_existing_row_is_never_rewritten
+test_stats_refuses_a_missing_ledger
+test_preflight_refuses_an_unresolvable_base_ref
+test_preflight_records_adoption
+test_spec_placeholder_is_caught_with_extra_scaffold_lines
 test_brief_scaffold_carries_the_three_plan_lint_lines

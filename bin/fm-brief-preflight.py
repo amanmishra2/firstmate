@@ -32,8 +32,15 @@ directory exists but whose file does not fails as a stale reference. A path
 whose parent is also absent fails as unknown, because a brief may only cite
 files that already exist; files the task will create belong in the change, not
 in the coverage claim.
+Tokens starting with ``data/`` are never resolved: they are firstmate-home task
+material, not files in the project under review.
 
-Exit codes: 0 all requested checks pass, 1 at least one failed, 2 usage error.
+``--record <path>`` appends one outcome line per invocation so the weekly review
+can measure adoption from durable evidence rather than from memory.
+It is opt-in because a plain lint run must stay side-effect free.
+
+Exit codes: 0 all requested checks pass, 1 at least one failed, 2 usage error
+including an unresolvable ``--base-ref``.
 """
 
 from __future__ import annotations
@@ -43,6 +50,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 CHECK_NAMES = ("contract-coverage", "edge-cases", "stale-facts")
@@ -91,7 +99,7 @@ def is_placeholder(value: str) -> bool:
         return True
     if re.match(r"^\(\s*fill\b", value, re.IGNORECASE):
         return True
-    if re.fullmatch(r"[\{<\[].*[\}>\]].*", value) and len(value) <= 80:
+    if re.fullmatch(r"[\{<\[].*[\}>\]][\s.,;:]*", value) and len(value) <= 80:
         return True
     return bool(re.fullmatch(r"(tbd|todo|tba|\?+)\.?", value, re.IGNORECASE))
 
@@ -115,6 +123,11 @@ def candidate_paths(value: str, project: Path | None, ref: str) -> list[str]:
         if "/" in token:
             result.append(token)
             continue
+        # A bare token counts as a filename only when it looks like one, so
+        # prose words and version strings are never resolved as paths.
+        if "." in token and ("-" in token or "_" in token):
+            result.append(token)
+            continue
         if project is not None and "." in token and git_path_exists(project, ref, token):
             result.append(token)
     return list(dict.fromkeys(result))
@@ -123,6 +136,16 @@ def candidate_paths(value: str, project: Path | None, ref: str) -> list[str]:
 def git_path_exists(project: Path, ref: str, path: str) -> bool:
     proc = subprocess.run(
         ["git", "-C", str(project), "cat-file", "-e", f"{ref}:{path}"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return proc.returncode == 0
+
+
+def git_ref_exists(project: Path, ref: str) -> bool:
+    proc = subprocess.run(
+        ["git", "-C", str(project), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
         check=False,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -226,7 +249,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="run only this check; repeat to run several (default: all)",
     )
     parser.add_argument("--json", action="store_true", help="emit one JSON object instead of text")
+    parser.add_argument(
+        "--record",
+        help="append one outcome line to this JSONL file so the weekly review can measure adoption",
+    )
     return parser
+
+
+def record_outcome(path: Path, brief: str, results: list[dict], ok: bool) -> None:
+    """Append one adoption record; the weekly review reads these, not the transcript."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "brief": brief,
+        "ok": ok,
+        "failed": [result["check"] for result in results if not result["ok"]],
+        "declared_none": [result["check"] for result in results if result["declared_none"]],
+        "observed_at": int(time.time()),
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True, separators=(",", ":")) + "\n")
 
 
 def main(argv: list[str]) -> int:
@@ -237,9 +278,15 @@ def main(argv: list[str]) -> int:
         print(f"not ok - {exc}", file=sys.stderr)
         return 1
     project = Path(args.project).expanduser() if args.project else None
+    if project is not None and not git_ref_exists(project, args.base_ref):
+        print(f"not ok - cannot resolve {args.base_ref} in {project}", file=sys.stderr)
+        return 2
     selected = tuple(args.check) if args.check else CHECK_NAMES
     results = run_checks(text, project, args.base_ref, selected)
     failed = [result for result in results if not result["ok"]]
+    ok = not failed
+    if args.record:
+        record_outcome(Path(args.record).expanduser(), args.brief, results, ok)
     if args.json:
         print(
             json.dumps(
