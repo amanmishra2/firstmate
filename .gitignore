@@ -1,6 +1,13 @@
 projects/
 state/
-data/
+# data/* keeps every direct child of data/ ignored: git does not descend into an
+# ignored directory, so the prevention-ledger carve-out below would never apply
+# under a bare `data/` rule.
+data/*
+# data/ is captain-private except the prevention ledger, whose committed JSONL
+# is the reviewer's comparison target for bin/fm-prevention-ledger.py. The
+# ledger stores no finding description, prompt, transcript, or credential.
+!data/prevention-ledger/
 scratchpad*
 .no-mistakes/
 .lavish/

@@ -575,6 +575,26 @@
     {
       "path": ".agents/skills/validation-supervision/SKILL.md",
       "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/codebase-maintenance-roadmap/references/prevention-ledger.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": ".agents/skills/weekly-development-review/references/prevention-ledger.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "data/prevention-ledger/SCHEMA.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "data/prevention-ledger/RUNBOOK.md",
+      "audience": "maintainer-architecture"
+    },
+    {
+      "path": "data/prevention-ledger/catch-up-2026-10-24.md",
+      "audience": "maintainer-verification"
     }
   ]
 }
