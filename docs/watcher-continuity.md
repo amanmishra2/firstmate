@@ -134,6 +134,7 @@ After an actionable Pi, omp, or OpenCode child close, the adapter:
 
 1. Waits for the predecessor process to close.
 2. Starts and verifies one singleton successor.
+   An OpenCode successor starts in attach-or-start mode, joining a healthy live cycle instead of replacing it; only the arm's own typed stalled-holder close escalates that one attempt to the home-scoped `--restart`.
 3. Confirms the handling handoff before scheduling the follow-up: Pi confirms against the restoration's own recovery token, while omp and OpenCode confirm against the current successor.
 4. Delivers the original wake.
 

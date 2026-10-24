@@ -67,14 +67,15 @@
 # mid-observation, that URL's records stay untouched and the poll moves to the
 # next URL that still has a full observation reserve; only a genuine forge
 # failure or head change records an error.
-# The forge CLI is resolved once from FM_GH_BIN, then PATH, then the usual
-# install locations, because the check runs in a background watcher whose PATH
-# can be a minimal non-login one while an interactive shell finds the same CLI.
-# A configured FM_GH_BIN that is not executable falls through to those same
-# sources rather than disabling every read. An environment where the CLI truly
-# cannot be resolved records `no gh CLI available to this environment` verbatim
-# on the affected records, once per failure episode, instead of reporting a
-# forge outage for contributions that read fine by hand.
+# The forge CLI is resolved once from FM_GH_BIN, then PATH, then
+# FM_GH_SEARCH_DIRS (default the usual install locations), because the check runs
+# in a background watcher whose PATH can be a minimal non-login one while an
+# interactive shell finds the same CLI. A configured FM_GH_BIN that is not
+# executable falls through to those same sources rather than disabling every
+# read. An environment where the CLI truly cannot be resolved records `no gh CLI
+# available to this environment` verbatim on the affected records, once per
+# failure episode, instead of reporting a forge outage for contributions that
+# read fine by hand.
 # An observation is valid for every reviewDecision the forge can return
 # (APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, DISMISSED, COMMENTED, PENDING,
 # or the empty string for comment-only review); pinning that field to a subset
@@ -153,7 +154,14 @@ resolve_gh() {
   fi
   candidate=$(command -v gh 2>/dev/null || true)
   [ -n "$candidate" ] && [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
-  for candidate in /opt/homebrew/bin/gh /usr/local/bin/gh /usr/bin/gh "${HOME:-/nonexistent}/.local/bin/gh"; do
+  local dir
+  local IFS=:
+  # FM_GH_SEARCH_DIRS owns the fallback list (default the usual install
+  # locations); an empty value searches none, which is how a fixture proves the
+  # genuinely-unresolvable behavior on a host that does have the CLI.
+  for dir in ${FM_GH_SEARCH_DIRS-/opt/homebrew/bin:/usr/local/bin:/usr/bin:${HOME:-/nonexistent}/.local/bin}; do
+    [ -n "$dir" ] || continue
+    candidate="$dir/gh"
     [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
   done
   return 1

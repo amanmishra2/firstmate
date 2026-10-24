@@ -10,7 +10,7 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 import { createSessionScope } from "./lib/fm-session-scope.js";
 
@@ -83,6 +83,11 @@ let retryFailures = 0;
 let launchInFlight = null;
 let restorationInFlight = null;
 let pendingWakeMessages = [];
+// A stalled-holder close that arrives while a restoration is already running.
+// The restoration loop reads this on its next attempt and escalates that
+// attempt to the home-scoped force-restart, so the typed escalation is not
+// lost just because it overlapped an earlier recovery.
+let stalledEscalationPending = false;
 let armClose = new WeakMap();
 let armReadiness = new WeakMap();
 let armRecovery = new WeakMap();
@@ -469,7 +474,7 @@ function claimSuccession(paths, predecessorArmPid) {
   }
 }
 
-function releaseSuccession(paths) {
+export function releaseSuccession(paths) {
   try {
     const raw = readFileSync(claimPathOf(paths), "utf8");
     // Only this instance may release its own claim: another instance in the
@@ -530,15 +535,21 @@ const NON_FAILURE_STATUSES = new Set([
 ]);
 
 // Succession is idempotent. A successor started here runs in attach-or-start
-// mode, never `--restart`: a duplicate that lands while a healthy watcher still
-// holds this home's lock must follow that cycle instead of force-stopping it.
-// `--restart` stays owned by explicit owner requests (an operator re-arm, the
-// supervision host's own hand-back), so plugin-driven continuity can never kill
-// a live watcher.
+// mode by default: a duplicate that lands while a healthy watcher still holds
+// this home's lock must follow that cycle instead of force-stopping it. The one
+// exception is the arm's own typed stalled-holder close, where the live holder
+// is provably wedged past the watcher's eviction bound; that attempt escalates
+// to the home-scoped `--restart`, which stops only this home's locked watcher
+// and never a sibling home's. `--restart` remains owner-only everywhere else.
 async function restoreAfterActionableClose(paths, sessionID, client, predecessorArmPid) {
   let failure = "";
   for (let attempt = 0; attempt <= REARM_RETRY_LIMIT; attempt += 1) {
-    const { status, armChild } = await ensureArm(paths, sessionID, client, predecessorArmPid, true);
+    // An attempt that follows a stalled-holder close asks for the one
+    // force-restart the plugin is allowed: attach-or-start would follow the
+    // same wedged cycle for its whole TTL.
+    const force = stalledEscalationPending;
+    stalledEscalationPending = false;
+    const { status, armChild } = await ensureArm(paths, sessionID, client, predecessorArmPid, true, force);
     if (status === "armed" || status === "wake") {
       releaseSuccession(paths);
       return { failure: "", recovery: armRecovery.get(armChild) };
@@ -718,7 +729,10 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "", force = fals
     }
     if (restorationInFlight) {
       // A non-actionable close during restoration is that restoration's own
-      // retry material, not a second failure to surface.
+      // retry material, not a second failure to surface. A stalled-holder
+      // close is the exception that must survive: the in-flight restoration
+      // would otherwise retry in attach mode and re-follow the wedged holder.
+      if (classification.kind === "stalled") stalledEscalationPending = true;
       setArmStatus("failed");
       return;
     }
@@ -752,11 +766,19 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "", force = fals
   return armChild;
 }
 
-function directoryWithin(directory, base) {
-  if (!base) return false;
+// Containment by path semantics rather than string prefixes: a prefix test is
+// both separator-specific (inert on win32, whose separator is a backslash) and
+// wrong for a sibling that merely shares a prefix (`/lab` and `/lab2`).
+// `relativeImpl`/`isAbsoluteImpl` exist so the win32 form can be exercised on
+// any host with path.win32's own implementations.
+export function directoryWithin(directory, base, relativeImpl = relative, isAbsoluteImpl = isAbsolute) {
+  if (!directory || !base) return false;
   const dir = resolvePath(directory);
   const root = resolvePath(base);
-  return dir === root || dir.startsWith(root.endsWith("/") ? root : `${root}/`);
+  const rel = relativeImpl(root, dir);
+  if (rel === "") return true;
+  if (isAbsoluteImpl(rel)) return false;
+  return rel.split(/[\\/]/)[0] !== "..";
 }
 
 function sessionDirectoryOf(info) {
@@ -785,9 +807,22 @@ async function sessionBelongsToHome(paths, client, sessionID) {
   const directory = sessionDirectoryOf(result?.data ?? result);
   if (!directory) return true;
   try {
-    // A TUI opened in a subdirectory of the home is still this home's session.
-    // Exact equality alone left such a session never arming supervision.
-    return [paths.root, paths.home].some((base) => directoryWithin(directory, base));
+    // A TUI opened in a subdirectory of the home is still this home's session;
+    // exact equality alone left such a session never arming supervision. A
+    // project clone below the home is NOT: it is another repository served by
+    // the same OpenCode server, and arming against it delivers firstmate's
+    // notifications into that project's window.
+    const projects = resolvePath(`${paths.home}/projects`);
+    const inHome =
+      directoryWithin(directory, paths.root) || directoryWithin(directory, paths.home);
+    if (!inHome || directoryWithin(directory, projects)) return false;
+    // Any nested repository is foreign too, which catches clones outside the
+    // conventional projects directory. A subdirectory of this repository
+    // resolves to the same top level and stays ours.
+    // Compare resolved paths: git may report the physical path while the
+    // session reports a symlinked one (macOS /var versus /private/var).
+    const top = resolvePath(await resolveRoot(directory));
+    return top === resolvePath(paths.root) || top === resolvePath(paths.home);
   } catch {
     return true;
   }

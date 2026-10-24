@@ -15,9 +15,10 @@
 # .wake-drain-rows.*) is created and removed under the queue lock, so one found
 # while taking that lock was left by a drain that died mid-write; each locked
 # drain rotates such leftovers away before doing anything else. A presentation
-# child's own prepared file is registered for removal by its EXIT trap, which
-# also runs on the TERM that ends its deadline, so rotation leaves those alone:
-# a concurrent drain's live file must never be deleted.
+# child's own prepared and rows files are removed by its EXIT trap, which also
+# runs on the TERM that ends its deadline; rotation only reaps those two
+# patterns once they are older than FM_WAKE_DRAIN_STALE_SCRATCH_SECONDS
+# (default 600), because a concurrent drain's live file must never be deleted.
 # FM_STATUS_PRESENTATION_LOCK_TIMEOUT sets the positive whole-second wait for
 # presentation-path locks (default 10); queue mutation locks remain blocking.
 # FM_WAKE_DRAIN_BUDGET is the ONE monotonic deadline for a drain's bounded
@@ -101,6 +102,14 @@ rotate_scratch_locked() {
   for scratch in "$STATE"/.main-eligible-rows.tmp.* "$STATE"/.wake-rows.consume.* \
     "$STATE"/.wake-queue.retire.* "$STATE"/.wake-queue.ack.* "$STATE"/.wake-queue.actor-view.*; do
     [ -e "$scratch" ] || [ -L "$scratch" ] || continue
+    rm -f -- "$scratch"
+  done
+  # Presentation scratch belongs to a phase that runs under its own lock, so it
+  # is rotated by AGE, not unconditionally: a concurrent drain's live file must
+  # never be deleted. A killed child leaves one behind; the age bound reaps it.
+  for scratch in "$STATE"/.status-presentation.prepared.* "$STATE"/.wake-drain-rows.*; do
+    [ -e "$scratch" ] || [ -L "$scratch" ] || continue
+    [ "$(fm_path_age "$scratch")" -ge "$STALE_SCRATCH_SECONDS" ] || continue
     rm -f -- "$scratch"
   done
 }
@@ -908,6 +917,9 @@ PRESENTATION_TIMEOUT=${FM_WAKE_DRAIN_PRESENTATION_TIMEOUT:-20}
 case "$PRESENTATION_TIMEOUT" in ''|*[!0-9]*|0) PRESENTATION_TIMEOUT=20 ;; esac
 HELPER_TIMEOUT=${FM_WAKE_DRAIN_HELPER_TIMEOUT:-25}
 case "$HELPER_TIMEOUT" in ''|*[!0-9]*|0) HELPER_TIMEOUT=25 ;; esac
+# Presentation scratch older than this is a dead child's leftover.
+STALE_SCRATCH_SECONDS=${FM_WAKE_DRAIN_STALE_SCRATCH_SECONDS:-600}
+case "$STALE_SCRATCH_SECONDS" in ''|*[!0-9]*|0) STALE_SCRATCH_SECONDS=600 ;; esac
 DRAIN_BUDGET=${FM_WAKE_DRAIN_BUDGET:-45}
 case "$DRAIN_BUDGET" in ''|*[!0-9]*|0) DRAIN_BUDGET=45 ;; esac
 DRAIN_STARTED=0
