@@ -36,13 +36,15 @@ import { pathToFileURL } from "node:url";
 const lab = process.env.LAB;
 const promptRef = { text: "", texts: [], delayMs: 0 };
 const session = { directory: lab };
-// The v1 client shape the plugin's named export consumes: `promptAsync` carries
-// the follow-up body the v2 adapter builds from `ctx.session.prompt`.
+// The client shape the plugin's exported hook body consumes: `session.get`
+// resolves the idle event's session location so the plugin can apply its
+// home/root/descendant gate, and `session.prompt` is the V2 delivery call
+// (`{ sessionID, text }`) the plugin's follow-up sends.
 const client = {
   session: {
-    get: async () => ({ data: { directory: session.directory } }),
-    promptAsync: async ({ body }) => {
-      const text = body?.parts?.[0]?.text ?? "";
+    get: async ({ sessionID }) => ({ data: { location: { directory: session.directory }, id: sessionID } }),
+    prompt: async ({ sessionID, text }) => {
+      void sessionID;
       promptRef.text = text;
       promptRef.texts.push(text);
       if (promptRef.delayMs > 0) {

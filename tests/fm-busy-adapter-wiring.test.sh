@@ -180,49 +180,6 @@ oc_terminal() {  # <sessionID> [outcome]
   printf '{"type":"session.execution.%s","data":{"sessionID":"%s"}}' "${2:-succeeded}" "$1"
 }
 
-# drive_oc_v2_plugin <plugin-path> <v2-events...>: load the generated OpenCode
-# plugin's v2 default export in a plain Node host and feed it one v2 event
-# envelope per argument, in order, through the same ctx.event.subscribe entry
-# OpenCode v2 calls. Completion is deterministic: the consumer pulls the next
-# event only after the hook for the previous one settled, so the stub resolves
-# its gate when the loop asks for an event past the last one. A plugin that
-# never consumes the stream fails the drive instead of hanging the suite.
-drive_oc_v2_plugin() {
-  local plugin=$1
-  shift
-  PLUGIN_PATH="$plugin" node --input-type=module - "$@" 2>&1 <<'EOF'
-import { pathToFileURL } from "node:url";
-const mod = await import(pathToFileURL(process.env.PLUGIN_PATH).href);
-if (typeof mod.default?.setup !== "function" || !mod.default?.id) {
-  throw new Error("plugin has no v2 default export with an id and a setup function");
-}
-const events = process.argv.slice(2).map((line) => JSON.parse(line));
-let consumed;
-const finished = new Promise((resolve) => { consumed = resolve; });
-const timeout = setTimeout(() => {
-  console.error("v2 event stream was not consumed");
-  process.exit(1);
-}, 10000);
-const ctx = {
-  event: {
-    subscribe: async function* () {
-      for (const event of events) yield event;
-      consumed();
-      await new Promise(() => {});
-    },
-  },
-};
-await mod.default.setup(ctx);
-await finished;
-clearTimeout(timeout);
-EOF
-}
-
-oc_v2_event() {  # <type> <sessionID>
-  printf '{"id":"evt-%s-%s","created":0,"type":"%s","data":{"sessionID":"%s"}}' \
-    "$1" "$2" "$1" "$2"
-}
-
 test_opencode_plugin_semantic_lifecycle() {
   local rec id=busy-oc-1 out state plugin
   rec=$(make_spawn_case oc-lifecycle opencode "$id")
@@ -293,9 +250,9 @@ test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end() {
 
   for terminal in succeeded failed interrupted; do
     rm -f "$state/$id.turn-ended"
-    out=$(drive_oc_v2_plugin "$plugin" \
-      "$(oc_v2_event session.execution.started ses_main)" \
-      "$(oc_v2_event "session.execution.$terminal" ses_main)") \
+    out=$(drive_oc_plugin "$plugin" \
+      "$(oc_active ses_main)" \
+      "$(oc_terminal ses_main "$terminal")") \
       || fail "v2 $terminal drive failed: $out"
     [ -f "$state/$id.turn-ended" ] \
       || fail "v2 session.execution.$terminal did not touch the turn-ended notification marker"
@@ -303,8 +260,8 @@ test_opencode_v2_plugin_finished_turn_reports_idle_and_turn_end() {
     [ "$out" = "idle opencode-plugin" ] \
       || fail "v2 session.execution.$terminal must close the busy record, got '$out'"
 
-    out=$(drive_oc_v2_plugin "$plugin" \
-      "$(oc_v2_event session.execution.started ses_main)") \
+    out=$(drive_oc_plugin "$plugin" \
+      "$(oc_active ses_main)") \
       || fail "v2 started drive failed: $out"
     out=$(classify opencode "$id" "$state")
     [ "$out" = "busy opencode-plugin" ] \
@@ -324,8 +281,8 @@ test_opencode_v2_plugin_child_turn_end_keeps_the_worker_busy() {
 
   # A child session's turn end alone must not clear the spawn seed.
   rm -f "$state/$id.turn-ended"
-  out=$(drive_oc_v2_plugin "$plugin" \
-    "$(oc_v2_event session.execution.succeeded ses_child)") \
+  out=$(drive_oc_plugin "$plugin" \
+    "$(oc_terminal ses_child)") \
     || fail "v2 child-only drive failed: $out"
   [ -f "$state/$id.turn-ended" ] \
     || fail "a child turn end must still touch the notification marker"
@@ -335,21 +292,21 @@ test_opencode_v2_plugin_child_turn_end_keeps_the_worker_busy() {
 
   # Once the worker's own session is latched, its child's turn end must not
   # clear the worker's busy state.
-  out=$(drive_oc_v2_plugin "$plugin" \
-    "$(oc_v2_event session.execution.started ses_main)" \
-    "$(oc_v2_event session.execution.started ses_child)" \
-    "$(oc_v2_event session.execution.succeeded ses_child)") \
+  out=$(drive_oc_plugin "$plugin" \
+    "$(oc_active ses_main)" \
+    "$(oc_active ses_child)" \
+    "$(oc_terminal ses_child)") \
     || fail "v2 latched child drive failed: $out"
   out=$(classify opencode "$id" "$state")
   [ "$out" = "busy opencode-plugin" ] \
     || fail "a child turn end must not clear the latched worker, got '$out'"
 
   # The latched worker's own turn end still closes the record.
-  out=$(drive_oc_v2_plugin "$plugin" \
-    "$(oc_v2_event session.execution.started ses_main)" \
-    "$(oc_v2_event session.execution.started ses_child)" \
-    "$(oc_v2_event session.execution.succeeded ses_child)" \
-    "$(oc_v2_event session.execution.succeeded ses_main)") \
+  out=$(drive_oc_plugin "$plugin" \
+    "$(oc_active ses_main)" \
+    "$(oc_active ses_child)" \
+    "$(oc_terminal ses_child)" \
+    "$(oc_terminal ses_main)") \
     || fail "v2 latched turn-end drive failed: $out"
   out=$(classify opencode "$id" "$state")
   [ "$out" = "idle opencode-plugin" ] \
@@ -869,35 +826,26 @@ EOF
 }
 
 test_secondmate_opencode_plugin_closes_without_a_parent_turnend() {
-  local case_dir id=sm-oc primary sm state plugin out
+  local case_dir id=sm-oc primary sm state plugin out WT_DIR
   case_dir="$TMP_ROOT/sm-oc"
   primary="$case_dir/primary"
   sm="$case_dir/sm"
   out=$(spawn_secondmate_harness "$case_dir" "$id" opencode) \
     || fail "opencode secondmate spawn failed: $out"
   state="$primary/state"
+  # The host loads the mate's generated plugin for the mate's own home, which is
+  # the location the plugin's session scoping compares against.
+  WT_DIR="$sm"
   plugin="$sm/.opencode/plugins/fm-busy-state.js"
   assert_present "$plugin" "opencode secondmate spawn did not write the busy plugin"
   out=$(classify opencode "$id" "$state")
   [ "$out" = "busy fm-spawn" ] || fail "opencode secondmate seed must be busy fm-spawn, got '$out'"
   rm -f "$state/$id.turn-ended"
-  out=$(drive_oc_plugin "$plugin" "$(oc_status ses_main busy)" "$(oc_idle ses_main)") \
+  out=$(drive_oc_plugin "$plugin" "$(oc_active ses_main)" "$(oc_terminal ses_main)") \
     || fail "opencode secondmate idle drive failed: $out"
-  [ ! -e "$state/$id.turn-ended" ] || fail "opencode secondmate session.idle touched the parent's turn-ended marker"
+  [ ! -e "$state/$id.turn-ended" ] || fail "opencode secondmate execution end touched the parent's turn-ended marker"
   out=$(classify opencode "$id" "$state")
   [ "$out" = "idle opencode-plugin" ] || fail "opencode secondmate idle must classify idle, got '$out'"
-
-  # The same v2 contract: the terminal execution event closes the mate's busy
-  # record through the default export and stays off the parent's marker.
-  out=$(drive_oc_v2_plugin "$plugin" \
-    "$(oc_v2_event session.execution.started ses_main)" \
-    "$(oc_v2_event session.execution.succeeded ses_main)") \
-    || fail "opencode secondmate v2 drive failed: $out"
-  [ ! -e "$state/$id.turn-ended" ] \
-    || fail "opencode secondmate v2 turn end touched the parent's turn-ended marker"
-  out=$(classify opencode "$id" "$state")
-  [ "$out" = "idle opencode-plugin" ] \
-    || fail "opencode secondmate v2 turn end must classify idle, got '$out'"
   pass "an opencode secondmate plugin closes the parent busy record without a parent turn-end"
 }
 

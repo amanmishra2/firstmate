@@ -12,7 +12,6 @@ import {
 } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
-import { createSessionScope } from "./lib/fm-session-scope.js";
 
 // Supervision host: a home opted in with config/supervision-host
 // (docs/configuration.md "Supervision host" owns the gate, which
@@ -565,7 +564,10 @@ async function restoreAfterActionableClose(paths, sessionID, client, predecessor
       };
     }
     failure = restorationFailure(status);
-    if (attempt === REARM_RETRY_LIMIT) break;
+    // Retire every unready attempt, including the last one: an arm that never
+    // confirmed must not be left running past the restoration that gave up on
+    // it, or it would keep a wedged child alive and could later close into a
+    // second succession.
     if (!(await retireArm(armChild))) {
       setArmStatus("failed");
       releaseSuccession(paths);
@@ -574,6 +576,7 @@ async function restoreAfterActionableClose(paths, sessionID, client, predecessor
         recovery: null,
       };
     }
+    if (attempt === REARM_RETRY_LIMIT) break;
     await waitForRetry(attempt + 1);
   }
   setArmStatus("failed");
@@ -800,7 +803,9 @@ async function sessionBelongsToHome(paths, client, sessionID) {
   if (!client || typeof client.session?.get !== "function") return true;
   let result;
   try {
-    result = await client.session.get({ path: { id: sessionID } });
+    // OpenCode 2's ctx.session.get takes `{ sessionID }`; the v1-shaped client
+    // the regression suite drives takes `{ path: { id } }`.
+    result = await client.session.get({ sessionID, path: { id: sessionID } });
   } catch {
     return true;
   }
@@ -892,28 +897,50 @@ function coordinatorRegistry() {
   return created;
 }
 
+// The plugin's turn-end handling as a v1-shaped hook object. The tracked V2
+// entry point below feeds it the server event stream; exporting it lets the
+// succession regression suite drive the real claim, location gate, readiness
+// and delivery code with a fake client instead of a source-text copy.
+export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {
+  const root = worktree ? resolvePath(worktree) : await resolveRoot(directory);
+  const paths = effectivePaths(root);
+  return {
+    // The turnend-guard looks this up by location in coordinatorRegistry().
+    coordinator: {
+      ensureArmed: (sessionID, activeClient) => ensureArm(paths, sessionID, activeClient ?? client),
+    },
+    // OpenCode 2 publishes the terminal execution events; a v1 session.idle (if
+    // a host ever emits it) carries the same payload under `properties`.
+    event: async ({ event }) => {
+      const type = event?.type;
+      if (!TURN_END_TYPES.has(type) && type !== "session.idle") return;
+      const data = event?.data ?? event?.properties ?? {};
+      if (type === "session.execution.interrupted" && data.reason === "shutdown") return;
+      const sessionID = data.sessionID;
+      if (!sessionID) return;
+      // The location gate lives in beginArm (sessionBelongsToHome): it admits
+      // this home and its subdirectories and refuses a project clone or any
+      // other nested repository the shared OpenCode server serves.
+      void ensureArm(paths, sessionID, client);
+    },
+  };
+};
+
 export default {
   id: "fm-primary-watch-arm",
   async setup(ctx) {
-    const root = await resolveRoot(ctx.location.directory);
-    const paths = effectivePaths(root);
-    const scope = createSessionScope(ctx);
+    const hooks = await FmPrimaryWatchArm({
+      client: ctx,
+      directory: ctx.location.directory,
+    });
     const registry = coordinatorRegistry();
-    const coordinator = {
-      ensureArmed: (sessionID, activeClient) => ensureArm(paths, sessionID, activeClient ?? ctx),
-    };
-    registry.set(ctx.location.directory, coordinator);
+    registry.set(ctx.location.directory, hooks.coordinator);
 
     const controller = new AbortController();
     void (async () => {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
         try {
-          if (!TURN_END_TYPES.has(event.type)) continue;
-          if (event.type === "session.execution.interrupted" && event.data?.reason === "shutdown") continue;
-          if (!(await scope.belongs(event))) continue;
-          const sessionID = event.data?.sessionID;
-          if (!sessionID) continue;
-          void ensureArm(paths, sessionID, ctx);
+          await hooks.event({ event });
         } catch {
           // One event must never end the subscription: continuity depends on
           // this loop staying alive.
@@ -923,22 +950,9 @@ export default {
 
     return () => {
       controller.abort();
-      if (registry.get(ctx.location.directory) === coordinator) registry.delete(ctx.location.directory);
+      if (registry.get(ctx.location.directory) === hooks.coordinator) {
+        registry.delete(ctx.location.directory);
+      }
     };
-  },
-};
-
-// OpenCode v2 default export: the v2 loader requires `{ id, setup(ctx) }`;
-// `clientFromCtx` and `subscribeEvents` adapt v2 onto the v1 hook object
-// above. The coordinator entry the hooks install keeps serving the v2
-// turn-end guard.
-export default {
-  id: "fm-primary-watch-arm",
-  async setup(ctx) {
-    const hooks = await FmPrimaryWatchArm({
-      client: clientFromCtx(ctx),
-      directory: ctx.location?.directory,
-    });
-    return subscribeEvents(ctx, hooks, "fm-primary-watch-arm");
   },
 };

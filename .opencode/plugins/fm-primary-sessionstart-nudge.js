@@ -77,14 +77,3 @@ export default {
     return () => controller.abort();
   },
 };
-
-export default {
-  id: "fm-primary-sessionstart-nudge",
-  async setup(ctx) {
-    const hooks = await FmPrimarySessionstartNudge({
-      client: clientFromCtx(ctx),
-      directory: ctx.location?.directory,
-    });
-    return subscribeEvents(ctx, hooks, "fm-primary-sessionstart-nudge");
-  },
-};
