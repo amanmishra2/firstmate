@@ -550,6 +550,10 @@ async function restoreAfterActionableClose(paths, sessionID, client, predecessor
     stalledEscalationPending = false;
     const { status, armChild } = await ensureArm(paths, sessionID, client, predecessorArmPid, true, force);
     if (status === "armed" || status === "wake") {
+      // A stall reported while this attempt was in flight was already answered
+      // by its readiness outcome, so it must not escalate a later, unrelated
+      // cycle into a force-restart.
+      stalledEscalationPending = false;
       releaseSuccession(paths);
       return { failure: "", recovery: armRecovery.get(armChild) };
     }
@@ -557,6 +561,7 @@ async function restoreAfterActionableClose(paths, sessionID, client, predecessor
       // Ownership decided elsewhere: report nothing and stay silent about
       // continuity. A `read-only` lock really cannot be repaired from here, so
       // that one keeps its typed line.
+      stalledEscalationPending = false;
       releaseSuccession(paths);
       return {
         failure: status === "read-only" ? restorationFailure(status) : "",
@@ -803,9 +808,7 @@ async function sessionBelongsToHome(paths, client, sessionID) {
   if (!client || typeof client.session?.get !== "function") return true;
   let result;
   try {
-    // OpenCode 2's ctx.session.get takes `{ sessionID }`; the v1-shaped client
-    // the regression suite drives takes `{ path: { id } }`.
-    result = await client.session.get({ sessionID, path: { id: sessionID } });
+    result = await client.session.get({ sessionID });
   } catch {
     return true;
   }

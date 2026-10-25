@@ -1481,9 +1481,9 @@ families_for_changed_path() {
     bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-turnend-guard*|bin/fm-guard.sh)
       printf '%s\n' watcher-wake-lock
       ;;
-    .opencode/plugins/fm-primary-watch-arm.js|.opencode/plugins/lib/fm-opencode-v2-adapter.js)
+    .opencode/plugins/fm-primary-watch-arm.js)
       # The OpenCode re-arm owner: the succession simulation and the turn-end
-      # guard share its coordinator and adapter.
+      # guard share its coordinator.
       printf '%s\n' "__script__:fm-opencode-watch-arm-succession.test.sh"
       printf '%s\n' "__script__:fm-turnend-guard.test.sh"
       ;;
