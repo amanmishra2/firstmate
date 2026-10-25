@@ -8,7 +8,11 @@
 # report, decision, or PR the ask refers to, without added speaker labels or
 # direct address) and `{FIRSTMATE_SPEC}`
 # under `## Firstmate spec` (build instructions, which are never the captain's
-# intent). bin/fm-dod-lib.sh owns the no-mistakes `--intent` contract those
+# intent). Both subsections also end with three labelled plan-lint lines,
+# `Contract coverage:`, `Edge cases:`, and `Stale facts:`; run
+# bin/fm-brief-preflight.py on the filled brief before dispatch, and that
+# script's header owns the exact contract each line must satisfy.
+# bin/fm-dod-lib.sh owns the no-mistakes `--intent` contract those
 # subsections feed; bin/fm-spawn.sh refuses leftover placeholders and a
 # `## Captain's intent` line opening with a Captain label or address. Secondmate
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
@@ -553,6 +557,10 @@ IFS= read -r -d '' TASK_SECTION <<'EOF' || true
 
 ## Firstmate spec
 {FIRSTMATE_SPEC}
+
+Contract coverage: (fill before dispatch) name each consumer or call site the stated rules must hold at.
+Edge cases: (fill before dispatch) name the concrete inputs a parser, matcher, migration, or resume path must survive.
+Stale facts: (fill before dispatch) name each doc, count, version, or navigation file this change makes stale.
 EOF
 TASK_SECTION=${TASK_SECTION%$'\n'}
 

@@ -215,16 +215,34 @@ fm_ship_rule_one() {  # <no-mistakes|direct-PR|local-only> <task-id> [branch] [<
   esac
 }
 
-# Return 0 when a Task subsection still consists only of its scaffold
-# placeholder. A missing file and legacy briefs carry no such placeholders.
+# Return 0 when a Task subsection still carries its scaffold placeholder.
+# The check is per line rather than whole-body so extra scaffold content after
+# the placeholder cannot hide an unfilled `{TASK}` or `{FIRSTMATE_SPEC}`.
+# Fenced and indented example lines are skipped, so a brief that documents the
+# scaffold is not mistaken for an unfilled one.
+# A missing file and legacy briefs carry no such placeholders.
 fm_brief_task_placeholders_present() {  # <file>
   local file=$1 intent spec
   [ -f "$file" ] || return 1
   intent=$(fm_brief_task_heading_body "$file" "## Captain's intent")
   spec=$(fm_brief_task_heading_body "$file" "## Firstmate spec")
+  intent=$(printf '%s\n' "$intent" | fm_brief_skip_example_lines)
+  spec=$(printf '%s\n' "$spec" | fm_brief_skip_example_lines)
+  printf '%s\n' "$intent" | grep -qx '[[:space:]]*{TASK}[[:space:]]*' && return 0
+  printf '%s\n' "$spec" | grep -qx '[[:space:]]*{FIRSTMATE_SPEC}[[:space:]]*' && return 0
   [ "$(printf '%s' "$intent" | tr -d '[:space:]')" = '{TASK}' ] && return 0
   [ "$(printf '%s' "$spec" | tr -d '[:space:]')" = '{FIRSTMATE_SPEC}' ] && return 0
   return 1
+}
+
+# Drop fenced and four-space-indented example lines from a brief section body.
+fm_brief_skip_example_lines() {
+  awk '
+    /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
+    fenced { next }
+    /^(    |\t)/ { next }
+    { print }
+  '
 }
 
 # Print the words of every provenance-marked line in a legacy `# Task` body.
