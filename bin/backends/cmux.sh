@@ -341,6 +341,27 @@ fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
     | jq -r '.panes[0] // {} | .selected_surface_id // (.surface_ids[0] // empty)' 2>/dev/null
 }
 
+# fm_backend_cmux_retry_resolve: poll <resolver-fn> <arg> until it emits a
+# non-empty value, then echo that value (possibly still empty after the
+# bound). The app updates its workspace index asynchronously, so an
+# immediate `workspace list` can miss a workspace `new-workspace` just
+# returned: verified live 2026-10-11 (cmux app shipped with the CLI at
+# /Applications/cmux.app), the created workspace was absent from a list run
+# ~0.1s after `new-workspace` returned and present ~0.3s after, which made
+# every spawn fail with "could not resolve a cmux workspace id". Ten
+# retries 0.3s apart bound the wait at ~3s.
+fm_backend_cmux_retry_resolve() {  # <resolver-fn> <arg>
+  local fn=$1 arg=$2 value tries=0
+  while :; do
+    value=$("$fn" "$arg")
+    [ -z "$value" ] || break
+    tries=$((tries + 1))
+    [ "$tries" -lt 10 ] || break
+    sleep 0.3
+  done
+  printf '%s' "$value"
+}
+
 # fm_backend_cmux_create_task: create the task's workspace (one surface),
 # refusing an existing live <label> (finding #6: cmux enforces no uniqueness
 # itself). Resolves the fresh workspace's default surface via one list-panes
@@ -348,8 +369,9 @@ fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
 # so no separate new-surface call is needed). --focus false is passed for
 # defense in depth though verified to already be the default (finding:
 # workspace/surface/pane create all default focus to false) - no
-# focus-restore dance is needed, unlike zellij. Echoes "<workspace_id>
-# <surface_id>" on success.
+# focus-restore dance is needed, unlike zellij. Both post-create lookups
+# poll through fm_backend_cmux_retry_resolve for the index-visibility lag it
+# documents. Echoes "<workspace_id> <surface_id>" on success.
 fm_backend_cmux_create_task() {  # <label> <cwd>
   local label=$1 cwd=$2 title dup out wsid sfid
   title=$(fm_backend_cmux_scoped_title "$label")
@@ -362,9 +384,9 @@ fm_backend_cmux_create_task() {  # <label> <cwd>
     echo "error: cmux new-workspace failed for '$title': $out" >&2
     return 1
   }
-  wsid=$(fm_backend_cmux_workspace_id_for_label "$title")
+  wsid=$(fm_backend_cmux_retry_resolve fm_backend_cmux_workspace_id_for_label "$title")
   [ -n "$wsid" ] || { echo "error: could not resolve a cmux workspace id for '$title' after creation" >&2; return 1; }
-  sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
+  sfid=$(fm_backend_cmux_retry_resolve fm_backend_cmux_surface_id_for_workspace "$wsid")
   [ -n "$sfid" ] || { echo "error: could not resolve the default surface for cmux workspace '$title' ($wsid)" >&2; return 1; }
   printf '%s %s' "$wsid" "$sfid"
 }

@@ -4183,6 +4183,79 @@ EOF
   pass "OpenCode watcher plugin uses the effective FM_HOME state"
 }
 
+test_opencode_v2_watch_arm_setup_arms_the_watcher() {
+  local plugin repo home log out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-v2-arm-root"
+  home="$TMP_ROOT/opencode-v2-arm-home"
+  log="$TMP_ROOT/opencode-v2-arm.log"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  # The shared supervision predicate (#6809) is sourced from the fixture root,
+  # so the arm-decision fixture must carry it like every other OpenCode case.
+  cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'arm\n' >> "${FM_ARM_LOG:?}"
+printf 'watcher: healthy pid=1 (beacon 0s)\n'
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" \
+    FM_OPENCODE_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" node 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const ctx = {
+  location: { directory: process.env.WORKTREE },
+  session: { prompt: async () => {} },
+  event: {
+    subscribe: async function* () {
+      // v2 event envelope: payload under `data`, and a turn ends with a
+      // terminal session.execution.* event that the adapter maps onto idle.
+      yield {
+        id: "evt_1",
+        created: 0,
+        type: "session.execution.succeeded",
+        data: { sessionID: "session-v2" },
+      };
+      // A live subscription only stops when the plugin is torn down; keep
+      // this stream open so its end is not reported as an unexpected stop.
+      await new Promise(() => {});
+    },
+  },
+};
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await mod.default.setup(ctx);
+// The arm starts through a cold login shell; under load that can outrun a
+// short span, so give it a generous window (matching the suite budget
+// comment above) rather than reproducing a host-timing flake.
+// NOTE (local backport): the original wording carried a possessive
+// apostrophe here, which broke parsing under macOS system bash 3.2 (a quoted
+// heredoc inside $( ) with a single quote anywhere in its body), so this
+// comment is deliberately apostrophe-free.
+for (let i = 0; i < 600 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+if (!existsSync(process.env.FM_ARM_LOG)) {
+  console.error("watch arm did not run through v2 setup");
+  process.exit(1);
+}
+const arm = readFileSync(process.env.FM_ARM_LOG, "utf8");
+if (!arm.includes("arm")) {
+  console.error(arm);
+  process.exit(1);
+}
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode v2 watch-arm setup must arm the watcher on execution end: $out"
+  [ -z "$out" ] || fail "OpenCode v2 watch-arm arming test printed output: $out"
+  pass "OpenCode watcher arms through the v2 default export setup"
+}
+
 test_opencode_primary_watch_plugin_sources_effective_config() {
   local plugin repo home log out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
@@ -4597,7 +4670,7 @@ trap 'exit 0' TERM INT
 while :; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_OPENCODE_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_OPENCODE_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_ARM_CONFIRM_TIMEOUT=1 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -4606,9 +4679,10 @@ const host = await loadV2Plugin(process.env.PLUGIN, { directory: process.env.WOR
 let rowsAtPrompt = 0;
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await host.emit({ type: "session.execution.succeeded", data: { sessionID: "session-test" } });
-// Three unready successors each cost the full readiness budget, so wait well
-// past their sum. The wait ends as soon as the wake lands.
-for (let i = 0; i < 1500; i += 1) {
+// Three unready successors each cost the full readiness budget (floored by
+// the arm confirmation window), so wait well past their sum. The wait
+// ends as soon as the wake lands.
+for (let i = 0; i < 6000; i += 1) {
   if (host.prompts.length >= 1) {
     rowsAtPrompt = existsSync(process.env.FM_ARM_LOG)
       ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length
@@ -4665,7 +4739,7 @@ printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
 while [ ! -e "$FM_RELEASE_FILE" ]; do sleep 0.1; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RELEASE_FILE="$release" FM_OPENCODE_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RELEASE_FILE="$release" FM_OPENCODE_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_ARM_CONFIRM_TIMEOUT=1 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -4674,7 +4748,8 @@ const host = await loadV2Plugin(process.env.PLUGIN, { directory: process.env.WOR
 let rowsAtPrompt = 0;
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
 await host.emit({ type: "session.execution.succeeded", data: { sessionID: "session-test" } });
-for (let i = 0; i < 500; i += 1) {
+// The unready successor costs the full readiness budget before it is retired.
+for (let i = 0; i < 1500; i += 1) {
   if (host.prompts.length >= 1) {
     rowsAtPrompt = existsSync(process.env.FM_ARM_LOG)
       ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").length
@@ -4737,7 +4812,7 @@ trap 'exit 0' TERM INT
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
     chmod +x "$repo/bin/fm-watch-arm.sh"
-    out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_UNRETIRED_READY_FILE="$ready" FM_UNRETIRED_RETIRE_FILE="$retired" FM_RELEASE_FILE="$release" FM_STOP_FILE="$stop" FM_LATE_KIND="$kind" FM_OPENCODE_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
+    out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_UNRETIRED_READY_FILE="$ready" FM_UNRETIRED_RETIRE_FILE="$retired" FM_RELEASE_FILE="$release" FM_STOP_FILE="$stop" FM_LATE_KIND="$kind" FM_OPENCODE_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_ARM_CONFIRM_TIMEOUT=1 FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -4746,8 +4821,8 @@ const host = await loadV2Plugin(process.env.PLUGIN, { directory: process.env.WOR
 const rows = () => existsSync(process.env.FM_ARM_LOG)
   ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
   : [];
-async function waitFor(predicate, message) {
-  for (let i = 0; i < 500; i += 1) {
+async function waitFor(predicate, message, tries = 500) {
+  for (let i = 0; i < tries; i += 1) {
     if (predicate()) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
@@ -4759,7 +4834,7 @@ await waitFor(
   () => existsSync(process.env.FM_UNRETIRED_READY_FILE),
   "unretired successor did not enter its retirement wait",
 );
-await waitFor(() => host.prompts.length >= 1, "original fallback was not delivered");
+await waitFor(() => host.prompts.length >= 1, "original fallback was not delivered", 1500);
 await waitFor(
   () => existsSync(process.env.FM_UNRETIRED_RETIRE_FILE),
   "unretired successor was not asked to retire before fallback",
@@ -5031,8 +5106,8 @@ if (!existsSync(process.env.FM_ARM_LOG)) {
   console.error("watch arm did not run");
   process.exit(1);
 }
-if (!readFileSync(process.env.FM_ARM_LOG, "utf8").includes("args=--restart")) {
-  console.error("watch arm was not asked to restart into an owned child");
+if (!readFileSync(process.env.FM_ARM_LOG, "utf8").includes("args=--arm")) {
+  console.error("watch arm was not asked to attach-or-start into an owned child");
   process.exit(1);
 }
 if (!existsSync(process.env.FM_GUARD_LOG)) {
@@ -5097,6 +5172,7 @@ test_pi_process_exit_cleanup_listener_lifecycle
 test_pi_process_exit_cleanup_stops_arm_child
 test_opencode_plugin_package_boundary_is_explicit_esm
 test_opencode_primary_watch_plugin_uses_effective_state_home
+test_opencode_v2_watch_arm_setup_arms_the_watcher
 test_opencode_primary_watch_plugin_sources_effective_config
 test_opencode_primary_watch_plugin_requires_session_lock
 test_opencode_watch_arm_coordinator_respects_primary_scope

@@ -62,6 +62,25 @@ function runGuard(root) {
   return runProcess(`${root}/bin/fm-turnend-guard.sh`, [], '{"stop_hook_active":false}');
 }
 
+// Statuses that mean the arm coordinator is already supervising: a verified
+// successor (`armed`/`wake`), a just-classified failure it will surface itself
+// (`failed`), a readiness deadline that may land inside the handoff
+// (`timeout`), or a succession another caller already owns
+// (`existing`/`retrying`/`starting`). Only the ownership boundaries fall
+// through to the guard, because a home this session does not own is not this
+// session's repair. `external` is deliberately NOT here: the arm only reports
+// it after finding a healthy watcher it did not bind wake delivery to, so the
+// guard must still refuse a blind turn end.
+const ARM_SUPERVISED_STATUSES = new Set([
+  "armed",
+  "wake",
+  "failed",
+  "timeout",
+  "existing",
+  "retrying",
+  "starting",
+]);
+
 // The watch-arm plugin registers one coordinator per location on a shared
 // Map (its module owns that registry); a location without one falls through
 // to the guard.
@@ -70,7 +89,7 @@ async function letWatchArmRun(sessionID, ctx) {
   const coordinator = registry instanceof Map ? registry.get(ctx.location.directory) : undefined;
   if (!coordinator?.ensureArmed) return false;
   const status = await coordinator.ensureArmed(sessionID, ctx);
-  return status === "armed" || status === "wake" || status === "failed";
+  return ARM_SUPERVISED_STATUSES.has(status);
 }
 
 export default {

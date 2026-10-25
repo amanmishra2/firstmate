@@ -412,6 +412,35 @@ EOF
   pass "fm-turnend-guard: healthy non-Claude harness paths ignore Claude episode contention"
 }
 
+# The watcher records its lock identity at startup and every later reader -
+# the guard, the arm, the drain - recomputes it from `ps`. Those two reads must
+# not depend on the READER's timezone: `ps -o lstart=` renders in local time, so
+# a background watcher, a hook in another TZ, or any process after a DST
+# transition used to see a live identity-matched watcher as down while its
+# beacon was seconds old (the false "WATCHER DOWN" banner and false turn-end
+# block). Pin the behaviour: an identity written under one TZ is matched by a
+# reader in another.
+test_hook_silent_with_identity_written_in_another_timezone() {
+  local dir pid identity out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-identity-tz")
+  : > "$dir/state/task1.meta"
+  sleep 60 &
+  pid=$!
+  identity=$(TZ=America/Chicago watcher_identity "$dir" "$pid") || {
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    fail "could not identify live watcher holder"
+  }
+  record_watcher_lock "$dir" "$pid" "$identity"
+  touch "$dir/state/.last-watcher-beat"
+  out=$(TZ=Asia/Tokyo run_hook "$dir" false); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$status" "a live identity-matched watcher with a fresh beacon must not block across a timezone difference: $out"
+  [ -z "$out" ] || fail "a timezone difference produced a false supervision alarm: $out"
+  pass "fm-turnend-guard: silent when the lock identity was written under another timezone"
+}
+
 test_hook_blocks_with_live_lock_and_stale_beacon() {
   local dir pid identity out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-live-lock-stale")
@@ -1049,6 +1078,159 @@ EOF
   expect_code 0 "$status" "OpenCode plugin must run the guard from the resolved checkout root"
   [ -z "$out" ] || fail "OpenCode plugin checkout-root test printed output: $out"
   pass ".opencode primary plugin: guard path resolves the checkout root from a nested directory"
+}
+
+test_opencode_v2_plugin_fires_on_execution_end() {
+  local plugin repo out status terminal
+  plugin="$ROOT/.opencode/plugins/fm-primary-turnend-guard.js"
+  # v2 publishes no session.idle: a turn ends with a terminal
+  # session.execution.* event, which must still run the guard.
+  for terminal in succeeded failed interrupted; do
+    repo="$TMP_ROOT/opencode-v2-plugin-$terminal"
+    git init -q "$repo"
+    mkdir -p "$repo/bin"
+    cat > "$repo/bin/fm-turnend-guard.sh" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+printf 'guard-fired\n' >&2
+exit 2
+EOF
+    chmod +x "$repo/bin/fm-turnend-guard.sh"
+    out=$(NODE_NO_WARNINGS=1 PLUGIN="$plugin" REPO="$repo" TERMINAL="$terminal" node 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const prompts = [];
+const envelope = (type) => ({ id: type, created: 0, type, data: { sessionID: "session-v2" } });
+const ctx = {
+  location: { directory: process.env.REPO },
+  session: { prompt: async (arg) => prompts.push(arg) },
+  event: {
+    subscribe: async function* () {
+      yield envelope("session.execution.started");
+      yield envelope(`session.execution.${process.env.TERMINAL}`);
+      // A live subscription only stops when the plugin is torn down; keep
+      // this stream open so its end is not reported as an unexpected stop.
+      await new Promise(() => {});
+    },
+  },
+};
+await mod.default.setup(ctx);
+for (let i = 0; i < 40 && prompts.length === 0; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+if (prompts.length !== 1) {
+  console.error(`expected one guard prompt, got ${prompts.length}`);
+  process.exit(1);
+}
+if (prompts[0].sessionID !== "session-v2" || !prompts[0].text.includes("guard-fired")) {
+  console.error(`unexpected guard prompt: ${JSON.stringify(prompts[0])}`);
+  process.exit(1);
+}
+EOF
+)
+    status=$?
+    expect_code 0 "$status" "OpenCode v2 plugin must run the guard on session.execution.$terminal: $out"
+  done
+  pass ".opencode primary plugin: v2 default export runs the guard when a turn's execution ends"
+}
+
+test_opencode_v2_plugin_reports_unexpected_subscription_stop() {
+  local plugin repo out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-turnend-guard.js"
+  repo="$TMP_ROOT/opencode-v2-subscription-stop"
+  git init -q "$repo"
+  mkdir -p "$repo/bin"
+  out=$(NODE_NO_WARNINGS=1 PLUGIN="$plugin" REPO="$repo" node 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+const reported = [];
+const originalError = console.error;
+console.error = (...args) => {
+  reported.push(args.join(" "));
+};
+const ctx = {
+  location: { directory: process.env.REPO },
+  session: { prompt: async () => {} },
+  event: {
+    subscribe: async function* () {
+      // The stream ends on its own while the plugin is still live: an
+      // unexpected stop that must be reported, not silently discarded.
+      yield { id: "evt_1", created: 0, type: "session.execution.started", data: {} };
+    },
+  },
+};
+await mod.default.setup(ctx);
+for (let i = 0; i < 40 && reported.length === 0; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 50));
+}
+console.error = originalError;
+if (reported.length === 0) {
+  console.error("v2 event subscription stop was not reported");
+  process.exit(1);
+}
+if (!reported[0].includes("fm-primary-turnend-guard") || !reported[0].includes("subscription")) {
+  console.error(`unexpected subscription-stop report: ${reported[0]}`);
+  process.exit(1);
+}
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode v2 plugin must report an unexpected event-subscription stop: $out"
+  [ -z "$out" ] || fail "OpenCode v2 subscription-stop test printed output: $out"
+  pass ".opencode primary plugin: unexpected v2 event-subscription stop is reported"
+}
+
+test_opencode_v2_plugin_denies_shell_tool_via_setup() {
+  local plugin repo out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-cd-check.js"
+  repo="$TMP_ROOT/opencode-v2-cd-check"
+  git init -q "$repo"
+  mkdir -p "$repo/bin"
+  cat > "$repo/bin/fm-cd-pretool-check.sh" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+printf 'cd-guard denied\n' >&2
+exit 2
+EOF
+  chmod +x "$repo/bin/fm-cd-pretool-check.sh"
+  out=$(NODE_NO_WARNINGS=1 PLUGIN="$plugin" REPO="$repo" node 2>&1 <<'EOF'
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+let hook;
+const ctx = {
+  location: { directory: process.env.REPO },
+  tool: {
+    hook: async (name, handler) => {
+      if (name !== "execute.before") throw new Error(`unexpected tool hook: ${name}`);
+      hook = handler;
+    },
+  },
+};
+await mod.default.setup(ctx);
+if (!hook) {
+  console.error("v2 setup did not install an execute.before hook");
+  process.exit(1);
+}
+let denied = null;
+try {
+  await hook({ tool: "shell", input: { command: "cd /tmp" } });
+} catch (error) {
+  denied = error.message;
+}
+if (!denied || !denied.includes("cd-guard denied")) {
+  console.error(`stray shell cd was not denied: ${denied}`);
+  process.exit(1);
+}
+await hook({ tool: "read", input: { filePath: "x" } });
+await hook({ tool: "shell", input: {} });
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "OpenCode v2 setup must deny a stray shell cd command: $out"
+  pass ".opencode primary plugin: v2 setup installs the shell tool-hook denial"
 }
 
 test_pi_extension_injects_once_per_logical_agent_run() {
@@ -2203,6 +2385,7 @@ test_hook_blocks_source_only_home
 test_hook_blocks_when_dead_lock_has_fresh_beacon
 test_hook_silent_with_live_lock_and_fresh_beacon
 test_hook_non_claude_health_ignores_claude_budget_contention
+test_hook_silent_with_identity_written_in_another_timezone
 test_hook_blocks_with_live_lock_and_stale_beacon
 test_hook_blocks_when_unhealthy_in_primary
 test_hook_blocks_from_fm_home_state

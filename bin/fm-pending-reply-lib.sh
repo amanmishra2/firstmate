@@ -1033,7 +1033,11 @@ fm_pending_reply_send_recovery() {  # <state-dir> <corr_id>
 fm_pending_reply_pid_identity() {  # <pid>
   local pid=$1 identity
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  identity=$(COLUMNS=10000 LC_ALL=C ps -p "$pid" -o lstart= -o command= 2>/dev/null) || return 1
+  # Same pinned width and locale as fm_pid_identity in bin/fm-wake-lib.sh, and
+  # the same pinned TZ=UTC: the recorded identity is re-read by later processes
+  # whose timezone or DST offset may differ from the writer's, which would
+  # otherwise reject a live sender.
+  identity=$(COLUMNS=10000 LC_ALL=C TZ=UTC ps -p "$pid" -o lstart= -o command= 2>/dev/null) || return 1
   [ -n "$identity" ] || return 1
   printf '%s' "$identity"
 }

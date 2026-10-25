@@ -67,6 +67,22 @@
 # mid-observation, that URL's records stay untouched and the poll moves to the
 # next URL that still has a full observation reserve; only a genuine forge
 # failure or head change records an error.
+# The forge CLI is resolved once from FM_GH_BIN, then PATH, then
+# FM_GH_SEARCH_DIRS (default the usual install locations), because the check runs
+# in a background watcher whose PATH can be a minimal non-login one while an
+# interactive shell finds the same CLI. A configured FM_GH_BIN that is not
+# executable falls through to those same sources rather than disabling every
+# read. An environment where the CLI truly cannot be resolved records `no gh CLI
+# available to this environment` verbatim on the affected records, once per
+# failure episode, instead of reporting a forge outage for contributions that
+# read fine by hand.
+# An observation is valid for every reviewDecision the forge can return
+# (APPROVED, CHANGES_REQUESTED, REVIEW_REQUIRED, DISMISSED, COMMENTED, PENDING,
+# or the empty string for comment-only review); pinning that field to a subset
+# made a readable PR permanently unavailable.
+# a pull or issue whose author account was deleted arrives with a null
+# `.user`, which is still a complete observation: its author cannot be a
+# maintainer signal, so an empty login is the evidence, not a read failure.
 # API failure leaves error evidence; an expired or absent observation is not
 # silence. FM_CONTRIBUTIONS_MAX_AGE (default 900 seconds) bounds freshness.
 # A URL whose last good observation is merged or closed is final: it is
@@ -122,6 +138,39 @@ case "$CHECK_TIMEOUT" in ''|*[!0-9]*|0) CHECK_TIMEOUT=30 ;; esac
 BUDGET_CAP=$((CHECK_TIMEOUT - 3))
 [ "$BUDGET_CAP" -ge 1 ] || BUDGET_CAP=1
 [ "$BUDGET" -le "$BUDGET_CAP" ] || BUDGET=$BUDGET_CAP
+# Resolve the forge CLI once, and not only through the ambient PATH. Firstmate's
+# check runs inside a background watcher, whose environment can be a minimal
+# non-login PATH (launchd, a GUI-spawned daemon, a tmux server started before the
+# user's profile) even though an interactive shell finds the same CLI fine. That
+# mismatch is what turned every owned PR into `observation unavailable` in a
+# working home. FM_GH_BIN wins, then PATH, then the usual install locations.
+resolve_gh() {
+  local candidate
+  # An explicit pin wins only when it actually works: a stale or misspelled
+  # FM_GH_BIN must not take every contribution read dark.
+  if [ -n "${FM_GH_BIN:-}" ] && [ -x "$FM_GH_BIN" ]; then
+    printf '%s' "$FM_GH_BIN"
+    return 0
+  fi
+  candidate=$(command -v gh 2>/dev/null || true)
+  [ -n "$candidate" ] && [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  local dir
+  local IFS=:
+  # FM_GH_SEARCH_DIRS owns the fallback list (default the usual install
+  # locations); an empty value searches none, which is how a fixture proves the
+  # genuinely-unresolvable behavior on a host that does have the CLI.
+  for dir in ${FM_GH_SEARCH_DIRS-/opt/homebrew/bin:/usr/local/bin:/usr/bin:${HOME:-/nonexistent}/.local/bin}; do
+    [ -n "$dir" ] || continue
+    candidate="$dir/gh"
+    [ -x "$candidate" ] && { printf '%s' "$candidate"; return 0; }
+  done
+  return 1
+}
+GH_BIN=$(resolve_gh || true)
+# The reason the last observation failed, when it was not a forge response at
+# all. A missing CLI is recorded as exactly that instead of being reported as a
+# forge outage.
+OBS_FAILURE=''
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-contributions.XXXXXX")
 LOCK_HELD=0
 cleanup() {
@@ -216,12 +265,21 @@ write_record() { # task record-json-file
 
 forge() {
   local remaining rc=0 forge_err=${FORGE_ERR:-$TMP/forge.err}
+  if [ -z "$GH_BIN" ]; then
+    # Neither a forge failure nor a budget refusal: this environment cannot
+    # reach the forge CLI at all. Record that cause verbatim; the episode still
+    # wakes once, and a later poll with a resolved CLI clears it.
+    OBS_FAILURE="no gh CLI available to this environment"
+    printf 'gh CLI not found on PATH or in the standard install locations\n' > "$forge_err"
+    : > "$TMP/forge-unavailable"
+    return 127
+  fi
   remaining=$((DEADLINE - $(date +%s)))
   # The budget, not the forge, refused this read.
   [ "$remaining" -gt 0 ] || { BUDGET_EXHAUSTED=1; : > "$TMP/budget-exhausted"; return 1; }
   [ "$remaining" -le 5 ] || remaining=5
   fm_run_timed "$remaining" env GH_PROMPT_DISABLED=1 GH_NO_UPDATE_NOTIFIER=1 \
-    gh "$@" 2> "$forge_err" || rc=$?
+    "$GH_BIN" "$@" 2> "$forge_err" || rc=$?
   # A kill at the read bound or the deadline is budget refusal too; only the
   # forge's own nonzero exit is unavailable evidence.
   if [ "$rc" -eq 124 ]; then
@@ -251,8 +309,12 @@ observe() { # canonical GitHub URL -> normalized JSON
   case "$kind" in pull) endpoint="repos/$part/pulls/$number" ;; issues) endpoint="repos/$part/issues/$number" ;; *) return 1 ;; esac
   rm -f -- "$TMP/budget-exhausted" "$TMP/forge-unavailable"
   BUDGET_EXHAUSTED=0
+  OBS_FAILURE=''
   forge api "$endpoint" > "$TMP/core.json" || return 1
-  jq -e '(.state == "open" or .state == "closed") and (.user.login | type == "string")' "$TMP/core.json" >/dev/null || return 1
+  # A deleted author account arrives as a null `.user`. The contribution is
+  # still readable, and that author can never be a maintainer signal, so an
+  # empty login is the evidence rather than a read failure.
+  jq -e '(.state == "open" or .state == "closed") and ((.user.login? // "") | type == "string")' "$TMP/core.json" >/dev/null || return 1
   if [ "$kind" = pull ]; then
     head=$(jq -er '.head.sha | select(test("^[a-fA-F0-9]{40}$"))' "$TMP/core.json") || return 1
     FORGE_ERR="$TMP/comments.err" forge api "repos/$part/issues/$number/comments?per_page=100" --paginate --slurp > "$TMP/comments.json" &
@@ -276,6 +338,7 @@ observe() { # canonical GitHub URL -> normalized JSON
       --slurpfile reviews "$TMP/reviews.json" --slurpfile inline "$TMP/inline.json" --slurpfile after "$TMP/after.json" --slurpfile checks "$TMP/checks.json" \
       --slurpfile statuses "$TMP/statuses.json" --slurpfile repo "$TMP/repo.json" '
       $core[0] as $c
+      | ($c.user.login // "") as $author
       | ($reviews[0] | add // []) as $reviews
       | {head:$c.head.sha,state:(if $c.merged_at != null then "merged" else $c.state end),
           draft:$c.draft,mergeable:(if $c.mergeable == true then "mergeable" elif $c.mergeable == false then "conflicting" else "unknown" end),
@@ -287,7 +350,7 @@ observe() { # canonical GitHub URL -> normalized JSON
               status:(if .state == "pending" then "in_progress" else "completed" end),
               conclusion:(if .state == "pending" then null else .state end)} ]),
           events:((($comments[0] | add // [] | map(. + {_signal:"comment"})) + ($reviews | map(. + {_signal:"review"})) + ($inline[0] | add // [] | map(. + {_signal:"review-comment"})))
-            | map(select(.user.login != $c.user.login and (.author_association | IN("OWNER","MEMBER","COLLABORATOR")))
+            | map(select(.user.login != $author and (.author_association | IN("OWNER","MEMBER","COLLABORATOR")))
               | {token:((._signal + ":") + (.id|tostring) + ":" + (.updated_at // .submitted_at // "") + ":" + (.state // "")),
                  type:._signal,source:.html_url,head:.commit_id,
                  author:.user.login,body:(.body // "" | .[:500])}))}' > "$TMP/observation.json" || return 1
@@ -300,10 +363,10 @@ observe() { # canonical GitHub URL -> normalized JSON
     wait_forges "$comments_pid" "$events_pid" || return 1
     jq -e 'type == "array" and all(.[]; type == "array")' "$TMP/comments.json" >/dev/null || return 1
     jq -n --slurpfile timeline "$TMP/issue-events.json" --arg label "$label" --slurpfile core "$TMP/core.json" --slurpfile comments "$TMP/comments.json" '
-      $core[0] as $c | {state:$c.state,head:null,
+      $core[0] as $c | ($c.user.login // "") as $author | {state:$c.state,head:null,
         ready:any($c.labels[]; (.name | ascii_downcase) == ($label | ascii_downcase)),
         checks:[],reviews:[],events:($comments[0] | add // []
-          | map(select(.user.login != $c.user.login and (.author_association | IN("OWNER","MEMBER","COLLABORATOR")))
+          | map(select(.user.login != $author and (.author_association | IN("OWNER","MEMBER","COLLABORATOR")))
             | {token:("comment:" + (.id|tostring) + ":" + (.updated_at // "")),type:"comment",source:.html_url,
                head:null,author:.user.login,body:(.body // "" | .[:500])})
           + [$timeline[0][] | .[] | select(.event == "labeled" and (.label.name | ascii_downcase) == ($label | ascii_downcase))
@@ -421,7 +484,7 @@ poll() {
             seen:($events | map(.token)),
             pending:(($old.pending // []) + [$events[] | select(.token as $t | ($old.seen // [] | index($t)) == null)] | unique_by(.token))}' > "$TMP/row.json"
       else
-        error='forge observation unavailable or changed during read'
+        error=${OBS_FAILURE:-'forge observation unavailable or changed during read'}
         jq --arg now "$NOW" --arg error "$error" '.checked_at=$now | .error=$error' "$old" > "$TMP/row.json"
       fi
       write_record "$task" "$TMP/row.json"
