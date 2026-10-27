@@ -18,7 +18,7 @@
 # charters still use a single `{TASK}` charter fill. Firstmate may adjust other
 # sections when the task genuinely deviates (e.g. working an existing external
 # PR instead of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--forge <none|gerrit|forgejo> [--shape squash]] [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--branch-prefix <prefix>] [--base-branch <branch>] [--plan-ref <path>] [--forge <none|gerrit|forgejo> [--shape squash]] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--base-branch <branch>] [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #   --scout writes the scout contract instead: the deliverable is a report at
@@ -71,6 +71,14 @@
 # Definition of done then targets that branch with its pull request.
 # bin/fm-dod-lib.sh's fm_base_branch_valid owns which deliveries accept one.
 # Refused on --secondmate.
+# --plan-ref <path> names the implementation plan this ship implements, and
+# writes a "Plan: <path>" line under `# Setup`. bin/fm-spawn.sh reads that line,
+# records it as plan_ref= in the task record (which the prevention ledger reads
+# back), and - when the default-off plan gate is enabled - refuses the dispatch
+# unless bin/fm-plan-lint.py accepts the plan with --require-ready. Omit it and
+# the line reads "Plan: none", which the enabled gate refuses and the disabled
+# gate records as no reference. Refused on --scout: a scout produces knowledge
+# and implements no plan. docs/plan-lifecycle.md owns the handoff.
 # --forge names the project's forge, defaults to none, and is orthogonal to --mode
 # exactly as the registry's `forge=` token is. It is the captain's confirmed
 # registry binding, read from data/projects.md at intake and passed here; this
@@ -203,6 +211,8 @@ BRANCH_PREFIX=fm/
 BRANCH_PREFIX_SET=0
 BASE_BRANCH=
 BASE_BRANCH_SET=0
+PLAN_REF=
+PLAN_REF_SET=0
 FORGE=none
 FORGE_SET=0
 SHAPE=
@@ -218,6 +228,7 @@ for a in "$@"; do
       mode) MODE=$a; MODE_SET=1 ;;
       branch-prefix) BRANCH_PREFIX=$a; BRANCH_PREFIX_SET=1 ;;
       base-branch) BASE_BRANCH=$a; BASE_BRANCH_SET=1 ;;
+      plan-ref) PLAN_REF=$a; PLAN_REF_SET=1 ;;
       forge) FORGE=$a; FORGE_SET=1 ;;
       shape) SHAPE=$a; SHAPE_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
@@ -236,6 +247,8 @@ for a in "$@"; do
     --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=}; BRANCH_PREFIX_SET=1 ;;
     --base-branch) want_value="base-branch" ;;
     --base-branch=*) BASE_BRANCH=${a#--base-branch=}; BASE_BRANCH_SET=1 ;;
+    --plan-ref) want_value="plan-ref" ;;
+    --plan-ref=*) PLAN_REF=${a#--plan-ref=}; PLAN_REF_SET=1 ;;
     --forge) want_value=forge ;;
     --forge=*) FORGE=${a#--forge=}; FORGE_SET=1 ;;
     --shape) want_value=shape ;;
@@ -273,6 +286,19 @@ fi
 if [ "$KIND" != ship ] && [ "$BRANCH_PREFIX_SET" -eq 1 ]; then
   echo "error: --branch-prefix applies only to ship briefs; a scout makes no branch and a secondmate charter is not a delivery contract" >&2
   exit 1
+fi
+
+# A plan reference is a ship contract: it is what the dispatch gate lints and
+# what the prevention ledger reads back to reconcile a run with its plan.
+if [ "$KIND" != ship ] && [ "$PLAN_REF_SET" -eq 1 ]; then
+  echo "error: --plan-ref applies only to ship briefs; a scout produces knowledge and a secondmate charter implements no plan" >&2
+  exit 1
+fi
+if [ "$PLAN_REF_SET" -eq 1 ]; then
+  case "$PLAN_REF" in
+    *$'\n'*) echo "error: --plan-ref must be one line" >&2; exit 1 ;;
+    none) echo "error: --plan-ref must name the plan file, not 'none'; omit the flag to record no plan" >&2; exit 1 ;;
+  esac
 fi
 case "$BRANCH_PREFIX" in
   *' '*) echo "error: --branch-prefix must not contain a space (got '$BRANCH_PREFIX')" >&2; exit 1 ;;
@@ -610,6 +636,10 @@ else
   SETUP_BASE="You are in a disposable git worktree of $REPO, at a detached HEAD on a clean default branch."
 fi
 
+if [ "$KIND" = ship ]; then
+  SETUP_PLAN="Plan: ${PLAN_REF:-none}"
+fi
+
 if [ "$KIND" = scout ]; then
 if "$SCRIPT_DIR/fm-bootstrap.sh" lavish-compatible >/dev/null 2>&1; then
   LAVISH_LINE='If your deliverable is a visual artifact the captain will review and iterate on, use the lavish-axi rule: arm your board with bin/fm-procevent-lavish.sh arm <artifact.html> --for <task-id>; never run lavish-axi poll yourself. Re-arm with the reply after each nonterminal round to acknowledge it, route the board feedback through your steering inbox, write needs-decision [key=board-review] with the live board URL when the captain owes a decision, and stop at session_ended or an empty End without re-arming - acknowledge that final round with bin/fm-procevent.sh handled <source-id> <sequence> to conclude and retire your board.'
@@ -696,6 +726,7 @@ $HERDR_SECTION
 
 # Setup
 $SETUP_BASE
+$SETUP_PLAN
 
 **Verify isolation before anything else.** Run \`pwd -P\` and \`git rev-parse --show-toplevel\`; both must resolve to the disposable task worktree you were launched in, such as a treehouse pool path or an Orca-managed worktree, not the primary checkout firstmate operates from.
 The path check is authoritative: \`git rev-parse --git-dir\` and \`git rev-parse --git-common-dir\` can help inspect the repo, but they do not prove you are outside the primary checkout.

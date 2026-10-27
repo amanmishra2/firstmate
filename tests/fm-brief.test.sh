@@ -1557,6 +1557,41 @@ test_pr_based_dod_requires_non_draft
 test_ask_user_escalation_format
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
+test_plan_ref_is_rendered_once_and_bounded() {
+  local home brief out rc
+  home="$TMP_ROOT/plan-ref-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-plan-ref-b1 some-proj --mode direct-PR --plan-ref data/brief-plan-ref-b1/PLAN.md >/dev/null 2>&1 \
+    || fail "--plan-ref should scaffold a ship brief"
+  brief="$home/data/brief-plan-ref-b1/brief.md"
+  assert_grep 'Plan: data/brief-plan-ref-b1/PLAN.md' "$brief" \
+    "the brief must record the plan reference on its own Setup line"
+  [ "$(grep -c '^Plan: ' "$brief")" -eq 1 ] \
+    || fail "the brief must carry exactly one Plan: line, got: $(grep -n '^Plan: ' "$brief")"
+
+  # Omitting the flag is explicit, not silent: the line reads none, which the
+  # enabled dispatch gate refuses and the disabled one records as no reference.
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-plan-ref-b2 some-proj --mode direct-PR >/dev/null 2>&1 \
+    || fail "a ship brief without --plan-ref should still scaffold"
+  assert_grep 'Plan: none' "$home/data/brief-plan-ref-b2/brief.md" \
+    "an omitted --plan-ref must render as Plan: none"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-plan-ref-b3 some-proj --scout --plan-ref data/x/PLAN.md 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "a scout must refuse --plan-ref"
+  printf '%s\n' "$out" | grep -F 'applies only to ship briefs' >/dev/null \
+    || fail "the scout refusal must say --plan-ref is ship-only: $out"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-plan-ref-b4 some-proj --mode direct-PR --plan-ref none 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || fail "--plan-ref none must be refused; omitting the flag is how you record no plan"
+  printf '%s\n' "$out" | grep -F "must name the plan file" >/dev/null \
+    || fail "the none refusal must explain the omission: $out"
+
+  pass "fm-brief.sh records the plan reference once, renders none when omitted, and refuses it where no plan applies"
+}
+
 test_herdr_lab_contract_quotes_foreign_firstmate_path
 test_herdr_lab_omission_is_loud_for_ship_and_scout
 test_documented_global_replace_leaves_the_herdr_gate_intact
@@ -1580,3 +1615,4 @@ test_branch_prefix_is_refused_where_it_does_not_apply
 test_branch_prefix_value_is_validated
 test_branch_prefix_command_is_shell_safe
 test_crewmate_scaffolds_forbid_pool_administration
+test_plan_ref_is_rendered_once_and_bounded

@@ -38,7 +38,11 @@
 # its value against the registry; bin/fm-project-mode.sh's header owns the
 # binding and bin/fm-dod-lib.sh owns what it changes for the worker, including
 # the refusal of a forge on local-only.
-# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>]
+# --plan-ref names the implementation plan the promoted ship implements and
+# writes one `Plan: <path>` line into the promoted brief, so an enabled
+# config/plan-gate (bin/fm-plan-gate.sh) can lint the same dispatch a fresh
+# bin/fm-brief.sh --plan-ref ship would carry. Omitted records `Plan: none`.
+# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--branch-prefix <prefix>] [--plan-ref <path>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -70,6 +74,7 @@ BRANCH_PREFIX=fm/
 MODE_SET=0
 YOLO_SET=0
 FORGE=none
+PLAN_REF=
 POS=()
 want_value=
 for a in "$@"; do
@@ -81,6 +86,7 @@ for a in "$@"; do
       mode) MODE=$a; MODE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
       branch-prefix) BRANCH_PREFIX=$a ;;
+      plan-ref) PLAN_REF=$a ;;
     esac
     want_value=
     continue
@@ -92,11 +98,19 @@ for a in "$@"; do
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
     --branch-prefix) want_value="branch-prefix" ;;
     --branch-prefix=*) BRANCH_PREFIX=${a#--branch-prefix=} ;;
+    --plan-ref) want_value="plan-ref" ;;
+    --plan-ref=*) PLAN_REF=${a#--plan-ref=} ;;
     *) POS+=("$a") ;;
   esac
 done
 [ -z "$want_value" ] || { echo "error: --$want_value requires a value" >&2; exit 1; }
 [ "${#POS[@]}" -ge 1 ] || { echo "usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off>" >&2; exit 1; }
+if [ -n "$PLAN_REF" ]; then
+  case "$PLAN_REF" in
+    *$'\n'*) echo "error: --plan-ref must be one line" >&2; exit 1 ;;
+    none) echo "error: --plan-ref must name the plan file, not 'none'; omit the flag to record no plan" >&2; exit 1 ;;
+  esac
+fi
 [ "$MODE_SET" -eq 1 ] || {
   echo "error: promotion requires --mode <no-mistakes|direct-PR|local-only>; decide it now from the scout's findings and the project's registered posture in data/projects.md" >&2
   exit 1
@@ -262,6 +276,7 @@ Keep project edits inside this worktree; keep proof and scratch output outside i
 Outside the worktree, write only that task material and the status and steering-inbox records authorized below.
 Leave the worktree clean before reporting done.
 The mode-specific Definition of done below is the current delivery contract.
+Plan: ${PLAN_REF:-none}
 
 # Current ship safety rule
 EOF
@@ -330,6 +345,7 @@ grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^branch=' "$META" > "$TMP"
   echo "mode=$MODE"
   echo "yolo=$YOLO"
   echo "branch=$BRANCH"
+  [ -z "$PLAN_REF" ] || echo "plan_ref=$PLAN_REF"
 } >> "$TMP"
 if ! fm_backlog_atomic_transition publish "$TMP" "$META" "task record" "$STATE"; then
   rm -f -- "$TMP"

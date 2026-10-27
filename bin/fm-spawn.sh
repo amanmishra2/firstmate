@@ -22,6 +22,13 @@
 #   ship or scout spawn also refuses leftover `{TASK}` / `{FIRSTMATE_SPEC}`
 #   placeholders, an empty Task, an incomplete pair of Task subsections, or a
 #   `## Captain's intent` line opening with a Captain label or address.
+#   A ship spawn hands the brief's `Plan: <path>` line to bin/fm-plan-gate.sh,
+#   records the resolved path as plan_ref= in state/<id>.meta for the prevention
+#   ledger to read back, and - when config/plan-gate or FM_PLAN_GATE enables the
+#   default-off plan gate - refuses the launch with the linter's exact rule id,
+#   file, line, and message when that plan is not dispatchable. It runs before
+#   any endpoint or worktree exists, so a refused plan costs nothing.
+#   docs/plan-lifecycle.md owns the handoff and bin/fm-plan-lint.py the rules.
 #   Every ship or scout spawn renders `launch-brief.md`; for a no-mistakes ship
 #   it also carries the current `--intent` contract and the extracted captain
 #   intent. A legacy mixed Task is accepted there only under bin/fm-dod-lib.sh's
@@ -729,6 +736,9 @@ YOLO_SET=0
 BRANCH_PREFIX_SET=0
 BASE_BRANCH=
 BASE_BRANCH_SET=0
+# Resolved by bin/fm-plan-gate.sh from the ship brief's `Plan:` line, and empty
+# for a scout, a secondmate, or a ship whose brief records no plan.
+PLAN_REF=
 TRACEPARENT_SET=0
 RELAUNCH=0
 # Opt-in only: exact-resume presentation-order lock waits instead of refusing.
@@ -3368,6 +3378,15 @@ if [ "$KIND" = ship ]; then
   if [ "$BRANCH" != "$STANDING_BRANCH$ID" ]; then
     echo "notice: $ID ships branch=$BRANCH while $PROJ_NAME registers the ship-branch prefix '$STANDING_BRANCH' (branch $STANDING_BRANCH$ID) - the task's branch and PR will read as firstmate-authored; proceed only on a current explicit captain instruction or an intake judgment you can state" >&2
   fi
+  # Plan definition-of-ready handoff (docs/plan-lifecycle.md). The brief's
+  # `Plan:` line names the plan this ship implements. bin/fm-plan-gate.sh
+  # resolves it, this spawn records it as plan_ref= in the task record so the
+  # prevention ledger can reconcile the run with its plan, and - when
+  # config/plan-gate or FM_PLAN_GATE enables the gate - it refuses the launch
+  # unless bin/fm-plan-lint.py accepts the plan with --require-ready. The gate
+  # is default off, so an existing home changes nothing until it opts in. The
+  # refusal arrives here, before any endpoint or worktree exists.
+  PLAN_REF=$("$FM_ROOT/bin/fm-plan-gate.sh" --brief "$BRIEF" --task "$ID") || exit 1
 fi
 
 BRIEF_DIR_REAL=$(cd "$(dirname "$BRIEF")" && pwd -P)
@@ -5248,7 +5267,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch model effort account account_provider busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo branch tasktmp base_branch plan_ref model effort account account_provider busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -5266,6 +5285,9 @@ preserve_relaunch_meta() {
   [ -z "${BRANCH:-}" ] || echo "branch=$BRANCH"
   echo "tasktmp=$TASK_TMP"
   [ -z "$BASE_BRANCH" ] || echo "base_branch=$BASE_BRANCH"
+  # Recorded so the prevention ledger can reconcile a run with the plan it
+  # implemented (docs/plan-lifecycle.md); absent leaves the record byte-identical.
+  [ -z "${PLAN_REF:-}" ] || echo "plan_ref=$PLAN_REF"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
   # The worker account pin, only when this home declares one, so an unpinned

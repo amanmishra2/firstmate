@@ -1,0 +1,178 @@
+# Front matter schema for an implementation plan.
+#
+# `bin/fm-plan-lint.py` is the only reader. It parses this subset of YAML:
+# nested block mappings and sequences, inline `{k: v}` maps, inline `[a, b]`
+# lists, and plain or quoted scalars on one line. Tabs are rejected, and an
+# unparseable block stops the lint instead of being skipped. This file is
+# written in that same subset, so parsing it is a self-check.
+#
+# Every field below is read by at least one rule. A field nothing checks is
+# deleted rather than documented. Rule ids are owned by the linter's RULES table.
+#
+# Copy the block in templates/implementation-plan/PLAN_TEMPLATE.md, replace every
+# value, then run: bin/fm-plan-lint.py path/to/plan.md
+
+schema: fm-plan.v1
+
+fields:
+  plan_id:
+    type: string
+    required: true
+    rules: [PL010]
+    description: A kebab-case slug, unique within the plan set.
+    example: serving-path-s0-intake-keys
+
+  title:
+    type: string
+    required: true
+    rules: [PL010]
+    example: "Serving path S0: intake, normalization, and content keys"
+
+  task:
+    type: string
+    required: true
+    rules: [PL010]
+    description: The backlog task id this plan is dispatched under. A plan without a task is a design note, not a plan.
+    example: job-search-serving-path-s0
+
+  project:
+    type: string
+    required: true
+    rules: [PL004]
+    description: Contract-registry key. PL004 checks every name in `contracts` against this project's section of data/plan-contracts.yaml.
+    example: job-search
+
+  repo:
+    type: string
+    required: true
+    rules: [PL007]
+    description: Path to the project checkout, absolute or relative to the firstmate home. PL007 resolves every `file:line` reference and every declared-new path against it.
+    example: projects/job-search
+
+  milestone:
+    type: string
+    required: true
+    rules: [PL010]
+    example: M1
+
+  slice:
+    type: string
+    required: true
+    rules: [PL010]
+    description: The slice this plan implements. One slice per plan; a plan that names two fails PL006 through the change-list size.
+    example: S0
+
+  owner:
+    type: string
+    required: true
+    rules: [PL012]
+    description: The named owner who updates this plan at each handoff (docs/plan-lifecycle.md). A role name is fine; a team name is not.
+    example: serving
+
+  status:
+    type: enum
+    required: true
+    values: [draft, ready, in-flight, landed, superseded]
+    rules: [PL010, PL011, PL012]
+    description: "draft: design only, gate refuses. ready: open decisions resolved, gate accepts. in-flight: a worker is running it, gate accepts a relaunch. landed: PR merged, so PL012 needs a dated changelog entry with `pr: <url>`. superseded: replaced, so name the replacement in the changelog."
+    example: draft
+
+  plan_kind:
+    type: enum
+    required: false
+    default: slice
+    values: [slice, subtask, migration, evaluation]
+    rules: [PL010]
+    description: Selects the authoring template under templates/implementation-plan/.
+
+  depends_on:
+    type: list of plan_id
+    required: true
+    rules: [PL009, PL006]
+    description: Plans that must land first. Each must name a plan_id in this set (PL009), and a plan with effort S may not depend on anything (PL006).
+    example: []
+
+  effort:
+    type: enum
+    required: true
+    values: [S, M, L, XL]
+    rules: [PL006]
+    description: "S: up to 3 exact-change rows and no dependency. M: up to 8 rows. L: up to 20 rows. XL: unbounded, and the plan must be split before dispatch."
+    example: M
+
+  parallel_safe:
+    type: boolean
+    required: true
+    rules: [PL006]
+    description: True when this plan can be dispatched alongside any other. False needs `serial_reason` or a `depends_on` entry.
+    example: true
+
+  serial_reason:
+    type: string
+    required: false
+    rules: [PL006]
+    description: Why this plan must not run concurrently, when parallel_safe is false.
+
+  contracts:
+    type: mapping of four lists
+    required: true
+    rules: [PL004]
+    description: Every canonical name this plan introduces or consumes. A `planned` registry entry is allowed (that is how a new table is declared); a `deprecated` entry is an error. Names are the shared vocabulary between plans, so one plan spelling a name differently from another is the drift this field stops.
+    keys:
+      tables: list of registry table names
+      fields: list of registry field names, as table.column
+      flags: list of registry flag names
+      commands: list of registry command names
+    example:
+      tables: [decisions, labels]
+      fields: [decisions.p_fit, decisions.model_rank]
+      flags: []
+      commands: [scripts/decision/check_integrity.py]
+
+  finding_ids:
+    type: list of "<run_id>:<finding_id>"
+    required: true unless evidence_note is set
+    rules: [PL005]
+    description: The prevention-ledger findings this plan answers. PL005 resolves each against data/prevention-ledger/runs.jsonl; the run must exist, the finding must be in it, and the run's project must match `project`. Without a ledger the check is advisory and says so.
+    example: ["01M59G7X5YW26CAQ0VCJJ948CM:duplicate-legacy-projection-repair"]
+
+  evidence_note:
+    type: string
+    required: false
+    rules: [PL005]
+    description: Why no prior finding applies, for a genuinely new surface. At least 20 characters, and it states the check that was done.
+
+  acceptance_commands:
+    type: list of mappings
+    required: true
+    rules: [PL003, PL011]
+    description: The runnable acceptance criteria. Each entry needs a stable id, a command that starts with a real program, and an observable expected result. The same command must appear in the body's `## Acceptance criteria` bullet for that id, which is what makes plan-versus-body drift visible. The linter never runs these.
+    item_fields:
+      id: "A1, A2, ... unique within the plan"
+      command: a shell command
+      expect: "an observable: exit 0, 5 passed, 0 mismatches"
+      timeout_s: optional integer
+    example:
+      - id: A1
+        command: pytest tests/decision/test_keys.py -q
+        expect: exit 0 and 5 passed
+
+  rollback:
+    type: string
+    required: true
+    rules: [PL008]
+    description: One sentence naming what is restored and how it is verified. "revert" alone fails.
+    example: Revert migration 030, restore jobs.content_hash from the pre-migration snapshot, and re-run check_integrity to confirm 0 mismatches.
+
+  declared_new_paths:
+    type: list of repo-relative paths
+    required: false
+    rules: [PL007]
+    description: Files this plan creates. PL007 accepts a referenced path that does not exist yet only when it is listed here, so a new file is distinguishable from a stale reference.
+    example: [src/job_search/decision/keys.py]
+
+  changelog:
+    type: body section
+    required: true
+    rules: [PL012]
+    description: Dated entries in the body, format `- YYYY-MM-DD <summary> (pr: <url>)`. A landed plan must carry at least one entry with a PR URL.
