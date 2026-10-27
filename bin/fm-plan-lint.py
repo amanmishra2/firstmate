@@ -538,8 +538,23 @@ def split_sections(body, body_start_line):
     """
     sections = []
     current = Section("", body_start_line)
+    fence = None
     for offset, line in enumerate(body.splitlines()):
         line_no = body_start_line + offset
+        stripped = line.lstrip()
+        if stripped.startswith(("```", "~~~")):
+            marker = stripped[:3]
+            if fence is None:
+                fence = marker
+            elif marker == fence:
+                fence = None
+            current.lines.append(line)
+            continue
+        if fence is not None:
+            # A heading inside a fenced block is example text, not a section:
+            # plans routinely show markdown and YAML samples.
+            current.lines.append(line)
+            continue
         match = SECTION_RE.match(line)
         if match and len(match.group(1)) == 2:
             sections.append(current)

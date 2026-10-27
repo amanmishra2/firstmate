@@ -160,6 +160,17 @@ class RuleTests(FixtureCase):
         self.plan.write_text((FIXTURES / "good-slice.md").read_text(), encoding="utf-8")
         self.assert_clean()
 
+    def test_fenced_heading_is_not_a_section(self):
+        # A fenced example that contains `## Observability` must not satisfy the
+        # required section, and must not hide the real sections after it.
+        self.replace(
+            "## Observability\n\n- Counter `fixture.write_failures`; alert on any non-zero value at review time.\n",
+            "```markdown\n## Observability\n\n(example only)\n```\n",
+        )
+        self.assert_rule("PL001", mention="Observability")
+        self.plan.write_text((FIXTURES / "good-slice.md").read_text(), encoding="utf-8")
+        self.assert_clean()
+
     def test_pl002_placeholder(self):
         self.replace("Objective: persist the computed probability on every decided row.", "Objective: TBD")
         self.assert_rule("PL002", mention="TBD")
