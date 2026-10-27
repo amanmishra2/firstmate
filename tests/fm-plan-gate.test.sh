@@ -277,15 +277,14 @@ EOF
   pass "fm-promote records the plan reference in the promoted brief and task record"
 }
 
-fm_test_run \
-  test_status_default_off \
-  test_gate_refuses_incomplete_plan \
-  test_gate_refuses_missing_section_and_draft \
-  test_gate_accepts_complete_plan \
-  test_gate_off_records_reference_without_linting \
-  test_gate_refuses_brief_without_plan \
-  test_gate_refuses_missing_plan_file \
-  test_spawn_calls_the_gate_before_creating_anything \
-  test_spawn_refuses_incomplete_plan \
-  test_spawn_accepts_complete_plan_and_records_it \
-  test_promote_records_the_plan_reference
+test_status_default_off
+test_gate_refuses_incomplete_plan
+test_gate_refuses_missing_section_and_draft
+test_gate_accepts_complete_plan
+test_gate_off_records_reference_without_linting
+test_gate_refuses_brief_without_plan
+test_gate_refuses_missing_plan_file
+test_spawn_calls_the_gate_before_creating_anything
+test_spawn_refuses_incomplete_plan
+test_spawn_accepts_complete_plan_and_records_it
+test_promote_records_the_plan_reference

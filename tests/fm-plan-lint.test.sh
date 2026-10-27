@@ -83,4 +83,6 @@ PY
   pass "the linter imports only the standard library"
 }
 
-fm_test_run test_python_suite test_cli_contract test_stdlib_only
+test_python_suite
+test_cli_contract
+test_stdlib_only
