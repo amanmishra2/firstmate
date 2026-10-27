@@ -4300,8 +4300,13 @@ EOF
   pass "OpenCode watcher plugin sources the effective config"
 }
 
-test_opencode_primary_watch_plugin_requires_session_lock() {
-  local plugin repo home log out status
+# The plugin may not arm against a home whose session lock a DIFFERENT live
+# verified harness owns, and it must arm against a home whose recorded owner is
+# dead: a restarted home leaves exactly that stale pid behind, and reading it as
+# "another session owns this home" is what kept OpenCode supervision dark for
+# nine hours after a plugin reload.
+test_opencode_primary_watch_plugin_refuses_a_live_foreign_lock() {
+  local plugin repo home log out status foreign_bin foreign_pid
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-lock-root"
   home="$TMP_ROOT/opencode-lock-home"
@@ -4310,6 +4315,12 @@ test_opencode_primary_watch_plugin_requires_session_lock() {
   git init -q "$repo"
   : > "$repo/AGENTS.md"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
+  # The plugin asks the shared libraries whether the lock is owned by another
+  # live session; a checkout-shaped fixture carries those owners.
+  cp "$ROOT/bin/fm-wake-lib.sh" "$repo/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-path-lib.sh" "$repo/bin/fm-path-lib.sh"
+  cp "$ROOT/bin/fm-session-lock-lib.sh" "$repo/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-cursor-lib.sh" "$repo/bin/fm-cursor-lib.sh"
   : > "$home/state/task.meta"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
@@ -4317,14 +4328,22 @@ printf 'arm\n' >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
+  # A live verified harness outside the server's own ancestry: another session
+  # really does own this home.
+  foreign_bin="$TMP_ROOT/opencode-lock-bin"
+  mkdir -p "$foreign_bin"
+  ln -sf /bin/sleep "$foreign_bin/opencode"
+  "$foreign_bin/opencode" 60 &
+  foreign_pid=$!
+  out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" \
+    FM_HOME="$home" FM_ARM_LOG="$log" FOREIGN_PID="$foreign_pid" node 2>&1 <<'EOF'
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const { loadV2Plugin } = await import(pathToFileURL(process.env.HOST).href);
 const host = await loadV2Plugin(process.env.PLUGIN, { directory: process.env.WORKTREE });
 const event = { type: "session.execution.succeeded", data: { sessionID: "session-test" } };
-writeFileSync(`${process.env.FM_HOME}/state/.lock`, "999999\n");
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.env.FOREIGN_PID}\n`);
 await host.emit(event);
 // The hook starts its attempt without awaiting it, and the plugin answers a
 // second attempt from the one already in flight. Join that attempt through the
@@ -4334,11 +4353,11 @@ await host.emit(event);
 const coordinator = globalThis.__firstmateOpenCodeWatchArm.get(process.env.WORKTREE);
 const refusal = await coordinator.ensureArmed("session-test", host.ctx);
 if (refusal !== "read-only") {
-  console.error(`expected a read-only refusal without the session lock, got ${refusal}`);
+  console.error(`expected a read-only refusal under a live foreign lock, got ${refusal}`);
   process.exit(1);
 }
 if (existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm ran without owning the session lock");
+  console.error("watch arm ran under a live foreign session lock");
   process.exit(1);
 }
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
@@ -4353,7 +4372,9 @@ if (!existsSync(process.env.FM_ARM_LOG)) {
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must arm only when this session owns the fleet lock"
+  kill "$foreign_pid" 2>/dev/null || true
+  wait "$foreign_pid" 2>/dev/null || true
+  expect_code 0 "$status" "OpenCode watch plugin must refuse a live foreign lock and arm once the lock is free"
   [ -z "$out" ] || fail "OpenCode session-lock test printed output: $out"
   pass "OpenCode watcher plugin requires session lock ownership"
 }
@@ -4955,7 +4976,7 @@ EOF
 }
 
 test_opencode_actionable_close_rechecks_session_lock() {
-  local plugin repo home log release out status
+  local plugin repo home log release out status foreign_bin foreign_pid
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
   repo="$TMP_ROOT/opencode-close-lock-root"
   home="$TMP_ROOT/opencode-close-lock-home"
@@ -4965,7 +4986,16 @@ test_opencode_actionable_close_rechecks_session_lock() {
   git init -q "$repo"
   : > "$repo/AGENTS.md"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$repo/bin/fm-supervision-lib.sh"
+  cp "$ROOT/bin/fm-wake-lib.sh" "$repo/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-path-lib.sh" "$repo/bin/fm-path-lib.sh"
+  cp "$ROOT/bin/fm-session-lock-lib.sh" "$repo/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-cursor-lib.sh" "$repo/bin/fm-cursor-lib.sh"
   : > "$home/state/task.meta"
+  # The lock can only change hands to another verified harness session, so the
+  # successor owner this case hands it to is harness-shaped like the real one.
+  foreign_bin="$TMP_ROOT/opencode-close-lock-bin"
+  mkdir -p "$foreign_bin"
+  ln -sf /bin/sleep "$foreign_bin/opencode"
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
 printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
@@ -4973,7 +5003,7 @@ while [ ! -e "$FM_RELEASE_FILE" ]; do sleep 0.02; done
 printf 'signal: lock handoff\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RELEASE_FILE="$release" node 2>&1 <<'EOF'
+  out=$(PLUGIN="$plugin" HOST="$ROOT/tests/assets/opencode-v2-host.mjs" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_RELEASE_FILE="$release" FOREIGN_HARNESS="$foreign_bin/opencode" node 2>&1 <<'EOF'
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
@@ -4986,7 +5016,7 @@ const eventPromise = host.emit({ type: "session.execution.succeeded", data: { se
 for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
-const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+const other = spawn(process.env.FOREIGN_HARNESS, ["60"], { stdio: "ignore" });
 try {
   writeFileSync(lock, `${other.pid}\n`);
   writeFileSync(process.env.FM_RELEASE_FILE, "release\n");
@@ -5174,7 +5204,7 @@ test_opencode_plugin_package_boundary_is_explicit_esm
 test_opencode_primary_watch_plugin_uses_effective_state_home
 test_opencode_v2_watch_arm_setup_arms_the_watcher
 test_opencode_primary_watch_plugin_sources_effective_config
-test_opencode_primary_watch_plugin_requires_session_lock
+test_opencode_primary_watch_plugin_refuses_a_live_foreign_lock
 test_opencode_watch_arm_coordinator_respects_primary_scope
 test_opencode_primary_watch_plugin_rearms_after_wake
 test_opencode_primary_watch_plugin_runs_the_supervision_host

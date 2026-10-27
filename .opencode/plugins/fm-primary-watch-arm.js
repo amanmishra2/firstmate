@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -74,6 +75,23 @@ const SUCCESSION_CLAIM_TTL_MS = Math.max(60000, ARM_READY_TIMEOUT_MS * 2);
 // turn-end guard's coordinator from another module copy) treat another
 // instance's live claim as its own and release it mid-succession.
 const SUCCESSION_OWNER = randomUUID();
+// The durable arm channel for this home. `child` only exists in one JS module
+// instance, so a reloaded module (a second loader pass, a cache-busted import,
+// or the turn-end guard's coordinator reaching another copy) could not tell
+// that this home already has a live arm attached to its watcher. Starting a
+// second one does not start a second watcher - `--arm` attaches - but it does
+// open a second wake-delivery channel, so one wake would be delivered twice.
+// The slot records the arm child this server started; an arm left by an earlier
+// server is deliberately not live, because its wake pipe died with that server.
+const ARM_SLOT = ".opencode-arm";
+// Every declined arm or skip writes one line here, because the failure this
+// file just fixed was a SILENT one: a stale session lock read as "another
+// session owns this home" and supervision stayed down for nine hours with no
+// trace anywhere in the home. A bounded file keeps that trace without growing
+// without limit across a long-lived home.
+const DIAGNOSTIC_LOG = ".watch-arm-plugin.log";
+const DIAGNOSTIC_LOG_MAX_BYTES = 256 * 1024;
+const DIAGNOSTIC_LOG_KEEP_LINES = 400;
 
 let child = null;
 let armStatus = "idle";
@@ -91,6 +109,9 @@ let armClose = new WeakMap();
 let armReadiness = new WeakMap();
 let armRecovery = new WeakMap();
 let armHostMode = new WeakMap();
+// Last emitted decision, so a state that persists across many turn ends writes
+// one line instead of one per turn while still logging every change.
+let lastDecisionKey = "";
 
 function positiveInteger(name, fallback) {
   const value = Number(process.env[name]);
@@ -151,12 +172,73 @@ function resolvePath(anchor) {
   }
 }
 
+// `own` is the root this plugin COPY was loaded for, before any environment
+// override. It is what makes a copy loaded from a worker worktree provably
+// foreign: its own root can never be the home it would otherwise inherit from
+// FM_HOME/FM_ROOT_OVERRIDE, so it can never arm against that home's state.
 function effectivePaths(root) {
   const fmRoot = process.env.FM_ROOT_OVERRIDE || root;
   const fmHome = process.env.FM_HOME || process.env.FM_ROOT_OVERRIDE || fmRoot;
   const state = process.env.FM_STATE_OVERRIDE || `${fmHome}/state`;
   const config = process.env.FM_CONFIG_OVERRIDE || `${fmHome}/config`;
-  return { root: fmRoot, home: fmHome, state, config };
+  return { root: fmRoot, home: fmHome, state, config, own: root };
+}
+
+// True only when this copy's own checkout IS the code root it is about to
+// supervise. `FM_HOME` naming a different root stays supported and is checked
+// separately: a home whose state lives outside the checkout is a documented
+// layout, and the plugin still passes its own root to the arm. What is refused
+// is an inherited `FM_ROOT_OVERRIDE`/`FM_HOME` that names a DIFFERENT checkout
+// than the one this file was loaded from, which is exactly the worker-worktree
+// copy the OpenCode log showed loading into the primary home's server. Both
+// sides are resolved because git reports physical paths while a session may
+// report a symlinked one (macOS /var versus /private/var).
+function ownsLoadedRoot(paths) {
+  if (!paths.own) return false;
+  return resolvePath(paths.root) === resolvePath(paths.own);
+}
+
+// The state directory this copy may write a diagnostic into. A foreign copy
+// never writes into the home it merely inherited from the environment; it only
+// uses its own checkout's existing state directory, and otherwise falls back to
+// the server log.
+function diagnosticStateDir(paths) {
+  if (!ownsLoadedRoot(paths)) {
+    const ownState = `${resolvePath(paths.own || paths.root)}/state`;
+    return existsSync(ownState) ? ownState : "";
+  }
+  return paths.state;
+}
+
+function noteDecision(paths, decision, reason, detail = "") {
+  const key = `${decision}|${reason}|${detail}`;
+  if (key === lastDecisionKey) return;
+  lastDecisionKey = key;
+  const line = `${new Date().toISOString()} decision=${decision} reason=${reason}${detail ? ` ${detail}` : ""} own=${paths.own || ""} root=${paths.root} home=${paths.home}`;
+  const dir = diagnosticStateDir(paths);
+  const file = dir ? `${dir}/${DIAGNOSTIC_LOG}` : "";
+  if (!file || !existsSync(dir)) {
+    console.warn(`firstmate watch-arm: ${line}`);
+    return;
+  }
+  try {
+    appendFileSync(file, `${line}\n`);
+    if (statSync(file).size > DIAGNOSTIC_LOG_MAX_BYTES) {
+      const lines = readFileSync(file, "utf8").split("\n").filter(Boolean);
+      writeFileSync(file, `${lines.slice(-DIAGNOSTIC_LOG_KEEP_LINES).join("\n")}\n`);
+    }
+  } catch {
+    console.warn(`firstmate watch-arm: ${line}`);
+  }
+}
+
+// Every decision lands in the home's own bounded log. This is deliberately the
+// only channel for routine skips and declines: the OpenCode plugin streams stay
+// quiet, and a home that genuinely cannot write its log falls back to the
+// server's console so the trace is never lost entirely.
+function declineArm(paths, status, reason, detail = "") {
+  noteDecision(paths, "skip", reason, `status=${status}${detail ? ` ${detail}` : ""}`);
+  return { status, armChild: null };
 }
 
 async function isPrimaryRoot(root, home) {
@@ -198,23 +280,83 @@ function supervisionNeeded(paths) {
   return result.status === 0;
 }
 
-async function sessionOwnsLock(paths) {
-  let lockPid = "";
-  try {
-    lockPid = readFileSync(`${paths.state}/.lock`, "utf8").trim();
-  } catch {
-    return false;
+// What this home looks like right before an arm is allowed:
+//   watcher  live|none|unknown  a live, identity-matched watcher process holds
+//                               this home's singleton with a fresh beacon
+//   lock     free|stale|held|unreadable|unknown|absent  the session-lock state
+//   foreign  true when a LIVE verified harness session outside this server's
+//            ancestry owns the lock
+//
+// Both answers come from the shared libraries that own them
+// (fm_watcher_healthy and fm_session_lock_foreign_owner_live), never from a
+// local reimplementation. The previous version answered the ownership question
+// with a bare pid-ancestry walk and treated "I cannot find the recorded pid in
+// my ancestry" as "another session owns this home". After a restart the old
+// session's pid is simply DEAD, so that answer was permanently false and the
+// plugin declined every arm as read-only with nothing written anywhere - the
+// nine-hour blind window. Only a positively proven live foreign owner may
+// refuse now; a stale, missing, or unreadable lock does not. A checkout without
+// the shared libraries reads both answers as unknown and still arms, because a
+// degraded query must not be the reason supervision stays dark.
+function supervisionFacts(paths) {
+  const script = [
+    'wake=0; lock=0',
+    'if [ -f "$1/bin/fm-wake-lib.sh" ]; then . "$1/bin/fm-wake-lib.sh" && wake=1; fi',
+    'if [ -f "$1/bin/fm-session-lock-lib.sh" ]; then . "$1/bin/fm-session-lock-lib.sh" && lock=1; fi',
+    'grace=${FM_GUARD_GRACE:-300}',
+    'if [ "$wake" = 1 ]; then',
+    '  if fm_watcher_healthy "$2" "$1/bin/fm-watch.sh" "$grace" "$3" >/dev/null 2>&1; then',
+    '    printf "watcher=live:%s\\n" "$FM_WATCHER_HEALTHY_PID"',
+    '  else',
+    '    echo "watcher=none"',
+    '  fi',
+    'else',
+    '  echo "watcher=unknown"',
+    'fi',
+    'if [ "$lock" = 1 ]; then',
+    '  fm_session_lock_inspect "$2"',
+    '  printf "lock=%s:%s\\n" "$FM_LOCK_INSPECT_STATE" "$FM_LOCK_INSPECT_PID"',
+    // Two signals, either one sufficient. foreign_owner_live is the shared
+    // owner of the ancestry-aware verdict. A live verified harness holding the
+    // lock that this session does not own is the same refusal even when the
+    // ancestry cannot be resolved at all, which is the one case that library
+    // returns "not foreign" for; a shared OpenCode server whose spawner is not
+    // the harness process is exactly such a server.
+    '  if fm_session_lock_owned_by_self "$2"; then',
+    '    echo "foreign=no"',
+    '  elif fm_session_lock_foreign_owner_live "$2"; then',
+    '    printf "foreign=yes:%s\\n" "$FM_SESSION_LOCK_FOREIGN_OWNER_PID"',
+    '  elif fm_harness_pid_alive "$FM_LOCK_INSPECT_PID"; then',
+    '    printf "foreign=yes:%s\\n" "$FM_LOCK_INSPECT_PID"',
+    '  else',
+    '    echo "foreign=no"',
+    '  fi',
+    'else',
+    '  echo "lock=unknown:"',
+    '  echo "foreign=no"',
+    'fi',
+  ].join("\n");
+  const result = spawnSync("bash", ["-c", script, "fm-primary-watch-arm", paths.root, paths.state, paths.home], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      FM_ROOT_OVERRIDE: paths.root,
+      FM_HOME: paths.home,
+      FM_STATE_OVERRIDE: paths.state,
+    },
+  });
+  if (result.status !== 0) {
+    return { ok: false, watcher: "unknown", watcherPid: "", lock: "unknown", lockPid: "", foreign: false, foreignPid: "" };
   }
-  if (!/^[0-9]+$/.test(lockPid) || lockPid === "1") return false;
-  let pid = String(process.pid);
-  for (let i = 0; i < 8; i += 1) {
-    if (pid === lockPid) return true;
-    const result = await runProcess("ps", ["-o", "ppid=", "-p", pid]);
-    if (result.code !== 0) return false;
-    pid = result.stdout.trim();
-    if (!pid || pid === "1") return false;
+  const fields = new Map();
+  for (const line of String(result.stdout || "").split(/\r?\n/)) {
+    const index = line.indexOf("=");
+    if (index > 0) fields.set(line.slice(0, index), line.slice(index + 1));
   }
-  return false;
+  const [watcher = "unknown", watcherPid = ""] = String(fields.get("watcher") ?? "unknown").split(":");
+  const [lock = "unknown", lockPid = ""] = String(fields.get("lock") ?? "unknown").split(":");
+  const [foreign = "no", foreignPid = ""] = String(fields.get("foreign") ?? "no").split(":");
+  return { ok: true, watcher, watcherPid, lock, lockPid, foreign: foreign === "yes", foreignPid };
 }
 
 // An away record, never quiet mode's (bin/fm-afk-contract.sh mode owns that
@@ -487,6 +629,74 @@ export function releaseSuccession(paths) {
   } catch {}
 }
 
+// The arm-slot record, read defensively: a missing, malformed, or foreign file
+// must never be evidence of a live channel.
+function armSlotFields(paths) {
+  try {
+    const raw = readFileSync(`${paths.state}/${ARM_SLOT}`, "utf8");
+    const fields = new Map();
+    for (const line of raw.split(/\r?\n/)) {
+      const index = line.indexOf("=");
+      if (index > 0) fields.set(line.slice(0, index), line.slice(index + 1));
+    }
+    return fields;
+  } catch {
+    return null;
+  }
+}
+
+// A live arm channel: an armed child whose own process is still alive AND whose
+// owner is still there to read its wake pipe. A slot left by a server that has
+// exited is deliberately not live - that arm's stdout pipe died with its parent,
+// so no wake it prints can reach a session, and continuity must take over
+// instead of trusting a channel nobody reads. A slot owned by a DIFFERENT live
+// server is live: two servers for one home must not both open a wake channel to
+// the same watcher, because that delivers each wake twice.
+function liveArmSlot(paths) {
+  const fields = armSlotFields(paths);
+  if (!fields) return null;
+  const pid = Number(fields.get("pid"));
+  if (!Number.isInteger(pid) || pid <= 0) return null;
+  const server = Number(fields.get("server"));
+  if (!Number.isInteger(server) || server <= 0) return null;
+  try {
+    process.kill(pid, 0);
+    process.kill(server, 0);
+  } catch {
+    return null;
+  }
+  return { pid, server, watcher: fields.get("watcher") || "" };
+}
+
+function claimArmSlot(paths, pid) {
+  if (!pid) return;
+  const path = `${paths.state}/${ARM_SLOT}`;
+  const temp = `${path}.${process.pid}`;
+  try {
+    mkdirSync(paths.state, { recursive: true });
+    writeFileSync(temp, `owner=${SUCCESSION_OWNER}\nserver=${process.pid}\npid=${pid}\nat=${Date.now()}\n`);
+    renameSync(temp, path);
+  } catch {
+    try {
+      unlinkSync(temp);
+    } catch {}
+  }
+}
+
+// Release only the slot THIS arm child owns: a successor spawned by the same
+// instance claims the slot before its predecessor's close event lands, and that
+// close must not delete the live successor's channel.
+function releaseArmSlot(paths, pid) {
+  if (!pid) return;
+  const fields = armSlotFields(paths);
+  if (!fields) return;
+  if (fields.get("owner") !== SUCCESSION_OWNER) return;
+  if (fields.get("pid") !== String(pid)) return;
+  try {
+    unlinkSync(`${paths.state}/${ARM_SLOT}`);
+  } catch {}
+}
+
 function waitForRetry(attempt) {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, retryDelay(attempt));
@@ -594,8 +804,13 @@ async function restoreAfterActionableClose(paths, sessionID, client, predecessor
 
 async function scheduleRetry(paths, sessionID, client, reason, predecessorArmPid, force = false) {
   if (child || retryTimer) return;
-  if (!(await sessionOwnsLock(paths))) {
+  // Same ownership question the arm gate asks, and the same fix: only a
+  // positively proven live foreign session may suppress this home's continuity
+  // retry. A stale lock after a restart must not end restoration as read-only.
+  const facts = supervisionFacts(paths);
+  if (facts.foreign) {
     setArmStatus("failed");
+    noteDecision(paths, "skip", "lock-owned", `status=read-only lockPid=${facts.foreignPid}`);
     surfaceFailure(paths, client, sessionID, `watcher: FAILED - OpenCode cannot restore continuity because this session no longer owns the lock\n${reason}`);
     return;
   }
@@ -649,6 +864,7 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "", force = fals
   });
   armHostMode.set(armChild, hostMode);
   child = armChild;
+  claimArmSlot(paths, armChild.pid);
   let stdout = "";
   let stderr = "";
   let settled = false;
@@ -690,6 +906,7 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "", force = fals
     settled = true;
     resolveClosed();
     releaseChild();
+    releaseArmSlot(paths, armChild.pid);
     const classification = classifyArmClose(paths, hostMode, stdout, stderr, code, signal);
     settleReadiness(classification.kind === "actionable" ? "wake" : "failed");
     const predecessor = String(armChild.pid ?? "");
@@ -758,6 +975,7 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "", force = fals
     settled = true;
     resolveClosed();
     releaseChild();
+    releaseArmSlot(paths, armChild.pid);
     settleReadiness("failed");
     if (restorationInFlight) {
       setArmStatus("failed");
@@ -838,23 +1056,65 @@ async function sessionBelongsToHome(paths, client, sessionID) {
 
 
 async function beginArm(paths, sessionID, client, predecessorArmPid, force = false) {
-  if (!sessionID) return { status: "skipped", armChild: null };
-  if (!(await sessionBelongsToHome(paths, client, sessionID))) {
-    return { status: "foreign-session", armChild: null };
+  if (!sessionID) return declineArm(paths, "skipped", "no-session");
+  // A copy loaded from another root is inert before it reads anything of the
+  // home it inherited: no lock check, no watcher check, no arm, no claim.
+  if (!ownsLoadedRoot(paths)) {
+    return declineArm(paths, "not-primary", "foreign-root", `loadedRoot=${paths.own}`);
   }
-  if (!(await isPrimaryRoot(paths.root, paths.home))) return { status: "not-primary", armChild: null };
-  if (!(await sessionOwnsLock(paths))) return { status: "read-only", armChild: null };
-  if (child) return { status: "existing", armChild: child };
-  if (retryTimer) return { status: "retrying", armChild: null };
-  if (!shouldArm(paths)) return { status: "not-needed", armChild: null };
+  if (!(await sessionBelongsToHome(paths, client, sessionID))) {
+    return declineArm(paths, "foreign-session", "foreign-session", `session=${sessionID}`);
+  }
+  if (!(await isPrimaryRoot(paths.root, paths.home))) return declineArm(paths, "not-primary", "not-primary-root");
+  const facts = supervisionFacts(paths);
+  if (facts.foreign) {
+    // The one refusal that still means "another live session owns this home".
+    // It is a positive proof (a live verified harness outside this server's
+    // ancestry), never the absence of a match against a dead pid.
+    return declineArm(paths, "read-only", "lock-owned", `lockPid=${facts.foreignPid} watcher=${facts.watcher}`);
+  }
+  if (!facts.ok) {
+    // A home whose shared predicate cannot run cannot be reasoned about. This
+    // is diagnosable instead of silent, and it still fails closed.
+    return declineArm(paths, "read-only", "lock-unknown", `lock=${facts.lock}`);
+  }
+  if (child) {
+    noteDecision(paths, "skip", "arm-running", `status=existing watcher=${facts.watcher}`);
+    return { status: "existing", armChild: child };
+  }
+  if (retryTimer) {
+    noteDecision(paths, "skip", "retry-scheduled", `status=retrying watcher=${facts.watcher}`);
+    return { status: "retrying", armChild: null };
+  }
+  // Another module instance in this same server already holds the wake channel
+  // for this home (a reloaded plugin, a second loader pass, the guard's copy).
+  // Attach to it by leaving it alone: spawning a second `--arm` would not start
+  // a second watcher, but it would deliver every wake twice.
+  const slot = liveArmSlot(paths);
+  if (slot) {
+    noteDecision(paths, "skip", "arm-slot-live", `status=existing armPid=${slot.pid} watcher=${facts.watcher}`);
+    return { status: "existing", armChild: null };
+  }
+  if (!shouldArm(paths)) {
+    return declineArm(paths, "not-needed", "supervision-not-needed", `watcher=${facts.watcher} lock=${facts.lock}`);
+  }
   // One succession at a time, whoever asks (see claimSuccession). A live claim
   // means another caller is already starting the successor for this close, so
   // this caller joins rather than starting a duplicate arm.
-  if (claimIsLive(paths)) return { status: "retrying", armChild: null };
+  if (claimIsLive(paths)) {
+    noteDecision(paths, "skip", "succession-claimed", `status=retrying watcher=${facts.watcher}`);
+    return { status: "retrying", armChild: null };
+  }
   if (!claimSuccession(paths, predecessorArmPid)) {
     // An unwritable claim must not take supervision dark: continuity outranks
     // duplicate suppression, and a duplicate arm only attaches to the cycle.
   }
+  noteDecision(
+    paths,
+    "arm",
+    facts.watcher === "live" ? "watcher-live" : "no-watcher",
+    `watcher=${facts.watcher}${facts.watcherPid ? `:${facts.watcherPid}` : ""} lock=${facts.lock}`,
+  );
   return { status: "spawned", armChild: spawnArm(paths, sessionID, client, predecessorArmPid, force) };
 }
 
@@ -884,6 +1144,14 @@ async function ensureArm(paths, sessionID, client, predecessorArmPid = "", inclu
   // exists only to cover the window between an empty slot and this point. A
   // claim left behind would suppress the next succession for its whole TTL.
   releaseSuccession(paths);
+  // A spawn that never confirms is the other silent failure this file had: the
+  // caller saw a bare status and nothing recorded that a successor was
+  // attempted. `external` is a failure here for the same reason the guard
+  // refuses it - the arm found a healthy watcher it could not bind wake
+  // delivery to.
+  if (readiness !== "armed" && readiness !== "wake") {
+    noteDecision(paths, "arm-failed", readiness || "idle", `armPid=${armChild.pid ?? ""}`);
+  }
   return armAttempt(readiness, armChild, includeArmChild);
 }
 
@@ -905,8 +1173,10 @@ function coordinatorRegistry() {
 // succession regression suite drive the real claim, location gate, readiness
 // and delivery code with a fake client instead of a source-text copy.
 export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {
-  const root = worktree ? resolvePath(worktree) : await resolveRoot(directory);
-  const paths = effectivePaths(root);
+  // The root this copy was LOADED for. `effectivePaths` records it as `own` so
+  // the arm gate can prove the copy belongs to the home it would supervise.
+  const loadedRoot = worktree ? resolvePath(worktree) : await resolveRoot(directory);
+  const paths = effectivePaths(loadedRoot);
   return {
     // The turnend-guard looks this up by location in coordinatorRegistry().
     coordinator: {
@@ -924,7 +1194,9 @@ export const FmPrimaryWatchArm = async ({ client, directory, worktree }) => {
       // The location gate lives in beginArm (sessionBelongsToHome): it admits
       // this home and its subdirectories and refuses a project clone or any
       // other nested repository the shared OpenCode server serves.
-      void ensureArm(paths, sessionID, client);
+      void ensureArm(paths, sessionID, client).catch((error) => {
+        noteDecision(paths, "arm-failed", "unexpected-error", `detail=${String(error?.message ?? error)}`);
+      });
     },
   };
 };

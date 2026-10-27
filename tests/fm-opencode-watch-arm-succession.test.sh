@@ -56,6 +56,18 @@ const client = {
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const hooks = await mod.FmPrimaryWatchArm({ client, worktree: lab });
 
+// A second, cache-busted import is what a plugin reload actually produces: a
+// fresh module instance whose module-level `child` and claim owner are not the
+// ones the first instance wrote. The location is unchanged.
+const instances = [{ mod, hooks }];
+async function reloadHooks() {
+  const suffix = `?reload=${instances.length}`;
+  const next = await import(pathToFileURL(process.env.PLUGIN).href + suffix);
+  const nextHooks = await next.FmPrimaryWatchArm({ client, worktree: lab });
+  instances.push({ mod: next, hooks: nextHooks });
+  return { mod: next, hooks: nextHooks };
+}
+
 async function waitFor(predicate, ms = 8000) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
@@ -65,7 +77,7 @@ async function waitFor(predicate, ms = 8000) {
   return false;
 }
 
-export { client, hooks, mod, promptRef, session, waitFor };
+export { client, hooks, mod, promptRef, reloadHooks, session, waitFor };
 JS
 
 # Sets HOLDER_PID to a live process. A command substitution here would make the
@@ -91,6 +103,13 @@ make_lab() { # <name> -> lab root with a primary-shaped checkout and a fake arm
   cp "$ROOT/bin/fm-operational-input.sh" "$lab/bin/fm-operational-input.sh"
   cp "$ROOT/bin/fm-supervision-engine-lib.sh" "$lab/bin/fm-supervision-engine-lib.sh"
   cp "$ROOT/bin/fm-afk-contract.sh" "$lab/bin/fm-afk-contract.sh"
+  # The plugin asks the shared libraries whether a live watcher already holds
+  # this home and whether another live session owns its lock; a home-shaped lab
+  # carries the same owners rather than a test-local reimplementation of them.
+  cp "$ROOT/bin/fm-wake-lib.sh" "$lab/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-path-lib.sh" "$lab/bin/fm-path-lib.sh"
+  cp "$ROOT/bin/fm-session-lock-lib.sh" "$lab/bin/fm-session-lock-lib.sh"
+  cp "$ROOT/bin/fm-cursor-lib.sh" "$lab/bin/fm-cursor-lib.sh"
   # One behaviour per invocation, so a test can make the first arm close with a
   # wake and every successor settle as a live watcher.
   : > "$lab/modes"
@@ -110,6 +129,10 @@ case "$mode" in
   wake)
     printf 'check: heartbeat\n'
     exit 0
+    ;;
+  attached)
+    printf 'watcher: attached pid=%s (beacon 2s)\n' "${LAB_WATCHER_PID:-4242}"
+    sleep 30
     ;;
   stalled)
     printf 'watcher: FAILED - attached watcher pid=424242 stalled (beacon 9000s at or past hard bound 900s)\n'
@@ -151,6 +174,18 @@ run_driver() { # <lab> <driver-file> [extra env assignment...] -> stdout; return
   status=$?
   printf '%s' "$out"
   return "$status"
+}
+
+arm_call_count() { # <lab>
+  if [ -f "$1/arm-calls" ]; then wc -l < "$1/arm-calls" | tr -d ' '; else printf 0; fi
+}
+
+recorded_arm_pid() { # <lab> <1-based index>
+  sed -n "${2}p" "$1/arm-pids" 2>/dev/null
+}
+
+plugin_log() { # <lab>
+  cat "$1/state/.watch-arm-plugin.log" 2>/dev/null || true
 }
 
 test_successor_does_not_restart_a_live_watcher() {
@@ -408,6 +443,237 @@ JS
   pass 'an arm that confirms inside its own budget is never reported as a failed starter'
 }
 
+# --- restart / reload / cross-root contract -------------------------------
+#
+# The live failure these cases pin: after the OpenCode server reloaded its
+# plugins the home's session lock still named the pid of the session that had
+# died, the plugin read "the recorded pid is not in my ancestry" as "another
+# session owns this home", and every turn end declined to arm with nothing
+# written anywhere. Supervision stayed down for nine hours until a manual probe
+# and the turn-end guard finally saw it.
+
+test_idle_without_watcher_starts_exactly_one_arm() {
+  local lab out driver
+  lab=$(make_lab idle-first-cycle)
+  # The state a restarted server actually leaves: the home's session lock still
+  # names the session that died. This pid can never exist, so the lock reads
+  # stale and no live session owns this home.
+  printf '%s\n' 2147483647 > "$lab/state/.lock"
+  printf 'started\n' > "$lab/modes"
+  driver="$TMP_ROOT/idle-first-cycle.mjs"
+  # No prior arm, no prior actionable close, no plugin instance that ever
+  # armed: this is the state a restarted server leaves behind.
+  cat > "$driver" <<'JS'
+import { readFileSync } from "node:fs";
+import { hooks } from "./harness.mjs";
+
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_test" } } });
+await new Promise((resolve) => setTimeout(resolve, 500));
+// Assert from inside the running server: once this process exits, the arm it
+// started is an orphan the test shell can no longer reason about.
+const pids = readFileSync(process.env.LAB + "/arm-pids", "utf8").trim().split("\n");
+const armPid = Number(pids[pids.length - 1]);
+try {
+  process.kill(armPid, 0);
+} catch {
+  console.error("the recorded successor is not live: " + armPid);
+  process.exit(1);
+}
+const slot = readFileSync(process.env.LAB + "/state/.opencode-arm", "utf8");
+if (!slot.includes(`pid=${armPid}\n`)) {
+  console.error("the live successor was not recorded in the arm channel: " + slot);
+  process.exit(1);
+}
+process.exit(0);
+JS
+  out=$(run_driver "$lab" "$driver") || { kill_recorded_arms "$lab"; fail "first-cycle driver failed: $out"; }
+  arm_pid=$(recorded_arm_pid "$lab" 1)
+  [ "$(arm_call_count "$lab")" = 1 ] || { kill_recorded_arms "$lab"; fail "a first idle started $(arm_call_count "$lab") arms instead of one: $(cat "$lab/arm-calls" 2>/dev/null)"; }
+  grep -qx -- '--arm' "$lab/arm-calls" || { kill_recorded_arms "$lab"; fail "the first cycle did not use attach-or-start: $(cat "$lab/arm-calls")"; }
+  [ -n "$arm_pid" ] || fail 'the first cycle recorded no arm pid'
+  grep -q 'decision=arm reason=no-watcher' "$lab/state/.watch-arm-plugin.log" \
+    || { kill_recorded_arms "$lab"; fail "the first arm recorded no reason: $(plugin_log "$lab")"; }
+  grep -q 'lock=stale' "$lab/state/.watch-arm-plugin.log" \
+    || { kill_recorded_arms "$lab"; fail "the arm did not record the stale lock it recovered from: $(plugin_log "$lab")"; }
+  kill_recorded_arms "$lab"
+  pass 'a stale lock after a restart still starts exactly one attach-or-start successor and records it live'
+}
+
+test_reload_reuses_the_live_arm_channel() {
+  local lab out driver count
+  lab=$(make_lab reload-attach)
+  # The arm reports that it ATTACHED to a watcher that was already live; the
+  # reloaded instance must not open a second wake channel to that same cycle.
+  printf 'attached\nattached\n' > "$lab/modes"
+  printf '%s\n' 424242 > "$lab/state/.watch.lock-pid" # only documentation; the fake arm renders its own line
+  driver="$TMP_ROOT/reload-attach.mjs"
+  cat > "$driver" <<'JS'
+import { client, hooks, reloadHooks, waitFor } from "./harness.mjs";
+
+const first = await hooks.coordinator.ensureArmed("ses_test", client);
+if (first !== "armed") {
+  console.error("the first instance did not confirm an attached arm: " + first);
+  process.exit(1);
+}
+const reloaded = await reloadHooks();
+const second = await reloaded.hooks.coordinator.ensureArmed("ses_test", client);
+if (second !== "existing") {
+  console.error("a reloaded instance did not join the live arm channel: " + second);
+  process.exit(1);
+}
+// Also drive the reloaded instance's event path: it must stay a no-op.
+await reloaded.hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_test" } } });
+await waitFor(async () => false, 300);
+process.exit(0);
+JS
+  out=$(run_driver "$lab" "$driver") || { kill_recorded_arms "$lab"; fail "reload driver failed: $out"; }
+  count=$(arm_call_count "$lab")
+  kill_recorded_arms "$lab"
+  [ "$count" = 1 ] || fail "a plugin reload opened $count wake channels instead of attaching to the live one: $(cat "$lab/arm-calls")"
+  pass 'a plugin reload attaches to the live watcher cycle instead of duplicating the arm channel'
+}
+
+test_foreign_root_instance_is_inert() {
+  local lab foreign primary_lab
+  lab=$(make_lab foreign-root-primary)
+  primary_lab=$lab
+  foreign="$TMP_ROOT/foreign-root-worktree"
+  mkdir -p "$foreign/bin" "$foreign/state"
+  git init -q "$foreign"
+  git -C "$foreign" commit -q --allow-empty -m init
+  : > "$foreign/AGENTS.md"
+  cp "$ROOT/bin/fm-supervision-lib.sh" "$foreign/bin/fm-supervision-lib.sh"
+  cat > "$TMP_ROOT/foreign-root.mjs" <<'JS'
+import { pathToFileURL } from "node:url";
+
+const foreign = process.env.FOREIGN;
+const primary = process.env.PRIMARY;
+const client = {
+  // The strongest adversarial input: the event even names a session inside the
+  // primary home, so every gate but the foreign-root one would admit it.
+  session: {
+    get: async ({ sessionID }) => ({ data: { location: { directory: primary }, id: sessionID } }),
+    prompt: async () => {},
+  },
+};
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+// This copy resolves its OWN root to the worker worktree, while the inherited
+// environment names the primary home: exactly the copy the OpenCode log showed
+// loading from a task worktree into the primary's server.
+const hooks = await mod.FmPrimaryWatchArm({ client, worktree: foreign });
+const status = await hooks.coordinator.ensureArmed("ses_test", client);
+if (status !== "not-primary") {
+  console.error("a foreign-root copy did not decline: " + status);
+  process.exit(1);
+}
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "ses_test" } } });
+process.exit(0);
+JS
+  out=$(run_driver "$primary_lab" "$TMP_ROOT/foreign-root.mjs" \
+    FOREIGN="$foreign" PRIMARY="$primary_lab" \
+    FM_ROOT_OVERRIDE="$primary_lab" FM_HOME="$primary_lab" FM_CONFIG_OVERRIDE="$primary_lab/config") \
+    || fail "foreign-root driver failed: $out"
+  [ ! -s "$primary_lab/arm-calls" ] \
+    || fail "a foreign-root copy armed against the primary home: $(cat "$primary_lab/arm-calls")"
+  [ ! -e "$primary_lab/state/.watch-succession" ] \
+    || fail 'a foreign-root copy claimed the primary home succession'
+  [ ! -e "$primary_lab/state/.opencode-arm" ] \
+    || fail 'a foreign-root copy claimed the primary home arm channel'
+  [ ! -e "$primary_lab/state/.watch-arm-plugin.log" ] \
+    || fail "a foreign-root copy wrote into the primary home's state: $(plugin_log "$primary_lab")"
+  grep -q 'reason=foreign-root' "$foreign/state/.watch-arm-plugin.log" \
+    || fail "a foreign-root decline left no typed reason in its own checkout: $(plugin_log "$foreign")"
+  pass 'a plugin copy loaded from a foreign root performs no lock, watcher, or arm operation against the primary home'
+}
+
+test_killed_arm_is_replaced_on_the_next_idle() {
+  local lab out driver count
+  lab=$(make_lab killed-arm)
+  printf 'started\nstarted\n' > "$lab/modes"
+  driver="$TMP_ROOT/killed-arm.mjs"
+  cat > "$driver" <<'JS'
+import { client, hooks, reloadHooks, waitFor } from "./harness.mjs";
+
+const first = await hooks.coordinator.ensureArmed("ses_test", client);
+if (first !== "armed") {
+  console.error("the first arm never became ready: " + first);
+  process.exit(1);
+}
+// Simulate the watcher cycle dying: its arm child is gone while the plugin
+// instance that started it is no longer the one handling the next idle.
+const pids = await import("node:fs").then((fs) =>
+  fs.readFileSync(process.env.LAB + "/arm-pids", "utf8").trim().split("\n"),
+);
+const victim = Number(pids[pids.length - 1]);
+process.kill(victim, "SIGTERM");
+if (!(await waitFor(async () => {
+  try {
+    process.kill(victim, 0);
+    return false;
+  } catch {
+    return true;
+  }
+}))) {
+  console.error("the killed arm did not exit");
+  process.exit(1);
+}
+const reloaded = await reloadHooks();
+const second = await reloaded.hooks.coordinator.ensureArmed("ses_test", client);
+if (second !== "armed") {
+  console.error("the next idle did not replace the dead arm: " + second);
+  process.exit(1);
+}
+process.exit(0);
+JS
+  # Long retry delays keep the dead instance's own retry out of this window, so
+  # the replacement under test is the one the next idle starts.
+  out=$(run_driver "$lab" "$driver" FM_WATCH_REARM_RETRY_BASE_MS=60000 FM_WATCH_REARM_RETRY_MAX_MS=60000) \
+    || { kill_recorded_arms "$lab"; fail "killed-arm driver failed: $out"; }
+  count=$(arm_call_count "$lab")
+  kill_recorded_arms "$lab"
+  [ "$count" = 2 ] || fail "a killed arm was replaced $count times instead of once: $(cat "$lab/arm-calls")"
+  pass 'a killed watcher is replaced by exactly one successor on the next idle'
+}
+
+test_declined_arm_emits_its_typed_reason() {
+  local lab out driver harness_pid fakebin
+  lab=$(make_lab declined-reason)
+  fakebin="$TMP_ROOT/declined-bin"
+  mkdir -p "$fakebin"
+  # A live verified harness in this home's lock, outside the server's own
+  # ancestry: another session really does own this home, so arming here would
+  # bind supervision to the wrong session.
+  ln -sf /bin/sleep "$fakebin/opencode"
+  "$fakebin/opencode" 60 &
+  harness_pid=$!
+  printf '%s\n' "$harness_pid" > "$lab/state/.lock"
+  # Run the driver itself under a harness-shaped name so the shared ownership
+  # query can tell "foreign" from "unknowable" for an ancestry that does contain
+  # a harness, which is what the real OpenCode server always has.
+  ln -sf "$(command -v node)" "$TMP_ROOT/harness-node/opencode" 2>/dev/null \
+    || { mkdir -p "$TMP_ROOT/harness-node"; ln -sf "$(command -v node)" "$TMP_ROOT/harness-node/opencode"; }
+  cat > "$TMP_ROOT/declined.mjs" <<'JS'
+import { client, hooks } from "./harness.mjs";
+
+const status = await hooks.coordinator.ensureArmed("ses_test", client);
+if (status !== "read-only") {
+  console.error("a live foreign lock did not decline the arm: " + status);
+  process.exit(1);
+}
+process.exit(0);
+JS
+  out=$(cd "$TMP_ROOT" && env -u FM_HOME -u FM_ROOT_OVERRIDE -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE \
+    LAB="$lab" PLUGIN="$PLUGIN" "$TMP_ROOT/harness-node/opencode" "$TMP_ROOT/declined.mjs" 2>&1)
+  local status=$?
+  kill "$harness_pid" 2>/dev/null || true
+  wait "$harness_pid" 2>/dev/null || true
+  [ "$status" -eq 0 ] || fail "declined-arm driver failed: $out"
+  [ "$(arm_call_count "$lab")" = 0 ] || fail "an arm ran despite a live foreign lock: $(cat "$lab/arm-calls")"
+  grep -q 'decision=skip reason=lock-owned' "$lab/state/.watch-arm-plugin.log" \
+    || fail "a declined arm emitted no typed reason: $(plugin_log "$lab")"
+  pass 'a declined arm emits its typed reason instead of declining silently'
+}
+
 test_successor_does_not_restart_a_live_watcher
 test_live_succession_claim_blocks_a_second_successor
 test_foreign_instance_cannot_release_a_live_claim
@@ -416,3 +682,9 @@ test_stalled_close_escalates_to_one_force_restart
 test_location_gate_admits_subdirectories_but_not_project_clones
 test_containment_uses_host_path_semantics
 test_readiness_budget_follows_the_arm_confirmation_budget
+
+test_idle_without_watcher_starts_exactly_one_arm
+test_reload_reuses_the_live_arm_channel
+test_foreign_root_instance_is_inert
+test_killed_arm_is_replaced_on_the_next_idle
+test_declined_arm_emits_its_typed_reason

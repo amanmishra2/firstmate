@@ -2479,8 +2479,13 @@ status_span_has_actionable() {  # <status-file> <start-offset>
 #             (e.g. waiting on CI);
 #   paused  - the crew's authoritative current state is a declared external-wait
 #             pause (paused:), which is EXPECTED to idle;
-#   none    - neither, so the wake must surface (a stopped/finished/parked/failed/
-#             torn-down/unknown crew, or an unreadable verdict).
+#   unreadable - the pane itself could not be read (a capture timeout). That is
+#             ignorance, never idleness: callers must keep the pane on its
+#             bounded absorb cadence instead of surfacing it as a stale/wedged
+#             crew. Only a failed pane read qualifies; an unverified harness
+#             semantic source stays none, which is the existing behavior;
+#   none    - none of the above, so the wake must surface (a stopped/finished/
+#             parked/failed/torn-down/unknown crew, or an unreadable verdict).
 # One fm-crew-state.sh read serves BOTH absorb reasons at once. Reading the state
 # authoritatively (not the status log) is what keeps run-step precedence: a crew
 # that appended paused: but then STARTED a run reports working, never paused.
@@ -2494,9 +2499,17 @@ crew_absorb_class() {  # <id>
   case "$line" in state:*) ;; *) printf 'none'; return ;; esac
   state=${line#state: }; state=${state%% *}
   if [ "$state" = paused ]; then printf 'paused'; return; fi
+  src=${line#*source: }; src=${src%% *}
   if [ "$state" = working ]; then
-    src=${line#*source: }; src=${src%% *}
     case "$src" in run-step|pane) printf 'working'; return ;; esac
+  fi
+  if [ "$state" = unknown ] && [ "$src" = pane ]; then
+    # Only a FAILED PANE READ is ignorance about the pane. An unverified harness
+    # semantic source (e.g. codex-unverified) is a known-unknown that keeps the
+    # existing surface-immediately behavior.
+    case "$line" in
+      *capture-failed*) printf 'unreadable'; return ;;
+    esac
   fi
   printf 'none'
 }
