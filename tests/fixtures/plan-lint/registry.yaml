@@ -1,0 +1,35 @@
+version: 1
+
+projects:
+  fixture:
+    tables:
+      decisions:
+        owner: data
+        status: planned
+        plan: fixture-storage-s1
+    fields:
+      decisions.p_fit:
+        owner: data
+        status: planned
+        plan: fixture-storage-s1
+    flags:
+      --strict:
+        owner: ops
+        status: canonical
+    commands:
+      scripts/fixture/check.py:
+        owner: ops
+        status: planned
+        plan: fixture-storage-s1
+  other:
+    tables:
+      retired_table:
+        owner: data
+        status: deprecated
+        superseded_by: decisions
+      kept_table:
+        owner: data
+        status: canonical
+    fields: {}
+    flags: {}
+    commands: {}

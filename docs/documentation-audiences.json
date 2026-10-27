@@ -133,6 +133,10 @@
       "audience": "agent-runtime"
     },
     {
+      "path": ".agents/skills/codebase-maintenance-roadmap/references/plan-authoring.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": ".agents/skills/decision-hold-lifecycle/SKILL.md",
       "audience": "agent-runtime"
     },
@@ -401,6 +405,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/plan-lifecycle.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/remote-secondmates.md",
       "audience": "operator-current"
     },
@@ -549,6 +557,30 @@
       "audience": "public-product"
     },
     {
+      "path": "templates/implementation-plan/PLAN_EVALUATION.md",
+      "audience": "operator-example"
+    },
+    {
+      "path": "templates/implementation-plan/PLAN_MIGRATION.md",
+      "audience": "operator-example"
+    },
+    {
+      "path": "templates/implementation-plan/PLAN_SLICE.md",
+      "audience": "operator-example"
+    },
+    {
+      "path": "templates/implementation-plan/PLAN_SUBTASK.md",
+      "audience": "operator-example"
+    },
+    {
+      "path": "templates/implementation-plan/PLAN_TEMPLATE.md",
+      "audience": "operator-example"
+    },
+    {
+      "path": "templates/implementation-plan/README.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "tests/captures/no-mistakes-v1.70.1/README.md",
       "audience": "maintainer-verification"
     },
@@ -598,6 +630,10 @@
     },
     {
       "path": "data/prevention-ledger/catch-up-2026-10-24.md",
+      "audience": "maintainer-verification"
+    },
+    {
+      "path": "tests/fixtures/plan-lint/good-slice.md",
       "audience": "maintainer-verification"
     }
   ]

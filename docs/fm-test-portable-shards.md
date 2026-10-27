@@ -25,6 +25,7 @@ Collect successful per-script measurements for every member before calculating a
 That post-fix value has only one sample in this baseline, so further green runs must establish its variance.
 The native-Windows-only `tests/fm-pi-windows-shell-invocation.test.sh` retains its separate 5121 ms measurement from 2026-09-06T21:02Z instead of a portable capability skip.
 The session-start hint retains its pre-optimization maximum until CI measures the shorter fixture-only home-summary bound; do not discount a local speedup from CI packing weights.
+The 2026-10-26 plan-authoring tests carry provisional local measurements until the next CI refresh: `tests/fm-plan-gate.test.sh` at 4000 ms from a 9710 ms macOS sample on the same host that runs `tests/fm-brief.test.sh` at 26790 ms against its 10594 ms hint, and `tests/fm-plan-lint.test.sh` at 600 ms from a 1230 ms sample. Both numbers are scaled by that host's roughly 2.5x factor rather than taken raw, because a raw hint would push the serial lane past its packing target.
 
 ## Parallel lanes
 

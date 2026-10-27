@@ -1,0 +1,73 @@
+# Plan contract registry - the shipped example.
+#
+# A registry is the single list of canonical table, field, flag, and command names a plan
+# may use. `bin/fm-plan-lint.py` (PL004) checks every name in a plan's `contracts` mapping
+# against it, so two plans, or a plan and its implementation, cannot spell one thing two ways.
+#
+# Where the real registry lives: `<firstmate-home>/data/plan-contracts.yaml`, which is
+# captain-private and gitignored like the plans themselves. The linter prefers it and falls
+# back to this file, so a fresh checkout still lints (with only these names known). Copy this
+# file there and add your project's names:
+#
+#   cp templates/implementation-plan/PLAN_CONTRACTS.example.yaml data/plan-contracts.yaml
+#
+# Status semantics:
+#   canonical   the name exists in the code today; a plan may consume it.
+#   planned     the name is declared new by at least one plan and does not exist yet. A plan
+#               may introduce it. When the implementing PR lands, flip it to canonical in
+#               the same PR (docs/plan-lifecycle.md, post-merge handoff).
+#   deprecated  retired. Any plan naming it fails PL004, which is how a retired name stays
+#               retired. Name the replacement in `superseded_by`.
+#
+# `owner` is the person or role who decides whether the name may change. It is not read by
+# the linter; it is the field a reviewer uses to route a rename.
+
+version: 1
+
+projects:
+  example-project:
+    tables:
+      decisions:
+        owner: data
+        status: planned
+        plan: example-data-m030
+      jobs:
+        owner: data
+        status: canonical
+    fields:
+      decisions.p_fit:
+        owner: data
+        status: planned
+        plan: example-data-m030
+      decisions.model_rank:
+        owner: data
+        status: planned
+        plan: example-data-m030
+    flags:
+      --strict:
+        owner: ops
+        status: canonical
+    commands:
+      scripts/example/check_integrity.py:
+        owner: ops
+        status: planned
+        plan: example-data-m030
+
+  # The firstmate repository itself, for plans that change its own tooling.
+  firstmate:
+    tables: {}
+    fields: {}
+    flags:
+      --plan-ref:
+        owner: firstmate
+        status: planned
+        plan: firstmate-plan-authoring-system
+      --require-ready:
+        owner: firstmate
+        status: planned
+        plan: firstmate-plan-authoring-system
+    commands:
+      bin/fm-plan-lint.py:
+        owner: firstmate
+        status: planned
+        plan: firstmate-plan-authoring-system

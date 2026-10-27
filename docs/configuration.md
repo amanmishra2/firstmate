@@ -1093,6 +1093,17 @@ A malformed or unreadable file refuses every fresh ship or scout spawn until it 
 Firstmate cannot see which part of a worker's life uses the resource, so the number bounds whole workers from launch to handoff, and the tightest resource every worker needs should decide it.
 [`bin/fm-project-capacity-lib.sh`](../bin/fm-project-capacity-lib.sh) owns the file format, what holds a place, and why concurrent spawns cannot both take the last one.
 
+## Plan definition-of-ready gate (config/plan-gate)
+
+The optional local, gitignored `config/plan-gate` opts this home into refusing a ship dispatch whose implementation plan is not ready.
+Write `on` to enable it or `off` to disable it, and delete the file to return to the default, which is **off**; a value other than on/off/1/0/true/false refuses the call rather than guessing.
+`FM_PLAN_GATE=1` or `FM_PLAN_GATE=0` overrides the file for one call, which is how a test drives the gate without writing home configuration.
+
+When it is on, `bin/fm-spawn.sh` hands the brief's `Plan: <path>` line to [`bin/fm-plan-gate.sh`](../bin/fm-plan-gate.sh) before any endpoint or worktree exists, and refuses the launch unless [`bin/fm-plan-lint.py`](../bin/fm-plan-lint.py) accepts that plan with `--require-ready`.
+The refusal carries the linter's rule id, file, line, and message, so the fix is in the refusal text; a brief recording `Plan: none`, or no plan line at all, is refused while the gate is on.
+Every ship spawn records the resolved reference as `plan_ref=` in the task record whether the gate is on or off, because the prevention ledger reads that field back to reconcile a run with its plan.
+[`docs/plan-lifecycle.md`](plan-lifecycle.md) owns who updates a plan at each handoff, and `data/plan-contracts.yaml` holds this home's canonical contract names.
+
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.
