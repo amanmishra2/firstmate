@@ -1428,9 +1428,56 @@ EOF
 # Drop a window's write-deferral chain wherever its stale bookkeeping resets, so
 # the bounded re-surface cadence is measured from the CURRENT quiet stretch and a
 # long-finished one cannot make the next deferral resurface immediately.
+# 0 when this task's recorded spawn/crew busy-state is a gen-valid `busy` for the
+# CURRENT incarnation. The record is the semantic source the harness adapter and
+# fm-spawn wrote (bin/fm-busy-lib.sh owns its format), and fm_busy_record_read
+# validates it against state/<id>.busy-gen, so a record left by a replaced agent
+# cannot defer anything. Prints the record's source on success so a deferral can
+# name who says the turn is in flight.
+# Endpoint death outranks a record: an agent that is gone never settles its own
+# record, so a dead or missing endpoint refuses here and the ordinary dead-record
+# report keeps the one report that death deserves.
+crew_busy_record_busy() {  # <window> <task>
+  local win=$1 task=$2 rec r_state r_source agent_state
+  [ -n "$task" ] || return 1
+  rec=$(fm_busy_record_read "$STATE" "$task" 2>/dev/null) || return 1
+  read -r r_state r_source _ <<< "$rec"
+  [ "$r_state" = busy ] || return 1
+  agent_state=$(fm_backend_agent_state "$(window_backend "$win")" "$win" 2>/dev/null) || agent_state=unreadable
+  case "$agent_state" in
+    dead|missing) return 1 ;;
+  esac
+  printf '%s' "$r_source"
+}
+
+# Defer ONE wedge escalation for a pane whose own spawn/crew busy-state still says
+# the turn is in flight. The pane reads idle because a harness renders nothing
+# while a tool call runs, and the run step says nothing when no no-mistakes run is
+# active; the semantic record is the one source that knows a turn is still open.
+# Escalation is reserved for the case where BOTH the pane and the record agree the
+# crew is idle, which is why an idle, missing, malformed, or gen-mismatched record
+# falls through to the unchanged schedule instead of deferring.
+# Deliberately a DEFERRAL, not a cancellation, exactly like the worktree-write
+# deferral beside it: the idle timer restarts, a .busy-since-<key> marker ages the
+# chain, and it re-surfaces once every PAUSE_RESURFACE_SECS through the shared
+# resurface_absorbed cadence so a record that stays busy forever cannot hide a
+# crew that never progresses. The escalation counter is left untouched.
+wedge_defer_busy() {  # <window> <since-file> <triage-label> <idle-age> <source>
+  local win=$1 since_file=$2 label=$3 age=$4 source=$5 key bsf bage
+  key=$(window_key "$win")
+  bsf="$STATE/.busy-since-$key"
+  [ -e "$bsf" ] || date +%s > "$bsf"
+  bage=$(age_of "$bsf")
+  date +%s > "$since_file"
+  resurface_absorbed "$win" "$STATE/.busy-resurfaced-$key" "$bage" \
+    "stale: $win (idle ${age}s, recorded busy-state says the turn is still in flight (${source:-record}) for ${bage}s, rechecked on a long cadence not a wedge; confirm it is progressing)"
+  triage_log "absorbed $label (busy-state record says busy, idle ${age}s): $win"
+}
+
 clear_write_tracking() {  # <window-key>
   local key=$1
-  rm -f "$STATE/.writing-since-$key" "$STATE/.writing-resurfaced-$key"
+  rm -f "$STATE/.writing-since-$key" "$STATE/.writing-resurfaced-$key" \
+    "$STATE/.busy-since-$key" "$STATE/.busy-resurfaced-$key"
 }
 
 # The question the wedge timer never asked before it alarmed: is there still an
@@ -1507,20 +1554,26 @@ wedge_dead_record() {  # <window> <since-file> <triage-label> <idle-age> <pane-h
 # can be absorbed this way: the plain non-terminal path, and the
 # stale_is_terminal-overridden path (a captain-relevant status-log line that an
 # active run/busy pane outranked).
-# The wait-evidence consult (wedge_wait_evidence), the worktree write probe, and
-# the dead-record probe (wedge_dead_record) run ONLY here, inside the
-# at-threshold branch that is about to escalate: at most one each per window per
-# STALE_ESCALATE_SECS, never on an ordinary poll. The crew-state read
-# wedge_wait_evidence may take under config/wedge-defer-parked-gate keeps that
-# same bound however long the wait lasts, because the deferral it feeds restarts
-# the idle timer like every other deferral below; an unconfigured home never
-# reaches that read at all. The wait consult runs first, because a pane that can
-# account for its own quiet has nothing to prove through its worktree. The dead-record probe
-# runs last of the three, so the two cheaper deferrals keep the panes they
-# already own on their existing bounded cadences and only a pane that would
-# otherwise alarm pays for a backend read.
-wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> <task> <pane-hash>
-  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 hash=$6 since age n reason evidence
+# The wait-evidence consult (wedge_wait_evidence), the dead-record probe
+# (wedge_dead_record), the recorded busy-state consult (crew_busy_record_busy),
+# and the worktree write probe run ONLY here, inside the at-threshold branch that
+# is about to escalate: at most one each per window per STALE_ESCALATE_SECS, never
+# on an ordinary poll. The crew-state read wedge_wait_evidence may take under
+# config/wedge-defer-parked-gate keeps that same bound however long the wait
+# lasts, because the deferral it feeds restarts the idle timer like every other
+# deferral below; an unconfigured home never reaches that read at all. The wait
+# consult runs first, because a pane that can account for its own quiet has
+# nothing to prove through its worktree. The dead-record probe runs second: agent
+# death is the only process-level override of the semantic busy contract, so it
+# must be decided before a recorded `busy` can defer, or a dead agent's own stale
+# record would absorb the one report its death deserves. The busy-state consult
+# and the worktree probe follow, cheapest first.
+# <busy-defer> is 0 on the busy-turn-age path (busy_turn_bound_check), where the
+# pane and the record BOTH already say busy and the completed-turn age is what has
+# run past its bound: the deferral there would silence exactly the stuck-busy pane
+# that path exists to report.
+wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-file> <task> <pane-hash> [busy-defer]
+  local win=$1 since_file=$2 label=$3 escalation_file=$4 task=$5 hash=$6 busy_defer=${7:-1} since age n reason evidence
   since=$(cat "$since_file" 2>/dev/null || true)
   case "$since" in
     ''|*[!0-9]*)
@@ -1536,6 +1589,19 @@ wedge_timer_check() {  # <window> <since-file> <triage-label> <escalation-count-
       if [ "$age" -ge "$STALE_ESCALATE_SECS" ]; then
         if evidence=$(wedge_wait_evidence "$task") &&
            wedge_defer_wait "$win" "$since_file" "$label" "$age" "$evidence"; then
+          return 0
+        fi
+        # Endpoint death is the only process-level override of the semantic busy
+        # contract, so the busy consult below refuses a dead or missing endpoint
+        # itself; the dead-record probe still runs last so the cheaper deferrals
+        # keep their existing cadence and only an otherwise-alarming pane pays
+        # for a backend read.
+        # The pane reads idle and no declared wait explains it. The recorded
+        # semantic busy-state is the next cheapest independent record of the
+        # same turn, and it is the only one that can still say "a turn is open"
+        # while a harness renders nothing: escalate only when it agrees.
+        if [ "$busy_defer" = 1 ] && busy_source=$(crew_busy_record_busy "$win" "$task"); then
+          wedge_defer_busy "$win" "$since_file" "$label" "$age" "$busy_source"
           return 0
         fi
         if crew_worktree_written_since "$task" "$STATE" "$since_file"; then
@@ -1700,7 +1766,7 @@ busy_turn_bound_check() {  # <window> <task> <hash> <since-file> <escalation-fil
     handle_paused_stale "$win" "$task" "$h"
     return 0
   fi
-  wedge_timer_check "$win" "$since_file" "busy (no completed turn)" "$escalation_file" "$task" "$h"
+  wedge_timer_check "$win" "$since_file" "busy (no completed turn)" "$escalation_file" "$task" "$h" 0
   return 1
 }
 
@@ -1738,7 +1804,15 @@ pause_state_class() {  # <window> <task>
   recheck_file="$STATE/.paused-rechecked-$key"
   if ! status_is_paused_or_captain_held "$last"; then
     rm -f "$recheck_file"
-    crew_absorb_class "$task"
+    class=$(crew_absorb_class "$task")
+    # An unreadable pane (capture timeout or an unverifiable harness busy state)
+    # is not evidence of idleness, so it takes the same absorb-and-watch cadence a
+    # provably-working pane takes instead of surfacing as a stale wedge claimant.
+    if [ "$class" = unreadable ]; then
+      triage_log "absorbed non-terminal stale (harness state unreadable, not idle): $task"
+      class=working
+    fi
+    printf '%s' "$class"
     return
   fi
   # Read once past the declared-wait gate and reused by both liveness gates below,
@@ -1758,7 +1832,7 @@ pause_state_class() {  # <window> <task>
     return
   fi
   class=$(crew_absorb_class "$task")
-  if [ "$class" = working ]; then
+  if [ "$class" = working ] || [ "$class" = unreadable ]; then
     rm -f "$recheck_file"
     printf 'working'
     return

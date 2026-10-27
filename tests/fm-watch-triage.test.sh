@@ -615,6 +615,11 @@ test_crew_absorb_class_classifier() {
   FM_FAKE_CREW_STATE='state: unknown · source: none · worktree gone'
   [ "$(crew_absorb_class a)" = none ] || fail "unknown crew classed absorbable"
   ! crew_is_paused a || fail "unknown crew classed paused"
+  # A failed pane read is ignorance, not idleness: a capture timeout or an
+  # unverifiable harness busy state must never surface as a stale wedge claimant.
+  FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (capture-failed)'
+  [ "$(crew_absorb_class a)" = unreadable ] || fail "an unreadable pane was not classed unreadable"
+  ! crew_is_provably_working a || fail "an unreadable pane was treated as provably working"
   [ "$(crew_absorb_class "")" = none ] || fail "empty id not classed none"
   unset FM_FAKE_CREW_STATE
   pass "crew_absorb_class: working/paused/none from one read; crew_is_paused and crew_is_provably_working agree"
@@ -5475,6 +5480,140 @@ test_wedge_escalation_deferred_while_worktree_is_written() {
   pass "a quiet pane writing its own worktree is deferred, while one writing nothing still wedge-escalates on the unchanged schedule"
 }
 
+# --- quiet pane, recorded busy-state says busy: deferred, never wedge-escalated -
+# The live report: a crewmate pane rendered nothing while its turn was still in
+# flight (`source: harness busy (fm-spawn)`), the pane looked idle, and the wedge
+# timer escalated it as a possible wedge. The semantic busy record is the one
+# source that knows a turn is open while a harness renders nothing, so the
+# escalation consult must read it - and must read it against the task's current
+# busy gen, or a record left by a replaced agent could defer forever.
+# Both halves run on the SAME fixture so only the record differs: busy defers,
+# idle escalates on the unchanged schedule.
+test_wedge_escalation_deferred_while_busy_state_says_busy() {
+  local dir state fakebin out drain_out capture_file window key pane_hash sig pid back
+  dir=$(make_case wedge-busy-state); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; drain_out="$dir/drain.out"; capture_file="$dir/pane.txt"
+  window="test:fm-busy"
+  printf 'idle at a shell prompt' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/busy.meta"
+  printf 'working: running the suite\n' > "$state/busy.status"
+  sig=$(seen_sig "$state/busy.status"); printf '%s' "$sig" > "$state/.seen-busy_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle at a shell prompt")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  printf '%s' "$pane_hash" > "$state/.stale-$key"
+  back=$(( $(date +%s) - 500 ))
+  echo "$back" > "$state/.stale-since-$key"
+  set_mtime "$back" "$state/.stale-since-$key"
+  # The task's busy wiring is armed, and the last semantic event for THIS
+  # incarnation says the turn is still in flight.
+  printf 'gen-1' > "$state/busy.busy-gen"
+  printf 'v1 gen=gen-1 seq=1 state=busy source=fm-spawn event=turn-started ts=%s\n' "$(date +%s)" \
+    > "$state/busy.busy-state"
+
+  # Phase A: the record says busy. The pane's own silence must not escalate.
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 \
+    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "watcher wedge-escalated a pane whose busy record said the turn was in flight: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; fail "a busy-state deferral printed a wake reason: $(cat "$out")"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "a busy-state deferral enqueued a wake"; }
+  [ -e "$state/.busy-since-$key" ] || { reap "$pid"; fail "the busy-state deferral chain marker was not recorded"; }
+  [ ! -e "$state/.wedge-escalations-$key" ] || { reap "$pid"; fail "a busy-state deferral advanced the wedge escalation counter"; }
+  [ "$(cat "$state/.stale-since-$key" 2>/dev/null || echo 0)" -gt "$back" ] \
+    || { reap "$pid"; fail "a busy-state deferral did not restart the idle timer, so the next window cannot re-probe"; }
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional phase-A watcher stop"
+
+  # Phase B: same quiet pane, but the record now agrees the crew is idle, which
+  # is the only combination allowed to escalate.
+  printf 'v1 gen=gen-1 seq=2 state=idle source=fm-spawn event=turn-ended ts=%s\n' "$(date +%s)" \
+    > "$state/busy.busy-state"
+  echo "$back" > "$state/.stale-since-$key"
+  set_mtime "$back" "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 \
+    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "a pane whose busy record agreed it was idle did not wedge-escalate"
+  grep -F "stale: $window" "$out" >/dev/null || fail "the idle-record escalation did not print a stale wake"
+  grep -F "possible wedge" "$out" >/dev/null || fail "the idle-record escalation did not flag a possible wedge"
+  [ "$(cat "$state/.wedge-escalations-$key" 2>/dev/null || true)" = 1 ] || fail "the idle-record escalation was not counted"
+  [ ! -e "$state/.stale-since-$key" ] || fail "the idle timer was not cleared after a real escalation"
+  [ ! -e "$state/.busy-since-$key" ] || fail "the busy-state deferral chain outlived a real escalation"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$drain_out" 2>/dev/null || fail "drain after the idle-record escalation failed"
+  grep "$(printf '\tstale\t')" "$drain_out" | grep -F "$window" >/dev/null || fail "the idle-record escalation was not queued"
+  # Phase C: the busy record is idle, but the PANE cannot be read at all (a
+  # capture timeout). Ignorance is not idleness, so it must be absorbed on the
+  # bounded cadence instead of surfacing as a stale wedge claimant.
+  printf 'v1 gen=gen-1 seq=3 state=idle source=fm-spawn event=turn-ended ts=%s\n' "$(date +%s)" \
+    > "$state/busy.busy-state"
+  printf '1\n' > "$state/.count-$key"
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '%s' "$pane_hash" > "$state/.stale-$key"
+  rm -f "$state/.busy-since-$key" "$state/.wedge-escalations-$key" "$state/.stale-since-$key"
+  : > "$out"
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (capture-failed)' \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 \
+    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  if ! wait_poll_cycle "$state" "$pid"; then
+    reap "$pid"; fail "watcher surfaced a stale wedge for a pane it could not read: $(cat "$out")"
+  fi
+  [ ! -s "$out" ] || { reap "$pid"; fail "an unreadable pane printed a stale wake reason: $(cat "$out")"; }
+  [ ! -s "$state/.wake-queue" ] || { reap "$pid"; fail "an unreadable pane enqueued a stale wake"; }
+  [ -e "$state/.stale-since-$key" ] || { reap "$pid"; fail "an unreadable pane did not start the bounded wedge timer"; }
+  reap "$pid"
+  ack_stopped_cycle "$state" || fail "could not acknowledge the intentional phase-C watcher stop"
+  pass "a pane whose recorded busy-state says busy is deferred, while a record that agrees it is idle still wedge-escalates"
+}
+
+# --- quiet pane, STALE busy record: the generator gate still escalates ---------
+# The deferral is bound to the task's current busy gen (bin/fm-busy-lib.sh owns
+# the sidecar). A record left behind by a replaced agent must not silence the
+# pane that replaced it, or a relaunch would inherit the predecessor's promise.
+test_wedge_escalation_ignores_a_busy_record_from_another_generation() {
+  local dir state fakebin out capture_file window key pane_hash sig pid back
+  dir=$(make_case wedge-busy-stale-gen); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-busy-gen"
+  printf 'idle at a shell prompt' > "$capture_file"
+  printf 'window=%s\nkind=ship\n' "$window" > "$state/stalegen.meta"
+  printf 'working: running the suite\n' > "$state/stalegen.status"
+  sig=$(seen_sig "$state/stalegen.status"); printf '%s' "$sig" > "$state/.seen-stalegen_status"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  pane_hash=$(hash_text "idle at a shell prompt")
+  printf '%s' "$pane_hash" > "$state/.hash-$key"
+  printf '1\n' > "$state/.count-$key"
+  printf '%s' "$pane_hash" > "$state/.stale-$key"
+  back=$(( $(date +%s) - 500 ))
+  echo "$back" > "$state/.stale-since-$key"
+  set_mtime "$back" "$state/.stale-since-$key"
+  # The armed gen is the successor's; the record still carries the dead one.
+  printf 'gen-2' > "$state/stalegen.busy-gen"
+  printf 'v1 gen=gen-1 seq=9 state=busy source=fm-spawn event=turn-started ts=%s\n' "$(date +%s)" \
+    > "$state/stalegen.busy-state"
+
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_STALE_ESCALATE_SECS=240 \
+    FM_PAUSE_RESURFACE_SECS=999 FM_POLL=1 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_exit "$pid" 100 || fail "a busy record from a replaced generation deferred an idle pane"
+  grep -F "possible wedge" "$out" >/dev/null || fail "the stale-generation record suppressed the wedge escalation"
+  [ ! -e "$state/.busy-since-$key" ] || fail "a stale-generation record started a deferral chain"
+  pass "a busy record from a replaced busy generation cannot defer a pane that is genuinely idle"
+}
+
 # A deferral is not silence. A worktree can churn without real progress (a
 # rewritten log, a build touching the same file), so the whole deferral chain ages
 # and re-surfaces once per PAUSE_RESURFACE_SECS - the same bounded cadence a
@@ -6724,6 +6863,8 @@ test_paused_authoritative_working_preserves_wedge_timer
 test_nonterminal_stale_repairs_missing_or_corrupt_timer
 test_wedge_escalation_deferred_while_worktree_is_written
 test_write_deferral_resurfaces_on_the_bounded_cadence
+test_wedge_escalation_deferred_while_busy_state_says_busy
+test_wedge_escalation_ignores_a_busy_record_from_another_generation
 test_secondmate_home_supervision_churn_is_not_write_evidence
 test_timer_repair_drops_a_finished_write_deferral_chain
 test_terminal_first_sight_drops_a_finished_write_deferral_chain

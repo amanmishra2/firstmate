@@ -42,6 +42,13 @@ Each adapter:
 - Preserves one child or scheduled retry at a time.
 - Applies bounded exponential retry after an unexpected or failed close.
 
+OpenCode's adapter also owns the FIRST cycle of a freshly started or reloaded plugin, so continuity never depends on a previous cycle having closed.
+It asks the shared libraries two questions before it arms: whether a live identity-matched watcher already holds this home (`fm_watcher_healthy`), and whether a live verified harness session outside this server's ancestry owns the session lock (`fm_session_lock_foreign_owner_live`).
+Only that positively proven foreign owner refuses an arm; a lock naming a dead session is stale, not held, and a restarted home arms on its next execution end.
+A durable arm-channel record (`state/.opencode-arm`) keeps a reloaded module instance, a second loader pass, or the turn-end guard's copy from opening a second wake channel to the same watcher, and an arm left by an exited server is deliberately not reused because its wake pipe died with that server.
+An instance loaded from any root other than the home it would supervise is inert before it reads that home's lock or watcher at all.
+Every declined arm or skip appends one typed line to `state/.watch-arm-plugin.log`, and the declines that leave a home unsupervised also print to the server log.
+
 Pi treats an arm child whose process is already gone as an empty slot even while its close event is still pending, so a repair call or a scheduled retry starts a fresh arm instead of answering unchanged.
 A failed follow-up never cancels continuity restoration.
 
@@ -440,6 +447,18 @@ The same suite covers ordinary same-process session replacement for `/new`, `/re
 
 The guard and session-start suites prove that active generation evidence tolerates a fresh-beacon handoff.
 They also prove that a legacy or handoff-phase watcher marker from an absent replacement extension still raises the outage diagnostic.
+
+### OpenCode watch-arm restart and cross-root contract
+
+`tests/fm-opencode-watch-arm-succession.test.sh` drives the real plugin with fake plugin events, a fake arm, a real state directory, and a real session lock.
+Beyond the succession contract (one attach-or-start successor, one home-scoped claim, delivery after a splice, one force-restart for a stalled holder, the location gate, the readiness budget), it pins:
+
+- A stale lock naming a dead session after a restart still starts exactly one arm on the next execution end.
+- Only a live verified foreign session refuses an arm; a stale, missing, or unreadable lock does not.
+- A reloaded module instance reuses the live arm channel instead of opening a second one.
+- A killed arm is replaced by exactly one successor on the next execution end.
+- An instance loaded from a foreign root performs no lock, watcher, claim, or arm operation against the home its environment names.
+- Every decline records its typed reason in the home's `state/.watch-arm-plugin.log`.
 
 ### Arm, recovery, triage, and lock suites
 
